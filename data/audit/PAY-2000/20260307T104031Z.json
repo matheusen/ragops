@@ -1,0 +1,253 @@
+{
+  "issue": {
+    "issue_key": "PAY-2000",
+    "summary": "Checkout warning triggered on missing field before authorization",
+    "description": "Client validation blocked submit before any payment event was sent.",
+    "comments": [],
+    "acceptance_criteria": [],
+    "reproduction_steps": [],
+    "expected_behavior": "Form should block submit and highlight the required field.",
+    "actual_behavior": "A warning banner was shown and no backend transaction was created.",
+    "priority": "Medium",
+    "issue_type": "Task",
+    "status": "Triagem",
+    "project": "PAY",
+    "component": "checkout",
+    "service": "payment-service",
+    "environment": "prod",
+    "affected_version": "2.4.1",
+    "labels": [
+      "ux"
+    ],
+    "issue_links": [],
+    "attachments": [],
+    "changelog": [],
+    "collected_at": "2026-03-07T10:40:31.926753Z"
+  },
+  "attachment_facts": {
+    "issue_key": "PAY-2000",
+    "artifacts": [
+      {
+        "artifact_id": "sha256:8bc5ec3656db0fd0afec44a3f1fcaf9a442d07ea61fc66a653184cf3e0dad2d7",
+        "artifact_type": "text",
+        "source_path": "examples\\input\\PAY-2000\\observability_note.txt",
+        "extracted_text": "2026-03-06 10:00:00 INFO request=req_2000 User retried checkout after browser refresh.\n2026-03-06 10:00:01 INFO request=req_2000 No payment authorization created.\n2026-03-06 10:00:01 INFO request=req_2000 UI warning originated from client-side validation.\n",
+        "facts": {
+          "ids": [
+            "req_2000"
+          ],
+          "timestamps": [
+            "2026-03-06 10:00:00",
+            "2026-03-06 10:00:01"
+          ],
+          "amounts": [],
+          "error_lines": [],
+          "artifact_name": "observability_note.txt"
+        },
+        "confidence": 0.92
+      }
+    ],
+    "contradictions": [],
+    "missing_information": []
+  },
+  "rule_evaluation": {
+    "missing_items": [
+      "reproduction_steps"
+    ],
+    "contradictions": [],
+    "financial_impact_detected": true,
+    "requires_human_review": true,
+    "results": [
+      {
+        "rule_name": "issue_type_mismatch",
+        "severity": "warning",
+        "message": "Issue type is Task, not Bug",
+        "metadata": {}
+      },
+      {
+        "rule_name": "financial_impact_detected",
+        "severity": "critical",
+        "message": "Issue contains financial language or monetary evidence",
+        "metadata": {}
+      }
+    ]
+  },
+  "retrieved": [
+    {
+      "evidence_id": "issue:expected_actual",
+      "source": "issue.behavior",
+      "content": "Expected: Form should block submit and highlight the required field.\nActual: A warning banner was shown and no backend transaction was created.",
+      "metadata": {
+        "category": "issue"
+      },
+      "sparse_score": 0.6452,
+      "dense_score": 0.6,
+      "final_score": 0.7471
+    },
+    {
+      "evidence_id": "issue:summary",
+      "source": "issue.summary",
+      "content": "PAY-2000 Checkout warning triggered on missing field before authorization Client validation blocked submit before any payment event was sent.",
+      "metadata": {
+        "category": "issue"
+      },
+      "sparse_score": 0.3548,
+      "dense_score": 0.3143,
+      "final_score": 0.6986
+    },
+    {
+      "evidence_id": "sha256:8bc5ec3656db0fd0afec44a3f1fcaf9a442d07ea61fc66a653184cf3e0dad2d7",
+      "source": "attachment:examples\\input\\PAY-2000\\observability_note.txt",
+      "content": "2026-03-06 10:00:00 INFO request=req_2000 User retried checkout after browser refresh.\n2026-03-06 10:00:01 INFO request=req_2000 No payment authorization created.\n2026-03-06 10:00:01 INFO request=req_2000 UI warning originated from client-side validation.\n",
+      "metadata": {
+        "category": "artifact",
+        "type": "text"
+      },
+      "sparse_score": 0.1935,
+      "dense_score": 0.1364,
+      "final_score": 0.4307
+    },
+    {
+      "evidence_id": "policy:bug-ready",
+      "source": "policy:bug-ready",
+      "content": "A bug should include expected behavior, actual behavior, reproduction steps, environment, and affected version before it is marked ready for development.",
+      "metadata": {
+        "category": "policy"
+      },
+      "sparse_score": 0.129,
+      "dense_score": 0.0909,
+      "final_score": 0.2438
+    },
+    {
+      "evidence_id": "policy:contradictions",
+      "source": "policy:contradictions",
+      "content": "If one artifact shows failure and another shows success for the same flow, the issue must be escalated for review.",
+      "metadata": {
+        "category": "policy"
+      },
+      "sparse_score": 0.0645,
+      "dense_score": 0.0465,
+      "final_score": 0.1573
+    },
+    {
+      "evidence_id": "policy:financial-review",
+      "source": "policy:financial-review",
+      "content": "Any issue with payment, refund, chargeback, or ledger mismatch must require human review unless deterministic checks fully reconcile the evidence.",
+      "metadata": {
+        "category": "policy"
+      },
+      "sparse_score": 0.0323,
+      "dense_score": 0.0213,
+      "final_score": 0.1129
+    }
+  ],
+  "distilled": {
+    "key_facts": [
+      "issue.behavior: Expected: Form should block submit and highlight the required field.",
+      "issue.summary: PAY-2000 Checkout warning triggered on missing field before authorization Client validation blocked submit before any payment event was sent.",
+      "attachment:examples\\input\\PAY-2000\\observability_note.txt: 2026-03-06 10:00:00 INFO request=req_2000 User retried checkout after browser refresh.",
+      "policy:bug-ready: A bug should include expected behavior, actual behavior, reproduction steps, environment, and affected version before it is marked ready for development.",
+      "policy:contradictions: If one artifact shows failure and another shows success for the same flow, the issue must be escalated for review."
+    ],
+    "preserved_quotes": [
+      "2026-03-06 10:00:00",
+      "2026-03-06 10:00:01",
+      "PAY-2000"
+    ],
+    "evidence": [
+      {
+        "evidence_id": "issue:expected_actual",
+        "source": "issue.behavior",
+        "content": "Expected: Form should block submit and highlight the required field.\nActual: A warning banner was shown and no backend transaction was created.",
+        "metadata": {
+          "category": "issue"
+        },
+        "sparse_score": 0.6452,
+        "dense_score": 0.6,
+        "final_score": 0.7471
+      },
+      {
+        "evidence_id": "issue:summary",
+        "source": "issue.summary",
+        "content": "PAY-2000 Checkout warning triggered on missing field before authorization Client validation blocked submit before any payment event was sent.",
+        "metadata": {
+          "category": "issue"
+        },
+        "sparse_score": 0.3548,
+        "dense_score": 0.3143,
+        "final_score": 0.6986
+      },
+      {
+        "evidence_id": "sha256:8bc5ec3656db0fd0afec44a3f1fcaf9a442d07ea61fc66a653184cf3e0dad2d7",
+        "source": "attachment:examples\\input\\PAY-2000\\observability_note.txt",
+        "content": "2026-03-06 10:00:00 INFO request=req_2000 User retried checkout after browser refresh.\n2026-03-06 10:00:01 INFO request=req_2000 No payment authorization created.\n2026-03-06 10:00:01 INFO request=req_2000 UI warning originated from client-side validation.\n",
+        "metadata": {
+          "category": "artifact",
+          "type": "text"
+        },
+        "sparse_score": 0.1935,
+        "dense_score": 0.1364,
+        "final_score": 0.4307
+      },
+      {
+        "evidence_id": "policy:bug-ready",
+        "source": "policy:bug-ready",
+        "content": "A bug should include expected behavior, actual behavior, reproduction steps, environment, and affected version before it is marked ready for development.",
+        "metadata": {
+          "category": "policy"
+        },
+        "sparse_score": 0.129,
+        "dense_score": 0.0909,
+        "final_score": 0.2438
+      },
+      {
+        "evidence_id": "policy:contradictions",
+        "source": "policy:contradictions",
+        "content": "If one artifact shows failure and another shows success for the same flow, the issue must be escalated for review.",
+        "metadata": {
+          "category": "policy"
+        },
+        "sparse_score": 0.0645,
+        "dense_score": 0.0465,
+        "final_score": 0.1573
+      },
+      {
+        "evidence_id": "policy:financial-review",
+        "source": "policy:financial-review",
+        "content": "Any issue with payment, refund, chargeback, or ledger mismatch must require human review unless deterministic checks fully reconcile the evidence.",
+        "metadata": {
+          "category": "policy"
+        },
+        "sparse_score": 0.0323,
+        "dense_score": 0.0213,
+        "final_score": 0.1129
+      }
+    ]
+  },
+  "decision": {
+    "issue_key": "PAY-2000",
+    "classification": "not_bug",
+    "is_bug": false,
+    "is_complete": false,
+    "ready_for_dev": false,
+    "missing_items": [
+      "reproduction_steps"
+    ],
+    "evidence_used": [
+      "issue.behavior",
+      "issue.summary",
+      "attachment:examples\\input\\PAY-2000\\observability_note.txt",
+      "policy:bug-ready",
+      "policy:contradictions"
+    ],
+    "contradictions": [],
+    "financial_impact_detected": true,
+    "confidence": 0.76,
+    "requires_human_review": true,
+    "provider": "mock",
+    "model": "mock-judge-v1",
+    "rationale": "Missing required fields: reproduction_steps",
+    "audit_path": null,
+    "generated_at": "2026-03-07T10:40:31.948920Z"
+  }
+}

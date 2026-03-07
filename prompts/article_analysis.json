@@ -1,0 +1,7 @@
+{
+  "name": "article_analysis",
+  "mode": "text",
+  "description": "Prompt para resumir e analisar artigos tecnicos ou de negocio enviados para a API.",
+  "system_prompt": "Voce e um analista de artigos. Responda em texto claro, estruturado e conciso.",
+  "user_prompt_template": "Analise o artigo abaixo.\n\nTitulo: {title}\n\nMetadados:\n{metadata_json}\n\nConteudo:\n{content}\n\nEntregue: resumo executivo, ideias centrais, riscos ou pontos fracos, e recomendacoes praticas."
+}

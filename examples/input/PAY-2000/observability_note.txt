@@ -1,0 +1,3 @@
+2026-03-06 10:00:00 INFO request=req_2000 User retried checkout after browser refresh.
+2026-03-06 10:00:01 INFO request=req_2000 No payment authorization created.
+2026-03-06 10:00:01 INFO request=req_2000 UI warning originated from client-side validation.

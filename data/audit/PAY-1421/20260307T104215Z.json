@@ -1,0 +1,320 @@
+{
+  "issue": {
+    "issue_key": "PAY-1421",
+    "summary": "PIX payment shows failure but customer may have been charged",
+    "description": "Customer saw payment failed but ledger suggests capture succeeded.",
+    "comments": [],
+    "acceptance_criteria": [],
+    "reproduction_steps": [],
+    "expected_behavior": "The UI should confirm a successful payment exactly once.",
+    "actual_behavior": "The UI showed failure after authorization.",
+    "priority": "High",
+    "issue_type": "Bug",
+    "status": "Triagem",
+    "project": "PAY",
+    "component": "checkout",
+    "service": "payment-service",
+    "environment": "prod",
+    "affected_version": "2.4.1",
+    "labels": [
+      "pix",
+      "financeiro"
+    ],
+    "issue_links": [],
+    "attachments": [],
+    "changelog": [],
+    "collected_at": "2026-03-07T10:42:15.230161Z"
+  },
+  "attachment_facts": {
+    "issue_key": "PAY-1421",
+    "artifacts": [
+      {
+        "artifact_id": "sha256:a8310fed9f3a7d18c1f9a827fa5f9dceeaf6ecebb620813942031513bedfc5c4",
+        "artifact_type": "text",
+        "source_path": "examples\\input\\PAY-1421\\payment_logs.txt",
+        "extracted_text": "2026-03-06 09:11:41 INFO trace=abc123 request=req_91 Authorization created for PAY-1421 amount=120,50\n2026-03-06 09:11:42 ERROR trace=abc123 UI response failed with message \"Erro ao processar pagamento\"\n2026-03-06 09:11:43 INFO trace=abc123 Ledger captured payment successfully for txn=9F01AA44 amount=120,50\n",
+        "facts": {
+          "ids": [
+            "9F01AA44",
+            "PAY-1421",
+            "req_91"
+          ],
+          "timestamps": [
+            "2026-03-06 09:11:41",
+            "2026-03-06 09:11:42",
+            "2026-03-06 09:11:43"
+          ],
+          "amounts": [
+            120.5,
+            120.5
+          ],
+          "error_lines": [
+            "2026-03-06 09:11:42 ERROR trace=abc123 UI response failed with message \"Erro ao processar pagamento\""
+          ],
+          "artifact_name": "payment_logs.txt"
+        },
+        "confidence": 0.92
+      },
+      {
+        "artifact_id": "sha256:c248c70e9debbaf4428d0e5d6caad902847fd566f7251e0f2256512b30be2035",
+        "artifact_type": "spreadsheet",
+        "source_path": "examples\\input\\PAY-1421\\reconciliation.csv",
+        "extracted_text": "transaction_id,status,charged_amount,ledger_amount\r\n9F01AA44,failed,120.5,120.5\r\n9F01AA44,captured,120.5,120.5\r\n",
+        "facts": {
+          "row_count": 2,
+          "columns": [
+            "transaction_id",
+            "status",
+            "charged_amount",
+            "ledger_amount"
+          ],
+          "amount_sums": {
+            "charged_amount": 241.0,
+            "ledger_amount": 241.0
+          },
+          "total_amount": 482.0,
+          "status_counts": {
+            "failed": 1,
+            "captured": 1
+          },
+          "artifact_name": "reconciliation.csv"
+        },
+        "confidence": 0.95
+      }
+    ],
+    "contradictions": [
+      "Spreadsheet contains both captured and failed payment rows",
+      "UI or artifact failure evidence conflicts with backend success evidence"
+    ],
+    "missing_information": []
+  },
+  "rule_evaluation": {
+    "missing_items": [
+      "reproduction_steps"
+    ],
+    "contradictions": [
+      "Spreadsheet contains both captured and failed payment rows",
+      "UI or artifact failure evidence conflicts with backend success evidence"
+    ],
+    "financial_impact_detected": true,
+    "requires_human_review": true,
+    "results": [
+      {
+        "rule_name": "financial_impact_detected",
+        "severity": "critical",
+        "message": "Issue contains financial language or monetary evidence",
+        "metadata": {}
+      }
+    ]
+  },
+  "retrieved": [
+    {
+      "evidence_id": "sha256:a8310fed9f3a7d18c1f9a827fa5f9dceeaf6ecebb620813942031513bedfc5c4",
+      "source": "attachment:examples\\input\\PAY-1421\\payment_logs.txt",
+      "content": "2026-03-06 09:11:41 INFO trace=abc123 request=req_91 Authorization created for PAY-1421 amount=120,50\n2026-03-06 09:11:42 ERROR trace=abc123 UI response failed with message \"Erro ao processar pagamento\"\n2026-03-06 09:11:43 INFO trace=abc123 Ledger captured payment successfully for txn=9F01AA44 amount=120,50\n",
+      "metadata": {
+        "category": "artifact",
+        "type": "text"
+      },
+      "sparse_score": 0.3016,
+      "dense_score": 0.3016,
+      "final_score": 0.7916
+    },
+    {
+      "evidence_id": "issue:summary",
+      "source": "issue.summary",
+      "content": "PAY-1421 PIX payment shows failure but customer may have been charged Customer saw payment failed but ledger suggests capture succeeded.",
+      "metadata": {
+        "category": "issue"
+      },
+      "sparse_score": 0.2063,
+      "dense_score": 0.2182,
+      "final_score": 0.5711
+    },
+    {
+      "evidence_id": "issue:expected_actual",
+      "source": "issue.behavior",
+      "content": "Expected: The UI should confirm a successful payment exactly once.\nActual: The UI showed failure after authorization.",
+      "metadata": {
+        "category": "issue"
+      },
+      "sparse_score": 0.2381,
+      "dense_score": 0.25,
+      "final_score": 0.3629
+    },
+    {
+      "evidence_id": "policy:contradictions",
+      "source": "policy:contradictions",
+      "content": "If one artifact shows failure and another shows success for the same flow, the issue must be escalated for review.",
+      "metadata": {
+        "category": "policy"
+      },
+      "sparse_score": 0.1111,
+      "dense_score": 0.0984,
+      "final_score": 0.266
+    },
+    {
+      "evidence_id": "sha256:c248c70e9debbaf4428d0e5d6caad902847fd566f7251e0f2256512b30be2035",
+      "source": "attachment:examples\\input\\PAY-1421\\reconciliation.csv",
+      "content": "transaction_id,status,charged_amount,ledger_amount\r\n9F01AA44,failed,120.5,120.5\r\n9F01AA44,captured,120.5,120.5\r\n",
+      "metadata": {
+        "category": "artifact",
+        "type": "spreadsheet"
+      },
+      "sparse_score": 0.0476,
+      "dense_score": 0.0545,
+      "final_score": 0.2254
+    },
+    {
+      "evidence_id": "policy:financial-review",
+      "source": "policy:financial-review",
+      "content": "Any issue with payment, refund, chargeback, or ledger mismatch must require human review unless deterministic checks fully reconcile the evidence.",
+      "metadata": {
+        "category": "policy"
+      },
+      "sparse_score": 0.0635,
+      "dense_score": 0.0606,
+      "final_score": 0.1923
+    },
+    {
+      "evidence_id": "policy:bug-ready",
+      "source": "policy:bug-ready",
+      "content": "A bug should include expected behavior, actual behavior, reproduction steps, environment, and affected version before it is marked ready for development.",
+      "metadata": {
+        "category": "policy"
+      },
+      "sparse_score": 0.0476,
+      "dense_score": 0.0448,
+      "final_score": 0.1615
+    }
+  ],
+  "distilled": {
+    "key_facts": [
+      "attachment:examples\\input\\PAY-1421\\payment_logs.txt: 2026-03-06 09:11:41 INFO trace=abc123 request=req_91 Authorization created for PAY-1421 amount=120,50\n2026-03-06 09:11:42 ERROR trace=abc123 UI response failed with message \"Erro ao processar pagamento\"\n2026-03-06 09:11:",
+      "issue.summary: PAY-1421 PIX payment shows failure but customer may have been charged Customer saw payment failed but ledger suggests capture succeeded.",
+      "issue.behavior: Expected: The UI should confirm a successful payment exactly once.",
+      "policy:contradictions: If one artifact shows failure and another shows success for the same flow, the issue must be escalated for review.",
+      "attachment:examples\\input\\PAY-1421\\reconciliation.csv: transaction_id,status,charged_amount,ledger_amount\r\n9F01AA44,failed,120.5,120.5\r\n9F01AA44,captured,120.5,120.5",
+      "contradiction: Spreadsheet contains both captured and failed payment rows",
+      "contradiction: UI or artifact failure evidence conflicts with backend success evidence"
+    ],
+    "preserved_quotes": [
+      "120,50",
+      "2026-03-06 09:11:41",
+      "2026-03-06 09:11:42",
+      "2026-03-06 09:11:43",
+      "5,12",
+      "PAY-1421"
+    ],
+    "evidence": [
+      {
+        "evidence_id": "sha256:a8310fed9f3a7d18c1f9a827fa5f9dceeaf6ecebb620813942031513bedfc5c4",
+        "source": "attachment:examples\\input\\PAY-1421\\payment_logs.txt",
+        "content": "2026-03-06 09:11:41 INFO trace=abc123 request=req_91 Authorization created for PAY-1421 amount=120,50\n2026-03-06 09:11:42 ERROR trace=abc123 UI response failed with message \"Erro ao processar pagamento\"\n2026-03-06 09:11:43 INFO trace=abc123 Ledger captured payment successfully for txn=9F01AA44 amount=120,50\n",
+        "metadata": {
+          "category": "artifact",
+          "type": "text"
+        },
+        "sparse_score": 0.3016,
+        "dense_score": 0.3016,
+        "final_score": 0.7916
+      },
+      {
+        "evidence_id": "issue:summary",
+        "source": "issue.summary",
+        "content": "PAY-1421 PIX payment shows failure but customer may have been charged Customer saw payment failed but ledger suggests capture succeeded.",
+        "metadata": {
+          "category": "issue"
+        },
+        "sparse_score": 0.2063,
+        "dense_score": 0.2182,
+        "final_score": 0.5711
+      },
+      {
+        "evidence_id": "issue:expected_actual",
+        "source": "issue.behavior",
+        "content": "Expected: The UI should confirm a successful payment exactly once.\nActual: The UI showed failure after authorization.",
+        "metadata": {
+          "category": "issue"
+        },
+        "sparse_score": 0.2381,
+        "dense_score": 0.25,
+        "final_score": 0.3629
+      },
+      {
+        "evidence_id": "policy:contradictions",
+        "source": "policy:contradictions",
+        "content": "If one artifact shows failure and another shows success for the same flow, the issue must be escalated for review.",
+        "metadata": {
+          "category": "policy"
+        },
+        "sparse_score": 0.1111,
+        "dense_score": 0.0984,
+        "final_score": 0.266
+      },
+      {
+        "evidence_id": "sha256:c248c70e9debbaf4428d0e5d6caad902847fd566f7251e0f2256512b30be2035",
+        "source": "attachment:examples\\input\\PAY-1421\\reconciliation.csv",
+        "content": "transaction_id,status,charged_amount,ledger_amount\r\n9F01AA44,failed,120.5,120.5\r\n9F01AA44,captured,120.5,120.5\r\n",
+        "metadata": {
+          "category": "artifact",
+          "type": "spreadsheet"
+        },
+        "sparse_score": 0.0476,
+        "dense_score": 0.0545,
+        "final_score": 0.2254
+      },
+      {
+        "evidence_id": "policy:financial-review",
+        "source": "policy:financial-review",
+        "content": "Any issue with payment, refund, chargeback, or ledger mismatch must require human review unless deterministic checks fully reconcile the evidence.",
+        "metadata": {
+          "category": "policy"
+        },
+        "sparse_score": 0.0635,
+        "dense_score": 0.0606,
+        "final_score": 0.1923
+      },
+      {
+        "evidence_id": "policy:bug-ready",
+        "source": "policy:bug-ready",
+        "content": "A bug should include expected behavior, actual behavior, reproduction steps, environment, and affected version before it is marked ready for development.",
+        "metadata": {
+          "category": "policy"
+        },
+        "sparse_score": 0.0476,
+        "dense_score": 0.0448,
+        "final_score": 0.1615
+      }
+    ]
+  },
+  "decision": {
+    "issue_key": "PAY-1421",
+    "classification": "needs_review",
+    "is_bug": true,
+    "is_complete": false,
+    "ready_for_dev": false,
+    "missing_items": [
+      "reproduction_steps"
+    ],
+    "evidence_used": [
+      "attachment:examples\\input\\PAY-1421\\payment_logs.txt",
+      "issue.summary",
+      "issue.behavior",
+      "policy:contradictions",
+      "attachment:examples\\input\\PAY-1421\\reconciliation.csv"
+    ],
+    "contradictions": [
+      "Spreadsheet contains both captured and failed payment rows",
+      "UI or artifact failure evidence conflicts with backend success evidence"
+    ],
+    "financial_impact_detected": true,
+    "confidence": 0.72,
+    "requires_human_review": true,
+    "provider": "mock",
+    "model": "mock-judge-v1",
+    "rationale": "Failure evidence found in issue or artifacts; Backend success markers detected in evidence; Missing required fields: reproduction_steps; Contradictions: Spreadsheet contains both captured and failed payment rows, UI or artifact failure evidence conflicts with backend success evidence",
+    "audit_path": null,
+    "generated_at": "2026-03-07T10:42:15.241665Z"
+  }
+}

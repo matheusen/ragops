@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jira-issue-rag"
+version = "0.1.0"
+description = "Issue-centric evidence RAG for Jira bug validation and readiness assessment"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.116.0",
+  "httpx>=0.28.0",
+  "langgraph>=0.6.0",
+  "openpyxl>=3.1.5",
+  "orjson>=3.11.0",
+  "pandas>=2.3.0",
+  "pydantic>=2.11.0",
+  "pydantic-settings>=2.10.0",
+  "pypdf>=5.5.0",
+  "python-multipart>=0.0.20",
+  "tenacity>=9.1.0",
+  "uvicorn[standard]>=0.35.0"
+]
+
+[project.optional-dependencies]
+providers = [
+  "openai>=2.0.0",
+  "google-auth>=2.40.0",
+  "google-genai>=1.30.0"
+]
+retrieval = [
+  "qdrant-client>=1.15.0"
+]
+eval = [
+  "ragas>=0.3.0"
+]
+dev = [
+  "pytest>=8.4.0",
+  "pytest-asyncio>=1.1.0"
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

@@ -1,0 +1,3 @@
+2026-03-06 09:11:41 INFO trace=abc123 request=req_91 Authorization created for PAY-1421 amount=120,50
+2026-03-06 09:11:42 ERROR trace=abc123 UI response failed with message "Erro ao processar pagamento"
+2026-03-06 09:11:43 INFO trace=abc123 Ledger captured payment successfully for txn=9F01AA44 amount=120,50

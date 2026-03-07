@@ -1,0 +1,53 @@
+[
+  {
+    "issue": {
+      "issue_key": "PAY-1421",
+      "summary": "PIX payment shows failure but customer may have been charged",
+      "description": "Customer saw payment failed but ledger suggests capture succeeded.",
+      "expected_behavior": "The UI should confirm a successful payment exactly once.",
+      "actual_behavior": "The UI showed failure after authorization.",
+      "priority": "High",
+      "issue_type": "Bug",
+      "status": "Triagem",
+      "project": "PAY",
+      "component": "checkout",
+      "service": "payment-service",
+      "environment": "prod",
+      "affected_version": "2.4.1",
+      "labels": ["pix", "financeiro"]
+    },
+    "artifact_paths": [
+      "examples/input/PAY-1421/payment_logs.txt",
+      "examples/input/PAY-1421/reconciliation.csv"
+    ],
+    "expected_classification": "needs_review",
+    "expected_is_complete": true,
+    "expected_ready_for_dev": false,
+    "expected_missing_items": []
+  },
+  {
+    "issue": {
+      "issue_key": "PAY-2000",
+      "summary": "Checkout warning triggered on missing field before authorization",
+      "description": "Client validation blocked submit before any payment event was sent.",
+      "expected_behavior": "Form should block submit and highlight the required field.",
+      "actual_behavior": "A warning banner was shown and no backend transaction was created.",
+      "priority": "Medium",
+      "issue_type": "Task",
+      "status": "Triagem",
+      "project": "PAY",
+      "component": "checkout",
+      "service": "payment-service",
+      "environment": "prod",
+      "affected_version": "2.4.1",
+      "labels": ["ux"]
+    },
+    "artifact_paths": [
+      "examples/input/PAY-2000/observability_note.txt"
+    ],
+    "expected_classification": "not_bug",
+    "expected_is_complete": true,
+    "expected_ready_for_dev": false,
+    "expected_missing_items": []
+  }
+]

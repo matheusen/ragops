@@ -1,0 +1,82 @@
+from __future__ import annotations
+
+from jira_issue_rag.shared.models import AttachmentFacts, IssueCanonical, RuleEvaluation, RuleResult
+
+
+class RulesEngine:
+    def evaluate(self, issue: IssueCanonical, attachment_facts: AttachmentFacts) -> RuleEvaluation:
+        missing_items: list[str] = []
+        results: list[RuleResult] = []
+
+        required_values = {
+            "expected_result_detail": issue.expected_behavior,
+            "actual_result_detail": issue.actual_behavior,
+            "environment": issue.environment,
+            "affected_version_confirmation": issue.affected_version,
+        }
+        for label, value in required_values.items():
+            if not value:
+                missing_items.append(label)
+
+        if not issue.reproduction_steps:
+            missing_items.append("reproduction_steps")
+
+        if issue.issue_type.lower() != "bug":
+            results.append(
+                RuleResult(
+                    rule_name="issue_type_mismatch",
+                    severity="warning",
+                    message=f"Issue type is {issue.issue_type}, not Bug",
+                )
+            )
+
+        contradictions = list(attachment_facts.contradictions)
+        if attachment_facts.missing_information:
+            results.append(
+                RuleResult(
+                    rule_name="artifact_information_missing",
+                    severity="warning",
+                    message="Some artifacts could not be fully parsed",
+                    metadata={"items": attachment_facts.missing_information},
+                )
+            )
+
+        combined_text = " ".join(
+            [issue.summary, issue.description, issue.actual_behavior, issue.expected_behavior, " ".join(issue.labels)]
+            + [artifact.extracted_text for artifact in attachment_facts.artifacts]
+        ).lower()
+        financial_impact_detected = any(
+            token in combined_text for token in ("charge", "charged", "debit", "refund", "pix", "payment", "amount", "ledger")
+        )
+        if financial_impact_detected:
+            results.append(
+                RuleResult(
+                    rule_name="financial_impact_detected",
+                    severity="critical",
+                    message="Issue contains financial language or monetary evidence",
+                )
+            )
+
+        for artifact in attachment_facts.artifacts:
+            amount_sums = artifact.facts.get("amount_sums") or {}
+            if len(amount_sums) >= 2:
+                values = list(amount_sums.values())
+                if max(values) - min(values) > 0.01:
+                    contradictions.append(f"Financial totals mismatch in {artifact.source_path}")
+                    results.append(
+                        RuleResult(
+                            rule_name="financial_sum_mismatch",
+                            severity="critical",
+                            message=f"Detected mismatch between spreadsheet totals in {artifact.source_path}",
+                            metadata={"amount_sums": amount_sums},
+                        )
+                    )
+
+        requires_human_review = bool(contradictions) or financial_impact_detected or bool(attachment_facts.missing_information)
+        return RuleEvaluation(
+            missing_items=sorted(set(missing_items)),
+            contradictions=sorted(set(contradictions)),
+            financial_impact_detected=financial_impact_detected,
+            requires_human_review=requires_human_review,
+            results=results,
+        )

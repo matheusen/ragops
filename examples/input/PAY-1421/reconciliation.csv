@@ -1,0 +1,3 @@
+transaction_id,status,charged_amount,ledger_amount
+9F01AA44,failed,120.50,120.50
+9F01AA44,captured,120.50,120.50
