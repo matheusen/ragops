@@ -442,14 +442,13 @@ function FilesTab() {
   }
 
   async function handleRun() {
-    const key = issueKey.trim().toUpperCase();
-    if (!files.length || !key || !summary.trim()) return;
+    if (!files.length) return;
     setRunning(true); setRunErr(null); setResult(null);
     try {
       const fd = new FormData();
-      fd.append("issue_key", key);
-      fd.append("summary", summary.trim());
-      fd.append("description", description.trim());
+      if (issueKey.trim())  fd.append("issue_key",   issueKey.trim().toUpperCase());
+      if (summary.trim())   fd.append("summary",     summary.trim());
+      if (description.trim()) fd.append("description", description.trim());
       fd.append("issue_type", issueType);
       if (priority)   fd.append("priority",    priority);
       if (provider)   fd.append("provider",    provider);
@@ -472,7 +471,7 @@ function FilesTab() {
     }
   }
 
-  const canRun = files.length > 0 && issueKey.trim() !== "" && summary.trim() !== "";
+  const canRun = files.length > 0;
 
   const fmtSize = (b: number) =>
     b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1048576).toFixed(1)} MB`;
@@ -552,10 +551,10 @@ function FilesTab() {
 
       <div className="rp__row rp__row--2">
         <label className="rp__field">
-          <span className="rp__label">Issue Key <span className="rp__required">*</span></span>
+          <span className="rp__label">Issue Key <span className="rp__optional">(opcional)</span></span>
           <input
             className="rp__input rp__input--mono"
-            placeholder="PAY-1421"
+            placeholder="ex: PAY-1421 — gerado automaticamente se vazio"
             value={issueKey}
             onChange={(e) => setIssueKey(e.target.value.toUpperCase())}
           />
@@ -573,10 +572,10 @@ function FilesTab() {
       </div>
 
       <label className="rp__field">
-        <span className="rp__label">Summary <span className="rp__required">*</span></span>
+        <span className="rp__label">Summary <span className="rp__optional">(opcional)</span></span>
         <input
           className="rp__input"
-          placeholder="Título da issue"
+          placeholder="Título — derivado dos nomes dos arquivos se vazio"
           value={summary}
           onChange={(e) => setSummary(e.target.value)}
         />
@@ -656,7 +655,7 @@ export function RunPanel() {
       <div className="rp__tab-desc">
         {tab === "jira"   && "Busca uma issue diretamente no Jira e executa o pipeline completo."}
         {tab === "manual" && "Preencha os dados da issue manualmente para testar sem Jira."}
-        {tab === "files"  && "Selecione um ou mais arquivos do computador (logs, CSVs, PDFs) e valide a issue."}
+        {tab === "files"  && "Selecione um ou mais arquivos. Issue key e summary são opcionais — gerados automaticamente se vazios."}
       </div>
 
       {/* Tab content */}

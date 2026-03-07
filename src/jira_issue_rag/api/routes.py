@@ -108,8 +108,8 @@ def validate_folder(
     ),
 )
 def validate_upload(
-    issue_key: str = Form(...),
-    summary: str = Form(...),
+    issue_key: str | None = Form(None),
+    summary: str | None = Form(None),
     description: str = Form(""),
     issue_type: str = Form("Bug"),
     priority: str | None = Form(None),
@@ -118,18 +118,25 @@ def validate_upload(
     files: list[UploadFile] = File(...),
     workflow: ValidationWorkflow = Depends(get_workflow),
 ) -> DecisionResult:
+    import uuid
     from jira_issue_rag.shared.models import IssueCanonical
 
     tmpdir = tempfile.mkdtemp(prefix="ragflow_upload_")
     try:
+        saved_names: list[str] = []
         for upload in files:
-            dest = Path(tmpdir) / (upload.filename or "file")
+            fname = upload.filename or "file"
+            dest = Path(tmpdir) / fname
             with dest.open("wb") as fh:
                 shutil.copyfileobj(upload.file, fh)
+            saved_names.append(fname)
+
+        effective_key = (issue_key.upper().strip() if issue_key and issue_key.strip() else f"UPLOAD-{uuid.uuid4().hex[:6].upper()}")
+        effective_summary = (summary.strip() if summary and summary.strip() else f"Upload: {', '.join(saved_names[:3])}{'...' if len(saved_names) > 3 else ''}")
 
         issue = IssueCanonical(
-            issue_key=issue_key.upper().strip(),
-            summary=summary,
+            issue_key=effective_key,
+            summary=effective_summary,
             description=description,
             issue_type=issue_type,
             priority=priority or None,
