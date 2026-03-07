@@ -326,3 +326,100 @@ class PromptInfoResponse(BaseModel):
     name: str
     mode: Literal["decision", "text"]
     description: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Pipeline Canvas — flow run
+# ---------------------------------------------------------------------------
+
+class FlowNodeState(BaseModel):
+    """Minimal snapshot of one canvas node sent from the dashboard."""
+
+    id: str
+    """Node id as defined in NODE_CATALOG (e.g. 'provider', 'reranker')."""
+
+    active: bool = True
+    """Whether the node is toggled on (optional nodes can be disabled)."""
+
+    selected_variant: str | None = None
+    """Label of the chosen variant, e.g. 'GPT-4o', 'Hybrid BM25+Dense'."""
+
+
+class FlowRunRequest(BaseModel):
+    """Run a full validation using the pipeline configuration from the canvas."""
+
+    nodes: list[FlowNodeState] = Field(
+        description="Ordered list of active/inactive canvas nodes with their variant selections."
+    )
+    validation: ValidationRequest
+    """The issue + artefact paths to validate."""
+
+
+class FlowDescribeRequest(BaseModel):
+    """Describe what a canvas configuration would do without running it."""
+
+    nodes: list[FlowNodeState]
+
+
+class FlowDescribeResponse(BaseModel):
+    provider: str
+    llm_model: str
+    embedding_model: str
+    retrieval: dict[str, bool]
+    reranker: bool
+    confidentiality: bool
+    langgraph: bool
+    dspy_active: bool
+    ragas_active: bool
+
+
+# ---------------------------------------------------------------------------
+# Articles — ingestão e busca em PDFs
+# ---------------------------------------------------------------------------
+
+class ArticleChunk(BaseModel):
+    chunk_id: str
+    doc_id: str
+    chunk_index: int
+    content: str
+    topics: list[str] = Field(default_factory=list)
+
+
+class ArticleIngestRequest(BaseModel):
+    paths: list[str] = Field(description="Caminhos absolutos dos PDFs/TXTs a ingerir.")
+    titles: list[str] | None = Field(
+        default=None,
+        description="Títulos opcionais, um por arquivo. Se omitido, usa o nome do arquivo.",
+    )
+    collection: str = Field(default="articles", description="Coleção Qdrant alvo.")
+
+
+class ArticleIngestResponse(BaseModel):
+    doc_id: str
+    title: str
+    path: str
+    chunks_indexed: int
+    topics: list[str] = Field(default_factory=list)
+    ok: bool = True
+    error: str | None = None
+
+
+class ArticleSearchRequest(BaseModel):
+    query: str
+    top_k: int = Field(default=8, ge=1, le=50)
+    collection: str = "articles"
+
+
+class ArticleSearchResult(BaseModel):
+    chunk_id: str
+    doc_id: str
+    title: str
+    chunk_index: int
+    content: str
+    topics: list[str] = Field(default_factory=list)
+    score: float
+    source_path: str = ""
+
+
+class ArticleRelatedRequest(BaseModel):
+    limit: int = Field(default=5, ge=1, le=20)

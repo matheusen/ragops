@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -524,6 +524,225 @@ function LoadPanel({
   );
 }
 
+// ── Run Flow panel ───────────────────────────────────────────────────────────
+type FlowDescription = {
+  provider: string; llm_model: string; embedding_model: string;
+  retrieval: { external: boolean; graphrag: boolean; cascade: boolean };
+  reranker: boolean; confidentiality: boolean; langgraph: boolean;
+  dspy_active: boolean; ragas_active: boolean;
+};
+
+type RunDecisionResult = {
+  issue_key: string;
+  classification: "bug" | "not_bug" | "needs_review";
+  is_bug: boolean; is_complete: boolean; ready_for_dev: boolean;
+  missing_items: string[]; evidence_used: string[]; contradictions: string[];
+  financial_impact_detected: boolean; confidence: number;
+  requires_human_review: boolean; provider: string; model: string; rationale: string;
+};
+
+function buildFlowNodePayload(nodes: PipelineNode[]) {
+  return nodes.map((n) => {
+    const entry = NODE_CATALOG.find((c) => c.id === n.id);
+    const variantLabel = entry?.variants?.find((v) => v.id === n.data.selectedVariant)?.label ?? null;
+    return { id: n.id, active: n.data.active, selected_variant: variantLabel };
+  });
+}
+
+function RunFlowPanel({
+  nodes, onClose,
+}: { nodes: PipelineNode[]; onClose: () => void }) {
+  const [issueKey,     setIssueKey]     = useState("PAY-0001");
+  const [summary,      setSummary]      = useState("");
+  const [description,  setDescription]  = useState("");
+  const [desc,         setDesc]         = useState<FlowDescription | null>(null);
+  const [descLoading,  setDescLoading]  = useState(false);
+  const [running,      setRunning]      = useState(false);
+  const [result,       setResult]       = useState<RunDecisionResult | null>(null);
+  const [error,        setError]        = useState<string | null>(null);
+
+  const apiBase = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000") + "/api/v1";
+  const payload = buildFlowNodePayload(nodes);
+
+  useEffect(() => {
+    setDescLoading(true);
+    fetch(`${apiBase}/run-flow/describe`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nodes: payload }),
+    })
+      .then((r) => r.json())
+      .then((d: FlowDescription) => setDesc(d))
+      .catch(() => setDesc(null))
+      .finally(() => setDescLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleRun = async () => {
+    if (!issueKey.trim() || !summary.trim()) return;
+    setRunning(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await fetch(`${apiBase}/run-flow`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nodes: payload,
+          validation: {
+            issue: {
+              issue_key: issueKey.trim(),
+              summary: summary.trim(),
+              description: description.trim(),
+            },
+          },
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setResult(await res.json() as RunDecisionResult);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const classColor  = { bug: "#ef4444", not_bug: "#10b981", needs_review: "#f59e0b" };
+  const classLabel  = { bug: "Bug confirmado", not_bug: "Não é bug", needs_review: "Revisão humana" };
+
+  return (
+    <div className="pc__modal-overlay" onClick={onClose}>
+      <div className="pc__modal pc__modal--run" onClick={(e) => e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="pc__modal-header">
+          <h3>▶ Executar pipeline</h3>
+          <button className="pc__sb-close" onClick={onClose}>✕</button>
+        </div>
+
+        {/* Config preview strip */}
+        <div className="pc__run-preview">
+          {descLoading && <span className="pc__run-desc-loading">A carregar configuração…</span>}
+          {desc && !descLoading && (
+            <div className="pc__run-desc-chips">
+              <span className="pc__run-chip pc__run-chip--provider">
+                {desc.provider} · {desc.llm_model}
+              </span>
+              {desc.retrieval.external && <span className="pc__run-chip">Qdrant</span>}
+              {desc.retrieval.graphrag  && <span className="pc__run-chip pc__run-chip--graph">Neo4j GraphRAG</span>}
+              {desc.reranker            && <span className="pc__run-chip">Reranker ✓</span>}
+              {!desc.retrieval.external && <span className="pc__run-chip pc__run-chip--warn">In-memory</span>}
+              {desc.confidentiality     && <span className="pc__run-chip pc__run-chip--safe">🔒 Confidencial</span>}
+              {desc.ragas_active        && <span className="pc__run-chip">RAGAS ✓</span>}
+            </div>
+          )}
+        </div>
+
+        {/* Body */}
+        <div className="pc__modal-body">
+          {!result ? (
+            <>
+              <label className="pc__modal-label">Issue Key</label>
+              <input
+                className="pc__modal-input"
+                placeholder="PAY-1421"
+                value={issueKey}
+                onChange={(e) => setIssueKey(e.target.value)}
+              />
+              <label className="pc__modal-label" style={{ marginTop: ".75rem" }}>Sumário *</label>
+              <input
+                className="pc__modal-input"
+                placeholder="Ex: Payment reconciliation mismatch on ledger export"
+                value={summary}
+                onChange={(e) => setSummary(e.target.value)}
+              />
+              <label className="pc__modal-label" style={{ marginTop: ".75rem" }}>Descrição</label>
+              <textarea
+                className="pc__modal-input pc__modal-textarea"
+                rows={3}
+                placeholder="Contexto adicional, comportamento esperado vs actual…"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+              {error && <p className="pc__run-error">{error}</p>}
+            </>
+          ) : (
+            <div className="pc__run-result">
+              {/* Classification banner */}
+              <div
+                className="pc__rr-banner"
+                style={{
+                  background: (classColor[result.classification] ?? "#888") + "18",
+                  borderColor: classColor[result.classification] ?? "#888",
+                }}
+              >
+                <span className="pc__rr-class" style={{ color: classColor[result.classification] ?? "#888" }}>
+                  {classLabel[result.classification] ?? result.classification}
+                </span>
+                <span className="pc__rr-conf">{Math.round(result.confidence * 100)}% confiança</span>
+              </div>
+              {/* Status chips */}
+              <div className="pc__rr-chips">
+                {result.is_complete          && <span className="pc__run-chip">Completo ✓</span>}
+                {result.ready_for_dev        && <span className="pc__run-chip pc__run-chip--provider">Pronto p/ dev ✓</span>}
+                {result.financial_impact_detected && <span className="pc__run-chip pc__run-chip--warn">⚠ Impacto financeiro</span>}
+                {result.requires_human_review && <span className="pc__run-chip pc__run-chip--warn">👁 Revisão humana</span>}
+                <span className="pc__run-chip">{result.provider} · {result.model}</span>
+              </div>
+              {/* Rationale */}
+              {result.rationale && (
+                <div className="pc__rr-section">
+                  <div className="pc__rr-label">Rationale</div>
+                  <p className="pc__rr-text">{result.rationale}</p>
+                </div>
+              )}
+              {/* Missing items */}
+              {result.missing_items.length > 0 && (
+                <div className="pc__rr-section">
+                  <div className="pc__rr-label">Itens faltando</div>
+                  <ul className="pc__rr-list">
+                    {result.missing_items.map((m, i) => <li key={i}>{m}</li>)}
+                  </ul>
+                </div>
+              )}
+              {/* Contradictions */}
+              {result.contradictions.length > 0 && (
+                <div className="pc__rr-section">
+                  <div className="pc__rr-label">Contradições detectadas</div>
+                  <ul className="pc__rr-list pc__rr-list--warn">
+                    {result.contradictions.map((c, i) => <li key={i}>{c}</li>)}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="pc__modal-footer">
+          {result ? (
+            <>
+              <button className="btn-sm" onClick={() => { setResult(null); setError(null); }}>← Novo run</button>
+              <button className="btn-sm" onClick={onClose}>Fechar</button>
+            </>
+          ) : (
+            <>
+              <button className="btn-sm" onClick={onClose}>Cancelar</button>
+              <button
+                className="btn-sm btn-sm--run"
+                disabled={!issueKey.trim() || !summary.trim() || running}
+                onClick={handleRun}
+              >
+                {running ? "Executando…" : "▶ Executar"}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main canvas ────────────────────────────────────────────────────────────────
 export function PipelineCanvas({ initialFlows = [] }: { initialFlows?: SavedFlow[] }) {
   const [nodes, setNodes, onNodesChange] = useNodesState<PipelineNode>(buildDefaultNodes());
@@ -531,6 +750,7 @@ export function PipelineCanvas({ initialFlows = [] }: { initialFlows?: SavedFlow
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [showSave,   setShowSave]   = useState(false);
   const [showLoad,   setShowLoad]   = useState(false);
+  const [showRun,    setShowRun]    = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [flows, setFlows] = useState<SavedFlow[]>(initialFlows);
 
@@ -638,6 +858,9 @@ export function PipelineCanvas({ initialFlows = [] }: { initialFlows?: SavedFlow
             <button className="btn-sm btn-sm--primary" onClick={() => { setSaveStatus("idle"); setShowSave(true); }}>
               💾 Salvar flow
             </button>
+            <button className="btn-sm btn-sm--run" onClick={() => setShowRun(true)}>
+              ▶ Run flow
+            </button>
             <button className="btn-sm" onClick={handleReset} title="Resetar para o layout padrão">
               ↺ Resetar
             </button>
@@ -665,6 +888,14 @@ export function PipelineCanvas({ initialFlows = [] }: { initialFlows?: SavedFlow
           node={selectedNode}
           onClose={() => setSelectedNodeId(null)}
           onUpdate={handleUpdateNodeData}
+        />
+      )}
+
+      {/* Run modal */}
+      {showRun && (
+        <RunFlowPanel
+          nodes={nodes}
+          onClose={() => setShowRun(false)}
         />
       )}
 

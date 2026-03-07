@@ -1,0 +1,32 @@
+# ── Local articles / research material ────────────────────────────────────────
+artigos medium/
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Environment / secrets ─────────────────────────────────────────────────────
+.env
+*.local
+
+# ── Google / service account credentials ─────────────────────────────────────
+*.json
+!examples/**/*.json
+!data/**/*.json
+!prompts/**/*.json
+
+# ── OS / editor ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
