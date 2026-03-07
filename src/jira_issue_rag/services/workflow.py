@@ -9,6 +9,7 @@ from jira_issue_rag.services.jira import JiraClient
 from jira_issue_rag.services.langgraph_workflow import LangGraphValidationRunner
 from jira_issue_rag.services.normalization import IssueNormalizer
 from jira_issue_rag.services.qdrant_store import QdrantStore
+from jira_issue_rag.services.neo4j_store import Neo4jGraphStore
 from jira_issue_rag.services.retrieval import HybridRetriever
 from jira_issue_rag.services.rules import RulesEngine
 from jira_issue_rag.shared.models import (
@@ -38,13 +39,14 @@ class ValidationWorkflowCore:
         settings.enforce_runtime_policy()
         self.settings = settings
         self.normalizer = IssueNormalizer()
-        self.artifacts = ArtifactPipeline()
+        self.artifacts = ArtifactPipeline(settings=settings)
         self.rules = RulesEngine()
         self.retriever = HybridRetriever(settings)
         self.router = ProviderRouter(settings)
         self.audit = AuditStore(settings.audit_dir)
         self.jira = JiraClient(settings)
         self.qdrant = QdrantStore(settings)
+        self.neo4j = Neo4jGraphStore(settings)
 
 
 class ValidationWorkflow(ValidationWorkflowCore):
@@ -198,4 +200,6 @@ class ValidationWorkflow(ValidationWorkflowCore):
         decision.audit_path = audit_path
         if self.qdrant.is_available():
             self.qdrant.index_issue_package(normalized_issue, attachment_facts)
+        if self.neo4j.is_available():
+            self.neo4j.index_issue(normalized_issue)
         return decision

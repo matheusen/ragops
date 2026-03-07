@@ -13,6 +13,7 @@ from jira_issue_rag.shared.models import (
     RuleEvaluation,
 )
 from jira_issue_rag.services.qdrant_store import QdrantStore
+from jira_issue_rag.services.neo4j_store import Neo4jGraphStore
 
 
 TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_./:-]+")
@@ -39,6 +40,7 @@ class HybridRetriever:
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings
         self.qdrant = QdrantStore(settings) if settings and settings.enable_external_retrieval else None
+        self.neo4j = Neo4jGraphStore(settings) if settings and settings.enable_graphrag else None  # type: ignore[attr-defined]
         self.reranker = Reranker() if not settings or settings.enable_reranker else None
 
     def build_query(self, issue: IssueCanonical, attachment_facts: AttachmentFacts, rules: RuleEvaluation) -> str:
@@ -66,7 +68,17 @@ class HybridRetriever:
         query = self.build_query(issue, attachment_facts, rules)
         query_tokens = self._tokenize(query)
         documents = self._build_documents(issue, attachment_facts)
-        external_results = self.qdrant.search(query, issue, limit=top_k) if self.qdrant else []
+        # Qdrant: cascade (quantized two-pass) or regular hybrid search
+        if self.qdrant and self.settings and self.settings.enable_cascade_retrieval:  # type: ignore[attr-defined]
+            external_results = self.qdrant.cascade_search(query, issue, limit=top_k)
+        elif self.qdrant:
+            external_results = self.qdrant.search(query, issue, limit=top_k)
+        else:
+            external_results = []
+        # Neo4j GraphRAG neighbourhood results
+        graph_results: list[RetrievedEvidence] = []
+        if self.neo4j and self.neo4j.is_available():
+            graph_results = self.neo4j.search_related(issue, limit=top_k // 2 or 4)
 
         ranked: list[RetrievedEvidence] = []
         for evidence_id, source, content, metadata in documents:
@@ -96,6 +108,9 @@ class HybridRetriever:
             reranked.dense_score = round(self._dense_score(query_tokens, doc_tokens), 4)
             reranked.final_score = round(max(reranked.final_score, 0.65 * reranked.sparse_score + 0.35 * reranked.dense_score), 4)
             ranked.append(reranked)
+
+        for graph_ev in graph_results:
+            ranked.append(graph_ev)
 
         if self.reranker is None:
             return sorted(ranked, key=lambda item: item.final_score, reverse=True)[:top_k]

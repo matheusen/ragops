@@ -127,6 +127,9 @@ class GoldenDatasetEvaluator:
                 ]
             )
         ragas_metrics, ragas_runtime_available = self._compute_ragas_runtime_metrics(results) if use_ragas_runtime else ([], False)
+        classification_accuracy = classification_hits / total
+        threshold = getattr(getattr(self.workflow, "settings", None), "auto_improvement_threshold", 0.75)
+        needs_improvement = classification_accuracy < threshold
         return EvaluationResponse(
             dataset_path=str(path),
             total_examples=len(results),
@@ -134,7 +137,44 @@ class GoldenDatasetEvaluator:
             examples=results,
             ragas_metrics=ragas_metrics,
             ragas_runtime_available=ragas_runtime_available,
+            needs_improvement=needs_improvement,
         )
+
+    def auto_improve(
+        self,
+        golden_path: str | Path | None = None,
+        optimizer: str = "bootstrap",
+        provider: str = "openai",
+    ) -> dict:
+        """
+        Auto-improvement loop — from article: Criando arquitetura de treinamento
+        para agentes de IA com autoaperfeiçoamento.
+
+        Evaluates against the golden dataset; if classification_accuracy is below
+        auto_improvement_threshold, runs DSPy optimization and exports improved
+        prompt files back to the prompts/ directory.
+
+        Returns a dict with keys: triggered, dev_score, optimizer, exported_files.
+        """
+        from jira_issue_rag.services.dspy_optimizer import DSPyOptimizationLab
+
+        settings = getattr(self.workflow, "settings", None)
+        dataset = golden_path or (settings.golden_dataset_path if settings else "examples/golden_dataset.json")
+        result = self.evaluate(dataset)
+        if not result.needs_improvement:
+            return {"triggered": False, "dev_score": None, "optimizer": None, "exported_files": []}
+
+        lab = DSPyOptimizationLab(settings)
+        lab.configure_lm(provider=provider)
+        opt_result = lab.optimize(golden_path=dataset, optimizer=optimizer)
+        output_dir = settings.prompts_dir if settings else Path("prompts")
+        exported = lab.export_to_prompts(opt_result["program"], output_dir=output_dir)
+        return {
+            "triggered": True,
+            "dev_score": opt_result.get("dev_score"),
+            "optimizer": optimizer,
+            "exported_files": exported,
+        }
 
     def compare_scenarios(
         self,
@@ -308,32 +348,55 @@ class GoldenDatasetEvaluator:
         if not importlib.util.find_spec("ragas"):
             return [], False
 
-        from ragas.metrics.collections import BleuScore, ExactMatch, NonLLMStringSimilarity, RougeScore, StringPresence
+        try:
+            return self._compute_ragas_v3(results)
+        except Exception:  # pragma: no cover
+            return [], False
 
-        metrics_map = {
-            "ragas_exact_match": ExactMatch(),
-            "ragas_string_presence": StringPresence(),
-            "ragas_bleu": BleuScore(),
-            "ragas_rouge_l": RougeScore(rouge_type="rougeL", mode="fmeasure"),
-            "ragas_non_llm_similarity": NonLLMStringSimilarity(),
-        }
-
-        aggregates: dict[str, list[float]] = {name: [] for name in metrics_map}
-        for item in results:
-            reference = self._serialize_expected_result(item)
-            response = self._serialize_actual_result(item)
-            for name, metric in metrics_map.items():
-                score = metric.score(reference=reference, response=response)
-                value = getattr(score, "value", score)
-                aggregates[name].append(float(value))
-
-        return (
-            [
-                EvaluationMetric(name=name, value=sum(values) / max(len(values), 1))
-                for name, values in aggregates.items()
-            ],
-            True,
+    @staticmethod
+    def _compute_ragas_v3(results: list[EvaluationExampleResult]) -> tuple[list[EvaluationMetric], bool]:
+        """RAGAS v0.3+ evaluation using EvaluationDataset + evaluate()."""
+        from ragas import evaluate  # type: ignore[import-untyped]
+        from ragas.dataset_schema import EvaluationDataset, SingleTurnSample  # type: ignore[import-untyped]
+        from ragas.metrics import (  # type: ignore[import-untyped]
+            BleuScore,
+            ExactMatch,
+            NonLLMStringSimilarity,
+            RougeScore,
         )
+
+        samples = [
+            SingleTurnSample(
+                user_input=f"Classify issue {item.issue_key}: is it a bug, complete and ready for dev?",
+                response=(
+                    f"classification={item.actual_classification};"
+                    f"complete={item.actual_is_complete};"
+                    f"ready_for_dev={item.actual_ready_for_dev}"
+                ),
+                reference=(
+                    f"classification={item.expected_classification};"
+                    f"complete={item.expected_is_complete};"
+                    f"ready_for_dev={item.expected_ready_for_dev}"
+                ),
+            )
+            for item in results
+        ]
+        dataset = EvaluationDataset(samples=samples)
+        non_llm_metrics = [
+            ExactMatch(),
+            BleuScore(),
+            RougeScore(),
+            NonLLMStringSimilarity(),
+        ]
+        result = evaluate(dataset=dataset, metrics=non_llm_metrics)
+        # result behaves like a dict: {metric_name: float}
+        output: list[EvaluationMetric] = []
+        for metric_name, score in result.items():
+            try:
+                output.append(EvaluationMetric(name=f"ragas_{metric_name}", value=float(score)))
+            except (TypeError, ValueError):
+                pass
+        return output, True
 
     @staticmethod
     def _serialize_expected_result(result: EvaluationExampleResult) -> str:

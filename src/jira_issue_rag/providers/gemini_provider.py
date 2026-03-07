@@ -21,7 +21,11 @@ class GeminiProvider(LLMProvider):
         self.vertex_auth = GoogleVertexAuth(settings)
 
     def is_available(self) -> bool:
-        return self.vertex_auth.is_available()
+        return self.vertex_auth.is_available() or bool(self.settings.gemini_api_key)
+
+    def _use_direct_api(self) -> bool:
+        """Use the public Gemini API key instead of Vertex AI."""
+        return bool(self.settings.gemini_api_key) and not self.vertex_auth.is_available()
 
     @retry(
         stop=stop_after_attempt(3),
@@ -30,8 +34,8 @@ class GeminiProvider(LLMProvider):
         reraise=True,
     )
     def judge_issue(self, judge_input: JudgeInput) -> DecisionResult:
-        if not self.vertex_auth.is_available():
-            raise RuntimeError("Vertex AI configuration for Gemini is not available")
+        if not self.is_available():
+            raise RuntimeError("Gemini is not available: set GEMINI_API_KEY or configure Vertex AI credentials")
 
         output_text = self.run_prompt(
             system_prompt=(
@@ -50,25 +54,17 @@ class GeminiProvider(LLMProvider):
         return DecisionResult.model_validate({**normalized, "provider": self.provider_name, "model": self.model_name})
 
     def run_prompt(self, system_prompt: str, user_prompt: str, response_format: str = "text") -> str:
-        if not self.vertex_auth.is_available():
-            raise RuntimeError("Vertex AI configuration for Gemini is not available")
+        if not self.is_available():
+            raise RuntimeError("Gemini is not available: set GEMINI_API_KEY or configure Vertex AI credentials")
 
-        payload = {
+        payload: dict = {
             "systemInstruction": {
-                "parts": [
-                    {
-                        "text": system_prompt
-                    }
-                ]
+                "parts": [{"text": system_prompt}]
             },
             "contents": [
                 {
                     "role": "user",
-                    "parts": [
-                        {
-                            "text": user_prompt
-                        }
-                    ]
+                    "parts": [{"text": user_prompt}],
                 }
             ],
             "generationConfig": {
@@ -78,11 +74,25 @@ class GeminiProvider(LLMProvider):
         if response_format == "json":
             payload["generationConfig"]["responseSchema"] = decision_response_schema()
 
-        url = self.vertex_auth.build_generate_content_url(self.model_name)
-        with httpx.Client(timeout=45.0) as client:
-            response = client.post(url, headers=self.vertex_auth.build_headers(), json=payload)
-            response.raise_for_status()
-            data = response.json()
+        if self._use_direct_api():
+            url = (
+                f"https://generativelanguage.googleapis.com/v1beta/models"
+                f"/{self.model_name}:generateContent"
+            )
+            with httpx.Client(timeout=45.0) as client:
+                response = client.post(
+                    url,
+                    params={"key": self.settings.gemini_api_key},
+                    json=payload,
+                )
+                response.raise_for_status()
+                data = response.json()
+        else:
+            url = self.vertex_auth.build_generate_content_url(self.model_name)
+            with httpx.Client(timeout=45.0) as client:
+                response = client.post(url, headers=self.vertex_auth.build_headers(), json=payload)
+                response.raise_for_status()
+                data = response.json()
 
         return self._extract_output_text(data)
 

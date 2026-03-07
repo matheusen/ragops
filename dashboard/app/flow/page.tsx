@@ -1,31 +1,40 @@
-import { FlowTimeline } from "@/components/flow-timeline";
 import { PageHeader } from "@/components/page-header";
-import { ReportsList } from "@/components/reports-list";
 import { SectionCard } from "@/components/section-card";
 import { getDashboardData } from "@/lib/dashboard-data";
+import { getFlows } from "@/lib/flow-store";
+import { PipelineCanvasClient } from "@/components/pipeline-canvas-client";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export default async function FlowPage() {
-  const data = await getDashboardData();
+  const [data, flows] = await Promise.all([getDashboardData(), getFlows().catch(() => [])]);
 
   return (
-    <main className="page">
+    <main className="page page--flow">
       <PageHeader
         eyebrow="Flow"
-        title="Pipeline flow"
-        description="Orchestration timeline and evaluation comparison artifacts."
+        title="Pipeline canvas"
+        description="Monte, explore e salve configurações da pipeline RAG. Arraste nós, troque implementações e ative módulos opcionais."
       />
 
-      <div className="section-grid">
-        <SectionCard eyeline="Timeline" title="Application pipeline" description="Orchestration path as a design-forward timeline.">
-          <FlowTimeline steps={data.timeline} />
-        </SectionCard>
-
-        <SectionCard eyeline="Evaluation" title="Comparison reports" description="Scenario comparisons across retriever, reranker and provider choices.">
-          <ReportsList reports={data.comparisonReports} />
-        </SectionCard>
+      <div className="flow-canvas-wrapper">
+        <PipelineCanvasClient initialFlows={flows} />
       </div>
+
+      {data.comparisonReports.length > 0 && (
+        <div className="section-grid" style={{ marginTop: "2rem" }}>
+          <SectionCard eyeline="Evaluation" title="Comparison reports" description="Comparações entre configurações de retriever, reranker e provider.">
+            <ul className="reports-list">
+              {data.comparisonReports.map((r) => (
+                <li key={r.id} className="reports-list__item">
+                  <span className="reports-list__name">{r.name}</span>
+                </li>
+              ))}
+            </ul>
+          </SectionCard>
+        </div>
+      )}
     </main>
   );
 }

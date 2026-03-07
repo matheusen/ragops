@@ -24,7 +24,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={`${spaceGrotesk.variable} ${ibmPlexMono.variable}`}>
-      <body>
+      <body suppressHydrationWarning>
         <AppShell>{children}</AppShell>
       </body>
     </html>

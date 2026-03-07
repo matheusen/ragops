@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import base64
 import csv
 import hashlib
 import re
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+import httpx
 import pandas as pd
 
 try:
@@ -15,6 +17,9 @@ except Exception:  # pragma: no cover
 
 from jira_issue_rag.shared.models import ArtifactFact, AttachmentFacts, ArtifactType
 
+if TYPE_CHECKING:
+    from jira_issue_rag.core.config import Settings
+
 
 AMOUNT_PATTERN = re.compile(r"(?:R\$\s*)?(-?\d+[\.,]\d{2})")
 ID_PATTERN = re.compile(r"\b(?:[A-Z]{2,10}-\d+|req_[A-Za-z0-9]+|trace[-_:]?[A-Za-z0-9]+|[A-Fa-f0-9]{8,})\b")
@@ -22,6 +27,9 @@ TIMESTAMP_PATTERN = re.compile(r"\b\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}\b")
 
 
 class ArtifactPipeline:
+    def __init__(self, settings: "Settings | None" = None) -> None:
+        self.settings = settings
+
     def process_paths(self, issue_key: str, artifact_paths: list[str]) -> AttachmentFacts:
         artifacts: list[ArtifactFact] = []
         missing_information: list[str] = []
@@ -60,10 +68,12 @@ class ArtifactPipeline:
             facts = self._extract_text_facts(extracted_text)
             confidence = 0.85 if extracted_text else 0.25
         elif artifact_type == "image":
-            extracted_text = self._extract_sidecar_text(path)
+            extracted_text = self._extract_image_vision(path)
             facts = self._extract_text_facts(extracted_text)
             facts["image_filename"] = path.name
-            confidence = 0.78 if extracted_text else 0.10
+            if not extracted_text:
+                facts["vision_extraction_failed"] = True
+            confidence = 0.82 if extracted_text else 0.10
         else:
             extracted_text = self._extract_sidecar_text(path)
             facts = self._extract_text_facts(extracted_text)
@@ -98,6 +108,109 @@ class ArtifactPipeline:
     def _hash_bytes(data: bytes) -> str:
         return "sha256:" + hashlib.sha256(data).hexdigest()
 
+    def _extract_image_vision(self, path: Path) -> str:
+        """Extract text/facts from an image via OpenAI or Gemini vision, with sidecar fallback."""
+        # Sidecar .txt has priority (user-provided ground truth)
+        sidecar = self._extract_sidecar_text(path)
+        if sidecar.strip():
+            return sidecar
+
+        if not self.settings:
+            return ""
+
+        suffix = path.suffix.lower()
+        mime_type = (
+            "image/jpeg" if suffix in {".jpg", ".jpeg"}
+            else "image/webp" if suffix == ".webp"
+            else "image/png"
+        )
+        b64 = base64.b64encode(path.read_bytes()).decode("utf-8")
+        prompt = (
+            "Extract all visible text, error messages, request IDs, timestamps, monetary amounts, "
+            "and key facts from this screenshot. Return a structured plain-text summary."
+        )
+
+        # Try OpenAI vision first
+        if (
+            self.settings.allow_third_party_llm or not self.settings.confidentiality_mode
+        ) and self.settings.openai_api_key:
+            try:
+                return self._vision_openai(b64, mime_type, prompt)
+            except Exception:  # pragma: no cover
+                pass
+
+        # Try Gemini direct API key
+        if self.settings.gemini_api_key:
+            try:
+                return self._vision_gemini_direct(b64, mime_type, prompt)
+            except Exception:  # pragma: no cover
+                pass
+
+        return ""
+
+    def _vision_openai(self, b64: str, mime_type: str, prompt: str) -> str:
+        payload = {
+            "model": self.settings.openai_model,  # type: ignore[union-attr]
+            "input": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": prompt},
+                        {"type": "input_image", "image_url": f"data:{mime_type};base64,{b64}"},
+                    ],
+                }
+            ],
+        }
+        with httpx.Client(timeout=60.0) as client:
+            response = client.post(
+                "https://api.openai.com/v1/responses",
+                headers={
+                    "Authorization": f"Bearer {self.settings.openai_api_key}",  # type: ignore[union-attr]
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+            response.raise_for_status()
+            data = response.json()
+        if isinstance(data.get("output_text"), str) and data["output_text"].strip():
+            return data["output_text"]
+        for item in data.get("output", []):
+            for content in item.get("content", []):
+                text = content.get("text")
+                if text:
+                    return str(text)
+        return ""
+
+    def _vision_gemini_direct(self, b64: str, mime_type: str, prompt: str) -> str:
+        model = self.settings.gemini_model  # type: ignore[union-attr]
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        payload = {
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [
+                        {"text": prompt},
+                        {"inline_data": {"mime_type": mime_type, "data": b64}},
+                    ],
+                }
+            ],
+            "generationConfig": {"responseMimeType": "text/plain"},
+        }
+        with httpx.Client(timeout=60.0) as client:
+            response = client.post(
+                url,
+                params={"key": self.settings.gemini_api_key},  # type: ignore[union-attr]
+                json=payload,
+            )
+            response.raise_for_status()
+            data = response.json()
+        for candidate in data.get("candidates", []):
+            for part in candidate.get("content", {}).get("parts", []):
+                text = part.get("text")
+                if text:
+                    return str(text)
+        return ""
+
     @staticmethod
     def _read_text(path: Path) -> str:
         for encoding in ("utf-8", "latin-1", "cp1252"):
@@ -115,14 +228,32 @@ class ArtifactPipeline:
         return ""
 
     def _extract_pdf_text(self, path: Path) -> str:
+        # 1st pass: Docling (structure-aware, table-aware)
+        text = self._extract_pdf_docling(path)
+        if text.strip():
+            return text
+        # 2nd pass: pypdf (fast, text-layer only)
         if PdfReader is not None:
             try:
                 reader = PdfReader(str(path))
                 text_parts = [page.extract_text() or "" for page in reader.pages]
-                return "\n".join(text_parts).strip()
+                text = "\n".join(text_parts).strip()
+                if text:
+                    return text
             except Exception:
                 pass
+        # 3rd pass: sidecar .txt
         return self._extract_sidecar_text(path)
+
+    @staticmethod
+    def _extract_pdf_docling(path: Path) -> str:
+        try:
+            from docling.document_converter import DocumentConverter  # type: ignore[import-untyped]
+            converter = DocumentConverter()
+            result = converter.convert(str(path))
+            return result.document.export_to_markdown().strip()
+        except Exception:
+            return ""
 
     def _extract_spreadsheet(self, path: Path) -> tuple[str, dict[str, Any]]:
         if path.suffix.lower() == ".csv":

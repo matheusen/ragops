@@ -60,8 +60,8 @@ class RulesEngine:
         for artifact in attachment_facts.artifacts:
             amount_sums = artifact.facts.get("amount_sums") or {}
             if len(amount_sums) >= 2:
-                values = list(amount_sums.values())
-                if max(values) - min(values) > 0.01:
+                col_values = list(amount_sums.values())
+                if max(col_values) - min(col_values) > 0.01:
                     contradictions.append(f"Financial totals mismatch in {artifact.source_path}")
                     results.append(
                         RuleResult(
@@ -69,6 +69,57 @@ class RulesEngine:
                             severity="critical",
                             message=f"Detected mismatch between spreadsheet totals in {artifact.source_path}",
                             metadata={"amount_sums": amount_sums},
+                        )
+                    )
+
+        # ── Cross-artifact financial reconciliation ──────────────────────────
+        # Collect all declared totals and all itemised amounts across artifacts
+        # so we can detect when a spreadsheet total disagrees with log evidence.
+        spreadsheet_totals: list[tuple[str, float]] = []
+        log_totals: list[tuple[str, float]] = []
+        for artifact in attachment_facts.artifacts:
+            declared = artifact.facts.get("total_amount")
+            if declared is not None:
+                if artifact.artifact_type in {"spreadsheet"}:
+                    spreadsheet_totals.append((artifact.source_path, float(declared)))
+                elif artifact.artifact_type in {"log", "text"}:
+                    raw_amounts = artifact.facts.get("amounts") or []
+                    if raw_amounts:
+                        log_sum = sum(float(a) for a in raw_amounts)
+                        log_totals.append((artifact.source_path, log_sum))
+
+        if len(spreadsheet_totals) >= 2:
+            st_values = [v for _, v in spreadsheet_totals]
+            if max(st_values) - min(st_values) > 0.01:
+                sources = ", ".join(p for p, _ in spreadsheet_totals)
+                contradictions.append(f"Financial totals differ across spreadsheets: {sources}")
+                results.append(
+                    RuleResult(
+                        rule_name="cross_artifact_spreadsheet_mismatch",
+                        severity="critical",
+                        message="Multiple spreadsheets report different total amounts",
+                        metadata={"totals": {p: v for p, v in spreadsheet_totals}},
+                    )
+                )
+
+        if spreadsheet_totals and log_totals:
+            sheet_total = spreadsheet_totals[0][1]
+            for log_path, log_sum in log_totals:
+                tolerance = max(abs(sheet_total) * 0.001, 0.01)
+                if abs(sheet_total - log_sum) > tolerance:
+                    contradictions.append(
+                        f"Spreadsheet total {sheet_total:.2f} differs from log-derived sum {log_sum:.2f} ({log_path})"
+                    )
+                    results.append(
+                        RuleResult(
+                            rule_name="cross_artifact_log_spreadsheet_mismatch",
+                            severity="critical",
+                            message="Log-derived amount sum does not match spreadsheet total",
+                            metadata={
+                                "spreadsheet_total": sheet_total,
+                                "log_sum": log_sum,
+                                "log_source": log_path,
+                            },
                         )
                     )
 

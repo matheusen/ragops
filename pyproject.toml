@@ -32,8 +32,20 @@ providers = [
 retrieval = [
   "qdrant-client>=1.15.0"
 ]
+rerank = [
+  "sentence-transformers>=3.0.0"
+]
+parsing = [
+  "docling>=2.0.0"
+]
 eval = [
   "ragas>=0.3.0"
+]
+optimization = [
+  "dspy-ai>=2.6.0"
+]
+graphrag = [
+  "neo4j>=5.0.0"
 ]
 dev = [
   "pytest>=8.4.0",

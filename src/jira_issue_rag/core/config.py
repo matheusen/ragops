@@ -22,13 +22,15 @@ class Settings(BaseSettings):
     enable_langgraph: bool = Field(default=True, alias="ENABLE_LANGGRAPH")
     enable_reranker: bool = Field(default=True, alias="ENABLE_RERANKER")
     enable_external_retrieval: bool = Field(default=True, alias="ENABLE_EXTERNAL_RETRIEVAL")
+    enable_modular_judge: bool = Field(default=False, alias="ENABLE_MODULAR_JUDGE")
+    second_opinion_confidence_threshold: float = Field(default=0.65, alias="SECOND_OPINION_CONFIDENCE_THRESHOLD")
 
     primary_model: str = Field(default="mock-judge-v1", alias="PRIMARY_MODEL")
     openai_model: str = Field(default="gpt-5-mini", alias="OPENAI_MODEL")
     gemini_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
     openai_embedding_model: str = Field(default="text-embedding-3-large", alias="OPENAI_EMBEDDING_MODEL")
     gemini_embedding_model: str = Field(default="gemini-embedding-001", alias="GEMINI_EMBEDDING_MODEL")
-    embedding_dimension: int = Field(default=64, alias="EMBEDDING_DIMENSION")
+    embedding_dimension: int = Field(default=1536, alias="EMBEDDING_DIMENSION")
     gcp_project_id: str | None = Field(default=None, alias="GCP_PROJECT_ID")
     gcp_location: str = Field(default="us-central1", alias="GCP_LOCATION")
     google_application_credentials: str | None = Field(default=None, alias="GOOGLE_APPLICATION_CREDENTIALS")
@@ -47,6 +49,28 @@ class Settings(BaseSettings):
     qdrant_url: str | None = Field(default=None, alias="QDRANT_URL")
     qdrant_collection: str = Field(default="issue_evidence", alias="QDRANT_COLLECTION")
     qdrant_api_key: str | None = Field(default=None, alias="QDRANT_API_KEY")
+    # Qdrant quantization + cascade retrieval (item 13)
+    qdrant_quantization_type: str = Field(default="none", alias="QDRANT_QUANTIZATION_TYPE")  # none | scalar | binary
+    qdrant_quantization_rescore: bool = Field(default=True, alias="QDRANT_QUANTIZATION_RESCORE")
+    qdrant_cascade_overretrieve_factor: int = Field(default=4, alias="QDRANT_CASCADE_OVERRETRIEVE_FACTOR")
+    enable_cascade_retrieval: bool = Field(default=False, alias="ENABLE_CASCADE_RETRIEVAL")
+
+    # Neo4j GraphRAG (item 12)
+    neo4j_url: str | None = Field(default=None, alias="NEO4J_URL")
+    neo4j_user: str = Field(default="neo4j", alias="NEO4J_USER")
+    neo4j_password: str | None = Field(default=None, alias="NEO4J_PASSWORD")
+    neo4j_database: str = Field(default="neo4j", alias="NEO4J_DATABASE")
+    enable_graphrag: bool = Field(default=False, alias="ENABLE_GRAPHRAG")
+
+    # Ollama local provider (from article: oLLM / Programação Agentic totalmente local)
+    ollama_base_url: str = Field(default="http://localhost:11434", alias="OLLAMA_BASE_URL")
+    ollama_model: str = Field(default="llama3.1:8b", alias="OLLAMA_MODEL")
+
+    # Auto-improvement threshold (from article: Criando arquitetura de treinamento)
+    auto_improvement_threshold: float = Field(default=0.75, alias="AUTO_IMPROVEMENT_THRESHOLD")
+
+    # DSPy optimization lab (item 11)
+    dspy_lab_dir: Path = Field(default=Path("data/dspy_lab"), alias="DSPY_LAB_DIR")
 
     audit_dir: Path = Field(default=Path("data/audit"), alias="AUDIT_DIR")
     eval_reports_dir: Path = Field(default=Path("data/eval_reports"), alias="EVAL_REPORTS_DIR")
@@ -57,7 +81,8 @@ class Settings(BaseSettings):
 
     def allows_provider(self, provider_name: str | None) -> bool:
         lowered = (provider_name or "mock").lower()
-        if lowered == "mock":
+        # mock and ollama are always allowed — no external API calls
+        if lowered in {"mock", "ollama"}:
             return True
         if lowered in {"openai", "gemini"}:
             return not self.confidentiality_mode or self.allow_third_party_llm
@@ -89,4 +114,5 @@ def get_settings() -> Settings:
     settings.staging_dir.mkdir(parents=True, exist_ok=True)
     settings.eval_reports_dir.mkdir(parents=True, exist_ok=True)
     settings.prompts_dir.mkdir(parents=True, exist_ok=True)
+    settings.dspy_lab_dir.mkdir(parents=True, exist_ok=True)
     return settings

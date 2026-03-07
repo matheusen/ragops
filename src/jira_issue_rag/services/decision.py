@@ -7,6 +7,7 @@ from jira_issue_rag.providers.base import LLMProvider
 from jira_issue_rag.providers.decision_contract import normalize_decision_data
 from jira_issue_rag.providers.gemini_provider import GeminiProvider
 from jira_issue_rag.providers.mock_provider import MockProvider
+from jira_issue_rag.providers.ollama_provider import OllamaProvider
 from jira_issue_rag.providers.openai_provider import OpenAIProvider
 from jira_issue_rag.services.prompt_catalog import PromptCatalog
 from jira_issue_rag.shared.models import DecisionResult, JudgeInput
@@ -18,6 +19,8 @@ class ProviderRouter:
         self.prompt_catalog = PromptCatalog(settings.prompts_dir)
 
     def judge(self, judge_input: JudgeInput, provider_override: str | None = None, prompt_name: str | None = None) -> DecisionResult:
+        if self.settings.enable_modular_judge and prompt_name is None:
+            return self._judge_modular(judge_input, provider_override)
         primary = self._get_provider(provider_override or self.settings.default_provider)
         if not primary.is_available():
             primary = MockProvider(self.settings.primary_model)
@@ -48,7 +51,7 @@ class ProviderRouter:
         return (
             result.requires_human_review
             or judge_input.rule_evaluation.financial_impact_detected
-            or result.confidence < 0.65
+            or result.confidence < self.settings.second_opinion_confidence_threshold
         )
 
     def execute_prompt(
@@ -79,6 +82,83 @@ class ProviderRouter:
 
     def list_prompts(self) -> list[dict[str, str]]:
         return self.prompt_catalog.list_prompts()
+
+    # ------------------------------------------------------------------
+    # Modular judge pipeline: facts → contradictions → completeness → judge
+    # ------------------------------------------------------------------
+    def _judge_modular(self, judge_input: JudgeInput, provider_override: str | None = None) -> DecisionResult:
+        provider = self._get_provider(provider_override or self.settings.default_provider)
+        if not provider.is_available():
+            provider = MockProvider(self.settings.primary_model)
+
+        # Step 1 – extract structured facts
+        facts_prompt = self.prompt_catalog.render(
+            "extract_issue_facts",
+            {
+                "issue_json": judge_input.issue.model_dump_json(indent=2),
+                "attachment_facts_json": judge_input.attachment_facts.model_dump_json(indent=2),
+                "rule_evaluation_json": judge_input.rule_evaluation.model_dump_json(indent=2),
+            },
+        )
+        extracted_facts = provider.run_prompt(
+            system_prompt=facts_prompt["system_prompt"],
+            user_prompt=facts_prompt["user_prompt"],
+            response_format="text",
+        )
+
+        # Step 2 – detect contradictions
+        contradictions_prompt = self.prompt_catalog.render(
+            "detect_contradictions",
+            {
+                "extracted_facts": extracted_facts,
+                "retrieved_evidence_json": json.dumps(
+                    [item.model_dump(mode="json") for item in judge_input.retrieved_evidence],
+                    indent=2,
+                    ensure_ascii=True,
+                ),
+                "rule_contradictions": "\n".join(judge_input.rule_evaluation.contradictions) or "None",
+            },
+        )
+        contradictions_text = provider.run_prompt(
+            system_prompt=contradictions_prompt["system_prompt"],
+            user_prompt=contradictions_prompt["user_prompt"],
+            response_format="text",
+        )
+
+        # Step 3 – check completeness
+        completeness_prompt = self.prompt_catalog.render(
+            "check_completeness",
+            {
+                "extracted_facts": extracted_facts,
+                "contradictions_text": contradictions_text,
+                "missing_items": "\n".join(judge_input.rule_evaluation.missing_items) or "None",
+            },
+        )
+        completeness_text = provider.run_prompt(
+            system_prompt=completeness_prompt["system_prompt"],
+            user_prompt=completeness_prompt["user_prompt"],
+            response_format="text",
+        )
+
+        # Step 4 – final judge
+        judge_prompt = self.prompt_catalog.render(
+            "judge_bug",
+            {
+                "extracted_facts": extracted_facts,
+                "contradictions_text": contradictions_text,
+                "completeness_text": completeness_text,
+                "distilled_context_json": judge_input.distilled_context.model_dump_json(indent=2),
+                "rule_evaluation_json": judge_input.rule_evaluation.model_dump_json(indent=2),
+            },
+        )
+        output_text = provider.run_prompt(
+            system_prompt=judge_prompt["system_prompt"],
+            user_prompt=judge_prompt["user_prompt"],
+            response_format="json",
+        )
+        decision_data = json.loads(output_text)
+        normalized = normalize_decision_data(decision_data, judge_input)
+        return DecisionResult.model_validate({**normalized, "provider": provider.provider_name, "model": provider.model_name})
 
     def _judge_with_prompt(self, provider: LLMProvider, judge_input: JudgeInput, prompt_name: str | None) -> DecisionResult:
         if not prompt_name or provider.provider_name == "mock":
@@ -112,4 +192,6 @@ class ProviderRouter:
             return OpenAIProvider(api_key=self.settings.openai_api_key, model_name=self.settings.openai_model)
         if lowered == "gemini":
             return GeminiProvider(settings=self.settings, model_name=self.settings.gemini_model)
+        if lowered == "ollama":
+            return OllamaProvider(base_url=self.settings.ollama_base_url, model_name=self.settings.ollama_model)
         return MockProvider(self.settings.primary_model)

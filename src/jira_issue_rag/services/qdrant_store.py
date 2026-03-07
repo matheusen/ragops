@@ -22,20 +22,26 @@ class QdrantStore:
     def ensure_collection(self) -> None:
         if not self.is_available():
             return
+        body: dict[str, Any] = {
+            "vectors": {
+                "dense": {
+                    "size": self.settings.embedding_dimension,
+                    "distance": "Cosine",
+                }
+            },
+            "sparse_vectors": {
+                "text": {}
+            },
+        }
+        q_type = (self.settings.qdrant_quantization_type or "none").lower()
+        if q_type == "scalar":
+            body["quantization_config"] = {"scalar": {"type": "int8", "always_ram": True}}
+        elif q_type == "binary":
+            body["quantization_config"] = {"binary": {"always_ram": True}}
         self._request(
             "PUT",
             f"/collections/{self.settings.qdrant_collection}",
-            json_body={
-                "vectors": {
-                    "dense": {
-                        "size": self.settings.embedding_dimension,
-                        "distance": "Cosine",
-                    }
-                },
-                "sparse_vectors": {
-                    "text": {}
-                }
-            },
+            json_body=body,
         )
 
     def index_issue_package(self, issue: IssueCanonical, attachment_facts: AttachmentFacts) -> int:
@@ -143,71 +149,150 @@ class QdrantStore:
             existing.final_score = round(0.55 * existing.sparse_score + 0.45 * existing.dense_score, 4)
         return sorted(fused.values(), key=lambda item: item.final_score, reverse=True)
 
+    def cascade_search(self, query_text: str, issue: IssueCanonical, limit: int = 6) -> list[RetrievedEvidence]:
+        """
+        Two-pass cascade retrieval:
+          1. Quantized dense pass — retrieve (limit * overretrieve_factor) candidates
+             with rescore=False (fast, approximate).
+          2. Full-precision rescore pass — re-rank the short-list with rescore=True.
+        Falls back to regular search when quantization is disabled.
+        """
+        if not self.is_available() or not query_text.strip():
+            return []
+        q_type = (self.settings.qdrant_quantization_type or "none").lower()
+        if q_type == "none":
+            return self.search(query_text, issue, limit=limit)
+
+        self.ensure_collection()
+        dense_vector, _ = self.embeddings.embed_text(query_text)
+        filters = self._build_filter(issue)
+        overretrieve = max(1, limit * self.settings.qdrant_cascade_overretrieve_factor)
+
+        # ── Pass 1: quantized approximate retrieval ──────────────────────────
+        p1_payload: dict[str, Any] = {
+            "query": dense_vector,
+            "using": "dense",
+            "limit": overretrieve,
+            "with_payload": True,
+            "params": {"quantization": {"rescore": False, "oversampling": 2.0}},
+        }
+        if filters:
+            p1_payload["filter"] = filters
+        p1_response = self._request(
+            "POST",
+            f"/collections/{self.settings.qdrant_collection}/points/query",
+            json_body=p1_payload,
+        )
+        candidates = self._extract_points(p1_response)
+        candidate_ids = [str(c.get("id")) for c in candidates]
+        if not candidate_ids:
+            return []
+
+        # ── Pass 2: full-precision rescore of the short-list ─────────────────
+        p2_payload: dict[str, Any] = {
+            "query": dense_vector,
+            "using": "dense",
+            "limit": limit,
+            "with_payload": True,
+            "filter": {"must": [{"has_id": candidate_ids}]},
+            "params": {"quantization": {"rescore": self.settings.qdrant_quantization_rescore}},
+        }
+        p2_response = self._request(
+            "POST",
+            f"/collections/{self.settings.qdrant_collection}/points/query",
+            json_body=p2_payload,
+        )
+
+        results: list[RetrievedEvidence] = []
+        for item in self._extract_points(p2_response):
+            point_payload = item.get("payload", {})
+            score = float(item.get("score", 0.0))
+            point_id = str(item.get("id"))
+            results.append(
+                RetrievedEvidence(
+                    evidence_id=point_id,
+                    source=str(point_payload.get("source", "qdrant:cascade")),
+                    content=str(point_payload.get("content", "")),
+                    metadata={
+                        "category": point_payload.get("category", "qdrant"),
+                        "issue_key": point_payload.get("issue_key"),
+                        "backend": "qdrant:cascade",
+                    },
+                    sparse_score=0.0,
+                    dense_score=score,
+                    final_score=round(score, 4),
+                )
+            )
+        return sorted(results, key=lambda x: x.final_score, reverse=True)[:limit]
+
     def _build_documents(self, issue: IssueCanonical, attachment_facts: AttachmentFacts) -> list[dict[str, Any]]:
+        base_meta: dict[str, Any] = {
+            "issue_key": issue.issue_key,
+            "project": issue.project,
+            "component": issue.component,
+            "service": issue.service,
+            "environment": issue.environment,
+            "labels": issue.labels,
+            "affected_version": issue.affected_version,
+        }
         documents: list[dict[str, Any]] = [
             {
+                **base_meta,
                 "evidence_id": f"issue:{issue.issue_key}:summary",
-                "issue_key": issue.issue_key,
                 "source": f"jira:{issue.issue_key}:summary",
                 "content": f"{issue.issue_key} {issue.summary}\n{issue.description}",
                 "category": "issue",
-                "project": issue.project,
-                "component": issue.component,
-                "service": issue.service,
-                "environment": issue.environment,
             },
             {
+                **base_meta,
                 "evidence_id": f"issue:{issue.issue_key}:behavior",
-                "issue_key": issue.issue_key,
                 "source": f"jira:{issue.issue_key}:behavior",
                 "content": f"Expected: {issue.expected_behavior}\nActual: {issue.actual_behavior}",
                 "category": "issue",
-                "project": issue.project,
-                "component": issue.component,
-                "service": issue.service,
-                "environment": issue.environment,
             },
         ]
         for index, comment in enumerate(issue.comments, start=1):
-            documents.append(
-                {
-                    "evidence_id": f"issue:{issue.issue_key}:comment:{index}",
-                    "issue_key": issue.issue_key,
-                    "source": f"jira:{issue.issue_key}:comment:{index}",
-                    "content": comment,
-                    "category": "comment",
-                    "project": issue.project,
-                    "component": issue.component,
-                    "service": issue.service,
-                    "environment": issue.environment,
-                }
-            )
+            documents.append({
+                **base_meta,
+                "evidence_id": f"issue:{issue.issue_key}:comment:{index}",
+                "source": f"jira:{issue.issue_key}:comment:{index}",
+                "content": comment,
+                "category": "comment",
+            })
         for artifact in attachment_facts.artifacts:
-            documents.append(
-                {
-                    "evidence_id": artifact.artifact_id,
-                    "issue_key": issue.issue_key,
-                    "source": f"artifact:{artifact.source_path}",
-                    "content": artifact.extracted_text or str(artifact.facts),
-                    "category": "artifact",
-                    "project": issue.project,
-                    "component": issue.component,
-                    "service": issue.service,
-                    "environment": issue.environment,
-                    "artifact_type": artifact.artifact_type,
-                }
-            )
+            documents.append({
+                **base_meta,
+                "evidence_id": artifact.artifact_id,
+                "source": f"artifact:{artifact.source_path}",
+                "content": artifact.extracted_text or str(artifact.facts),
+                "category": "artifact",
+                "artifact_type": artifact.artifact_type,
+            })
         return documents
 
     def _build_filter(self, issue: IssueCanonical) -> dict[str, Any] | None:
-        must = []
+        must: list[dict[str, Any]] = []
+        should: list[dict[str, Any]] = []
         if issue.project:
             must.append({"key": "project", "match": {"value": issue.project}})
         if issue.component:
             must.append({"key": "component", "match": {"value": issue.component}})
         if issue.environment:
             must.append({"key": "environment", "match": {"value": issue.environment}})
-        return {"must": must} if must else None
+        if issue.service:
+            must.append({"key": "service", "match": {"value": issue.service}})
+        if issue.labels:
+            should.append({"key": "labels", "match": {"any": issue.labels}})
+        if issue.affected_version:
+            should.append({"key": "affected_version", "match": {"value": issue.affected_version}})
+        if not must and not should:
+            return None
+        result: dict[str, Any] = {}
+        if must:
+            result["must"] = must
+        if should:
+            result["should"] = should
+        return result
 
     def _sparse_vector(self, text: str) -> dict[str, list[float] | list[int]]:
         frequencies: dict[int, float] = {}

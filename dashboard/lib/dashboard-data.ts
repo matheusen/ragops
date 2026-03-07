@@ -1,6 +1,9 @@
 import { promises as fs } from "fs";
 import path from "path";
 
+import { isMongoConfigured } from "./mongodb";
+import { getSettingsOverrides } from "./settings-store";
+
 export type PromptMode = "decision" | "text";
 
 export interface PromptTemplate {
@@ -40,10 +43,33 @@ export interface UsageOverview {
   dailyUsage: DailyUsage[];
 }
 
+export interface SettingItem {
+  key: string;
+  /** Display value — sensitive keys are masked (e.g. "configured"). */
+  value: string;
+  /** Actual value sent to the editor; empty string for masked/sensitive keys. */
+  rawValue: string;
+  /** Whether this setting can be edited via the dashboard UI. */
+  editable: boolean;
+}
+
 export interface SettingsGroup {
   title: string;
   description: string;
-  items: Array<{ key: string; value: string }>;
+  items: SettingItem[];
+}
+
+export interface ActiveProviderConfig {
+  /** e.g. "openai" | "gemini" | "ollama" | "mock" */
+  provider: string;
+  /** Active model name for the selected provider */
+  model: string;
+  /** Value of SECONDARY_PROVIDER (or empty string) */
+  secondaryProvider: string;
+  /** Whether ENABLE_SECOND_OPINION is "true" */
+  secondOpinionEnabled: boolean;
+  /** Whether CONFIDENTIALITY_MODE is "true" */
+  confidentialityMode: boolean;
 }
 
 export interface ComparisonReport {
@@ -60,6 +86,14 @@ export interface TimelineStep {
   tags: string[];
 }
 
+export interface MongoStatus {
+  configured: boolean;
+  connected: boolean;
+  docCount: number;
+  uri: string; // masked e.g. mongodb://localhost:27017
+  error?: string;
+}
+
 export interface DashboardData {
   prompts: PromptTemplate[];
   recentRequests: RequestEntry[];
@@ -67,6 +101,9 @@ export interface DashboardData {
   settingsGroups: SettingsGroup[];
   comparisonReports: ComparisonReport[];
   timeline: TimelineStep[];
+  mongoConfigured: boolean;
+  activeConfig: ActiveProviderConfig;
+  mongoStatus: MongoStatus;
 }
 
 const REPO_ROOT = path.resolve(process.cwd(), "..");
@@ -76,11 +113,13 @@ const REPORTS_DIR = path.join(REPO_ROOT, "data", "eval_reports");
 const ENV_PATH = path.join(REPO_ROOT, ".env");
 
 export async function getDashboardData(): Promise<DashboardData> {
-  const [prompts, recentRequests, comparisonReports, settingsGroups] = await Promise.all([
+  const [prompts, recentRequests, comparisonReports, settingsGroups, activeConfig, mongoStatus] = await Promise.all([
     readPrompts(),
     readRecentRequests(),
     readComparisonReports(),
     readSettingsGroups(),
+    readActiveConfig(),
+    probeMongoStatus(),
   ]);
 
   return {
@@ -90,6 +129,72 @@ export async function getDashboardData(): Promise<DashboardData> {
     settingsGroups,
     comparisonReports,
     timeline: buildTimeline(),
+    mongoConfigured: isMongoConfigured(),
+    activeConfig,
+    mongoStatus,
+  };
+}
+
+async function probeMongoStatus(): Promise<MongoStatus> {
+  const rawUri = process.env.MONGODB_URI ?? "";
+  const configured = Boolean(rawUri);
+
+  // Mask credentials in the URI for display
+  let maskedUri = "(not set)";
+  if (rawUri) {
+    try {
+      const u = new URL(rawUri);
+      if (u.password) u.password = "*****";
+      maskedUri = u.toString();
+    } catch {
+      maskedUri = rawUri.replace(/:([^@/]+)@/, ":*****@");
+    }
+  }
+
+  if (!configured) {
+    return { configured: false, connected: false, docCount: 0, uri: maskedUri };
+  }
+
+  try {
+    const { getMongoClient } = await import("./mongodb");
+    const mongo = await getMongoClient();
+    // ping command verifies the connection is alive
+    await mongo.db("admin").command({ ping: 1 });
+    const docCount = await mongo
+      .db("ragflow")
+      .collection("settings")
+      .countDocuments();
+    return { configured: true, connected: true, docCount, uri: maskedUri };
+  } catch (err) {
+    return {
+      configured: true,
+      connected: false,
+      docCount: 0,
+      uri: maskedUri,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+async function readActiveConfig(): Promise<ActiveProviderConfig> {
+  const [env, overrides] = await Promise.all([parseEnvFile(), getSettingsOverrides()]);
+  const merged = { ...env, ...overrides };
+
+  const provider = (merged["DEFAULT_PROVIDER"] ?? "openai").toLowerCase();
+
+  const modelByProvider: Record<string, string> = {
+    openai: merged["OPENAI_MODEL"] ?? "gpt-4o",
+    gemini: merged["GEMINI_MODEL"] ?? "gemini-2.5-flash",
+    ollama: merged["OLLAMA_MODEL"] ?? "llama3",
+    mock: "(mock — no real LLM)",
+  };
+
+  return {
+    provider,
+    model: modelByProvider[provider] ?? merged["OPENAI_MODEL"] ?? "(not set)",
+    secondaryProvider: (merged["SECONDARY_PROVIDER"] ?? "").toLowerCase(),
+    secondOpinionEnabled: (merged["ENABLE_SECOND_OPINION"] ?? "false").toLowerCase() === "true",
+    confidentialityMode: (merged["CONFIDENTIALITY_MODE"] ?? "false").toLowerCase() === "true",
   };
 }
 
@@ -100,49 +205,134 @@ export async function createPromptFile(input: {
   systemPrompt: string;
   userPromptTemplate: string;
 }): Promise<void> {
-  const fileName = `${slugify(input.name)}.json`;
+  const slug = slugify(input.name);
+  const fileName = `${slug}.md`;
   const targetPath = path.join(PROMPTS_DIR, fileName);
   await fs.mkdir(PROMPTS_DIR, { recursive: true });
 
-  try {
-    await fs.access(targetPath);
-    throw new Error(`Prompt '${fileName}' already exists`);
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code && code !== "ENOENT") {
-      throw error;
+  // Check neither .md nor .json already exists
+  for (const ext of [".md", ".json"]) {
+    try {
+      await fs.access(path.join(PROMPTS_DIR, `${slug}${ext}`));
+      throw new Error(`Prompt '${slug}${ext}' already exists`);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code && code !== "ENOENT") throw error;
     }
   }
 
-  const payload = {
-    name: slugify(input.name),
-    mode: input.mode,
-    description: input.description.trim(),
-    system_prompt: input.systemPrompt.trim(),
-    user_prompt_template: input.userPromptTemplate.trim(),
-  };
-
-  await fs.writeFile(targetPath, `${JSON.stringify(payload, null, 2)}\n`, "utf-8");
+  await fs.writeFile(targetPath, serializePromptMd({ ...input, name: slug }), "utf-8");
 }
+
+export async function updatePromptFile(
+  fileName: string,
+  input: { mode: PromptMode; description: string; systemPrompt: string; userPromptTemplate: string },
+): Promise<void> {
+  const targetPath = path.join(PROMPTS_DIR, fileName);
+  const slug = fileName.replace(/\.(md|json)$/, "");
+
+  if (fileName.endsWith(".md")) {
+    await fs.writeFile(targetPath, serializePromptMd({ name: slug, ...input }), "utf-8");
+  } else {
+    const payload = {
+      name: slug,
+      mode: input.mode,
+      description: input.description.trim(),
+      system_prompt: input.systemPrompt.trim(),
+      user_prompt_template: input.userPromptTemplate.trim(),
+    };
+    await fs.writeFile(targetPath, `${JSON.stringify(payload, null, 2)}\n`, "utf-8");
+  }
+}
+
+export async function deletePromptFile(fileName: string): Promise<void> {
+  const targetPath = path.join(PROMPTS_DIR, fileName);
+  await fs.unlink(targetPath);
+}
+
+function serializePromptMd(input: {
+  name: string;
+  mode: PromptMode;
+  description: string;
+  systemPrompt: string;
+  userPromptTemplate: string;
+}): string {
+  return [
+    `---`,
+    `name: ${input.name}`,
+    `mode: ${input.mode}`,
+    `description: ${input.description.trim()}`,
+    `---`,
+    ``,
+    `## system_prompt`,
+    ``,
+    input.systemPrompt.trim(),
+    ``,
+    `## user_prompt_template`,
+    ``,
+    input.userPromptTemplate.trim(),
+    ``,
+  ].join("\n");
+}
+
 
 async function readPrompts(): Promise<PromptTemplate[]> {
   const files = await safeReadDir(PROMPTS_DIR);
-  const promptFiles = files.filter((file) => file.endsWith(".json")).sort();
+  // Both .md and .json; .md takes priority over same-stem .json
+  const seen = new Set<string>();
+  const promptFiles = [
+    ...files.filter((f) => f.endsWith(".md")),
+    ...files.filter((f) => f.endsWith(".json")),
+  ]
+    .sort()
+    .filter((fileName) => {
+      const stem = fileName.replace(/\.(md|json)$/, "");
+      if (seen.has(stem)) return false;
+      seen.add(stem);
+      return true;
+    });
+
   const prompts = await Promise.all(
     promptFiles.map(async (fileName) => {
       const raw = await fs.readFile(path.join(PROMPTS_DIR, fileName), "utf-8");
-      const payload = JSON.parse(raw) as Record<string, unknown>;
+      let payload: Record<string, unknown>;
+      if (fileName.endsWith(".md")) {
+        payload = parseMdPrompt(raw, fileName);
+      } else {
+        payload = JSON.parse(raw) as Record<string, unknown>;
+      }
       return {
-        name: String(payload.name ?? fileName.replace(/\.json$/, "")),
+        name: String(payload.name ?? fileName.replace(/\.(md|json)$/, "")),
         mode: (payload.mode === "decision" ? "decision" : "text") as PromptMode,
         description: String(payload.description ?? ""),
-        systemPrompt: String(payload.system_prompt ?? ""),
-        userPromptTemplate: String(payload.user_prompt_template ?? ""),
+        systemPrompt: String(payload.system_prompt ?? payload.systemPrompt ?? ""),
+        userPromptTemplate: String(payload.user_prompt_template ?? payload.userPromptTemplate ?? ""),
         fileName,
-      };
+      } satisfies PromptTemplate;
     }),
   );
   return prompts;
+}
+
+function parseMdPrompt(text: string, fileName: string): Record<string, unknown> {
+  const result: Record<string, unknown> = { name: fileName.replace(/\.md$/, "") };
+  const fmMatch = text.match(/^---\s*\n([\s\S]*?)\n---\s*\n/);
+  if (fmMatch) {
+    for (const line of fmMatch[1].split("\n")) {
+      const colon = line.indexOf(":");
+      if (colon === -1) continue;
+      result[line.slice(0, colon).trim()] = line.slice(colon + 1).trim();
+    }
+    text = text.slice(fmMatch[0].length);
+  }
+  const parts = text.trim().split(/^##\s+(\S+)\s*$/m);
+  for (let i = 1; i < parts.length; i += 2) {
+    const key = parts[i].trim();
+    const body = (parts[i + 1] ?? "").trim();
+    if (key === "system_prompt") result.system_prompt = body;
+    else if (key === "user_prompt_template") result.user_prompt_template = body;
+  }
+  return result;
 }
 
 async function readRecentRequests(): Promise<RequestEntry[]> {
@@ -226,40 +416,105 @@ function buildUsageOverview(entries: RequestEntry[]): UsageOverview {
   };
 }
 
+/** Keys whose values are masked (secrets). These are read-only in the UI. */
+const SENSITIVE_KEY_PATTERNS = ["TOKEN", "SECRET", "PASSWORD", "_KEY", "CREDENTIALS"];
+
+function isSensitiveKey(key: string): boolean {
+  const upper = key.toUpperCase();
+  return SENSITIVE_KEY_PATTERNS.some((p) => upper.includes(p));
+}
+
 async function readSettingsGroups(): Promise<SettingsGroup[]> {
-  const env = await parseEnvFile();
+  const [env, overrides] = await Promise.all([parseEnvFile(), getSettingsOverrides()]);
+  // MongoDB overrides take precedence over .env
+  const merged = { ...env, ...overrides };
   return [
     {
       title: "Execution posture",
       description: "Controles de confidencialidade, providers e decisão padrão.",
       items: [
-        setting(env, "CONFIDENTIALITY_MODE"),
-        setting(env, "ALLOW_THIRD_PARTY_LLM"),
-        setting(env, "ALLOW_THIRD_PARTY_EMBEDDINGS"),
-        setting(env, "ALLOW_EXTERNAL_VECTOR_STORE"),
-        setting(env, "DEFAULT_PROVIDER"),
-        setting(env, "SECONDARY_PROVIDER"),
+        setting(merged, "CONFIDENTIALITY_MODE"),
+        setting(merged, "ALLOW_THIRD_PARTY_LLM"),
+        setting(merged, "ALLOW_THIRD_PARTY_EMBEDDINGS"),
+        setting(merged, "ALLOW_EXTERNAL_VECTOR_STORE"),
+        setting(merged, "DEFAULT_PROVIDER"),
+        setting(merged, "SECONDARY_PROVIDER"),
+        setting(merged, "ENABLE_SECOND_OPINION"),
+        setting(merged, "ENABLE_MODULAR_JUDGE"),
+        setting(merged, "ENABLE_LANGGRAPH"),
+        setting(merged, "ENABLE_RERANKER"),
+        setting(merged, "ENABLE_EXTERNAL_RETRIEVAL"),
       ],
     },
     {
       title: "Vertex and model routing",
       description: "Configuração corrente do Gemini via Vertex AI e dos modelos ativos.",
       items: [
-        setting(env, "GCP_PROJECT_ID"),
-        setting(env, "GCP_LOCATION"),
-        setting(env, "GOOGLE_APPLICATION_CREDENTIALS"),
-        setting(env, "OPENAI_MODEL"),
-        setting(env, "GEMINI_MODEL"),
+        setting(merged, "GCP_PROJECT_ID"),
+        setting(merged, "GCP_LOCATION"),
+        setting(merged, "GOOGLE_APPLICATION_CREDENTIALS"),
+        setting(merged, "GEMINI_API_KEY"),
+        setting(merged, "OPENAI_API_KEY"),
+        setting(merged, "OPENAI_MODEL"),
+        setting(merged, "GEMINI_MODEL"),
+        setting(merged, "OPENAI_EMBEDDING_MODEL"),
+        setting(merged, "GEMINI_EMBEDDING_MODEL"),
+        setting(merged, "EMBEDDING_DIMENSION"),
+      ],
+    },
+    {
+      title: "Qdrant vector store",
+      description: "Configuração do Qdrant, quantização e recuperação em cascata.",
+      items: [
+        setting(merged, "QDRANT_URL"),
+        setting(merged, "QDRANT_COLLECTION"),
+        setting(merged, "QDRANT_API_KEY"),
+        setting(merged, "QDRANT_QUANTIZATION_TYPE"),
+        setting(merged, "QDRANT_QUANTIZATION_RESCORE"),
+        setting(merged, "QDRANT_CASCADE_OVERRETRIEVE_FACTOR"),
+        setting(merged, "ENABLE_CASCADE_RETRIEVAL"),
+      ],
+    },
+    {
+      title: "Neo4j GraphRAG",
+      description: "Camada opcional de recuperação baseada em grafo de conhecimento.",
+      items: [
+        setting(merged, "ENABLE_GRAPHRAG"),
+        setting(merged, "NEO4J_URL"),
+        setting(merged, "NEO4J_USER"),
+        setting(merged, "NEO4J_DATABASE"),
+        setting(merged, "NEO4J_PASSWORD"),
       ],
     },
     {
       title: "Directories and storage",
       description: "Pastas que alimentam o dashboard e o pipeline operacional.",
       items: [
-        { key: "PROMPTS_DIR", value: promptDisplayPath(PROMPTS_DIR) },
-        { key: "AUDIT_DIR", value: promptDisplayPath(AUDIT_DIR) },
-        { key: "EVAL_REPORTS_DIR", value: promptDisplayPath(REPORTS_DIR) },
-        setting(env, "QDRANT_URL"),
+        { key: "PROMPTS_DIR", value: promptDisplayPath(PROMPTS_DIR), rawValue: "", editable: false },
+        { key: "AUDIT_DIR", value: promptDisplayPath(AUDIT_DIR), rawValue: "", editable: false },
+        { key: "EVAL_REPORTS_DIR", value: promptDisplayPath(REPORTS_DIR), rawValue: "", editable: false },
+        setting(merged, "STAGING_DIR"),
+        setting(merged, "DSPY_LAB_DIR"),
+      ],
+    },
+    {
+      title: "Jira integration",
+      description: "Credenciais e configuração do cliente Jira.",
+      items: [
+        setting(merged, "JIRA_BASE_URL"),
+        setting(merged, "JIRA_USER_EMAIL"),
+        setting(merged, "JIRA_API_TOKEN"),
+        setting(merged, "JIRA_PROJECT_KEY"),
+        setting(merged, "JIRA_VERIFY_SSL"),
+      ],
+    },
+    {
+      title: "Ollama (local)",
+      description: "Provider local via Ollama — funciona em CONFIDENTIALITY_MODE sem custo de API. Auto-melhoria ativa quando classification_accuracy < AUTO_IMPROVEMENT_THRESHOLD.",
+      items: [
+        setting(merged, "OLLAMA_BASE_URL"),
+        setting(merged, "OLLAMA_MODEL"),
+        setting(merged, "AUTO_IMPROVEMENT_THRESHOLD"),
       ],
     },
   ];
@@ -312,6 +567,27 @@ function buildTimeline(): TimelineStep[] {
         "O provider selecionado executa o prompt renderizado, normaliza o retorno e a aplicação grava uma trilha de auditoria completa para replay, análise operacional e comparação entre cenários.",
       tags: ["Gemini Vertex", "OpenAI", "Mock", "AuditStore"],
     },
+    {
+      phase: "05",
+      title: "DSPy optimization lab",
+      description:
+        "Laboratório offline que treina assinaturas DSPy contra o golden dataset usando BootstrapFewShot ou MIPROv2. Os melhores programas são exportados de volta para o diretório prompts/ como arquivos JSON, fechando o ciclo de melhoria contínua.",
+      tags: ["DSPy", "BootstrapFewShot", "MIPROv2", "Golden dataset", "Prompt export"],
+    },
+    {
+      phase: "06",
+      title: "Neo4j GraphRAG layer",
+      description:
+        "Camada opcional de recuperação baseada em grafo: cada issue é indexada com seus nós de componente, serviço, ambiente e fingerprint de erro. A busca em profundidade 2 retorna issues relacionados, duplicatas e raízes de causa como evidência adicional.",
+      tags: ["Neo4j", "GraphRAG", "Cypher", "Issue graph", "Error fingerprint"],
+    },
+    {
+      phase: "07",
+      title: "Quantized cascade retrieval",
+      description:
+        "Para corpora grandes, o Qdrant aplica quantização int8 ou binária. A busca em cascata faz um recall aproximado amplo (overretrieve × N candidatos) e depois rescora o shortlist com precisão total — reduzindo custo sem comprometer precisão.",
+      tags: ["Qdrant", "Scalar quantization", "Binary quantization", "Cascade search", "Rescore"],
+    },
   ];
 }
 
@@ -349,9 +625,15 @@ async function safeStat(filePath: string) {
   }
 }
 
-function setting(env: Record<string, string>, key: string): { key: string; value: string } {
-  const value = env[key];
-  return { key, value: maskSettingValue(key, value) };
+function setting(env: Record<string, string>, key: string): SettingItem {
+  const raw = env[key] ?? "";
+  const sensitive = isSensitiveKey(key);
+  return {
+    key,
+    value: maskSettingValue(key, raw || undefined),
+    rawValue: sensitive ? "" : raw,
+    editable: !sensitive,
+  };
 }
 
 function maskSettingValue(key: string, value?: string): string {
@@ -362,7 +644,12 @@ function maskSettingValue(key: string, value?: string): string {
   if (upperKey.includes("CREDENTIALS")) {
     return `${path.basename(value)} configured`;
   }
-  if (upperKey.includes("TOKEN") || upperKey.includes("SECRET") || upperKey.endsWith("_KEY")) {
+  if (
+    upperKey.includes("TOKEN") ||
+    upperKey.includes("SECRET") ||
+    upperKey.includes("PASSWORD") ||
+    upperKey.endsWith("_KEY")
+  ) {
     return "configured";
   }
   return value;

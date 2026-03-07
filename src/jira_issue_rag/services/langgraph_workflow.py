@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import uuid
 from typing import Any, TypedDict
 
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from jira_issue_rag.shared.models import AttachmentFacts, DecisionResult, DistilledContext, IssueCanonical, JudgeInput, RetrievedEvidence, RuleEvaluation
@@ -22,6 +24,7 @@ class ValidationState(TypedDict, total=False):
 class LangGraphValidationRunner:
     def __init__(self, core: Any) -> None:
         self.core = core
+        self._checkpointer = MemorySaver()
         graph = StateGraph(ValidationState)
         graph.add_node("normalize", self._normalize)
         graph.add_node("rules", self._rules)
@@ -34,17 +37,40 @@ class LangGraphValidationRunner:
         graph.add_edge("retrieve", "distill")
         graph.add_edge("distill", "judge")
         graph.add_edge("judge", END)
-        self.graph = graph.compile()
+        self.graph = graph.compile(checkpointer=self._checkpointer)
 
-    def run(self, issue: IssueCanonical, attachment_facts: AttachmentFacts, provider: str | None, prompt_name: str | None) -> dict[str, Any]:
+    # ------------------------------------------------------------------
+    # thread_id: use issue_key so resumed runs reuse the same checkpoint.
+    # Pass a fresh UUID when you want a completely isolated execution.
+    # ------------------------------------------------------------------
+    def run(
+        self,
+        issue: IssueCanonical,
+        attachment_facts: AttachmentFacts,
+        provider: str | None,
+        prompt_name: str | None,
+        thread_id: str | None = None,
+    ) -> dict[str, Any]:
+        config = {"configurable": {"thread_id": thread_id or issue.issue_key}}
         return self.graph.invoke(
             {
                 "issue": issue,
                 "attachment_facts": attachment_facts,
                 "provider": provider,
                 "prompt_name": prompt_name,
-            }
+            },
+            config=config,
         )
+
+    def resume(self, thread_id: str, patch: dict[str, Any]) -> dict[str, Any]:
+        """Resume a paused (human-in-the-loop) thread by injecting updated state."""
+        config = {"configurable": {"thread_id": thread_id}}
+        return self.graph.invoke(patch, config=config)
+
+    def get_state(self, thread_id: str) -> Any:
+        """Return the latest persisted state snapshot for a thread."""
+        config = {"configurable": {"thread_id": thread_id}}
+        return self.graph.get_state(config)
 
     def _normalize(self, state: ValidationState) -> ValidationState:
         return {"issue": self.core.normalizer.normalize(state["issue"])}

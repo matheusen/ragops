@@ -228,6 +228,7 @@ class EvaluationResponse(BaseModel):
     examples: list[EvaluationExampleResult] = Field(default_factory=list)
     ragas_metrics: list[EvaluationMetric] = Field(default_factory=list)
     ragas_runtime_available: bool = False
+    needs_improvement: bool = False
 
 
 class ReplayRequest(BaseModel):
