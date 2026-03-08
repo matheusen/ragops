@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import type { SavedFlowDoc } from "@/lib/flow-store";
+import type { SavedFlow } from "@/components/pipeline-canvas";
 
 const PipelineCanvas = dynamic(
   () => import("@/components/pipeline-canvas").then((m) => m.PipelineCanvas),
@@ -11,6 +11,6 @@ const PipelineCanvas = dynamic(
   },
 );
 
-export function PipelineCanvasClient({ initialFlows }: { initialFlows: SavedFlowDoc[] }) {
+export function PipelineCanvasClient({ initialFlows }: { initialFlows: SavedFlow[] }) {
   return <PipelineCanvas initialFlows={initialFlows} />;
 }

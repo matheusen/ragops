@@ -16,9 +16,10 @@ export function isMongoConfigured(): boolean {
 }
 
 if (!uri) {
-  // No URI → return a promise that never rejects but produces a null-ish result
-  // Callers should check isMongoConfigured() before using the client.
+  // No URI → callers must check isMongoConfigured() before using the client.
+  // The .catch() suppresses the unhandled-rejection crash in Node 15+.
   clientPromise = Promise.reject(new Error("MONGODB_URI is not set")) as Promise<MongoClient>;
+  (clientPromise as Promise<unknown>).catch(() => {});
 } else if (process.env.NODE_ENV === "development") {
   // In development, use a global variable so the MongoClient is reused across
   // HMR (hot module replacement) to prevent multiple connections.

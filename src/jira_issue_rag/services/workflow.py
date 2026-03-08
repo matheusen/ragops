@@ -4,6 +4,7 @@ from jira_issue_rag.core.config import Settings
 from jira_issue_rag.services.artifacts import ArtifactPipeline
 from jira_issue_rag.services.audit import AuditStore
 from jira_issue_rag.services.decision import ProviderRouter
+from jira_issue_rag.services.distiller import DistillerService
 from jira_issue_rag.services.evaluation import GoldenDatasetEvaluator
 from jira_issue_rag.services.jira import JiraClient
 from jira_issue_rag.services.langgraph_workflow import LangGraphValidationRunner
@@ -42,6 +43,7 @@ class ValidationWorkflowCore:
         self.artifacts = ArtifactPipeline(settings=settings)
         self.rules = RulesEngine()
         self.retriever = HybridRetriever(settings)
+        self.distiller = DistillerService(settings)
         self.router = ProviderRouter(settings)
         self.audit = AuditStore(settings.audit_dir)
         self.jira = JiraClient(settings)
@@ -164,6 +166,7 @@ class ValidationWorkflow(ValidationWorkflowCore):
         )
 
     def _run(self, issue, attachment_facts, provider: str | None, prompt_name: str | None) -> DecisionResult:
+        agentic_state: dict[str, object] = {}
         if self.graph_runner is not None:
             state = self.graph_runner.run(issue=issue, attachment_facts=attachment_facts, provider=provider, prompt_name=prompt_name)
             normalized_issue = state["issue"]
@@ -171,11 +174,19 @@ class ValidationWorkflow(ValidationWorkflowCore):
             retrieved = state["retrieved"]
             distilled = state["distilled"]
             decision = state["decision"]
+            agentic_state = {
+                "plan_queries": state.get("plan_queries", []),
+                "query_index": state.get("query_index", 0),
+                "current_query": state.get("current_query"),
+                "iteration_count": state.get("iteration_count", 0),
+                "reflection_notes": state.get("reflection_notes", []),
+                "policy_action": state.get("policy_action"),
+            }
         else:
             normalized_issue = self.normalizer.normalize(issue)
             rule_evaluation = self.rules.evaluate(normalized_issue, attachment_facts)
             retrieved = self.retriever.search(normalized_issue, attachment_facts, rule_evaluation)
-            distilled = self.retriever.distill(retrieved, rule_evaluation)
+            distilled = self.distiller.distill(retrieved, rule_evaluation)
 
             judge_input = JudgeInput(
                 issue=normalized_issue,
@@ -195,6 +206,24 @@ class ValidationWorkflow(ValidationWorkflowCore):
                 "retrieved": [item.model_dump(mode="json") for item in retrieved],
                 "distilled": distilled.model_dump(mode="json"),
                 "decision": decision.model_dump(mode="json"),
+                "runtime": {
+                    "langgraph": self.graph_runner is not None,
+                    "provider_override": provider,
+                    "prompt_name": prompt_name,
+                    "settings": {
+                        "enable_planner": self.settings.enable_planner,
+                        "enable_query_rewriter": self.settings.enable_query_rewriter,
+                        "enable_reflection_memory": self.settings.enable_reflection_memory,
+                        "enable_policy_loop": self.settings.enable_policy_loop,
+                        "enable_temporal_graphrag": self.settings.enable_temporal_graphrag,
+                        "planner_mode": self.settings.planner_mode,
+                        "query_rewriter_mode": self.settings.query_rewriter_mode,
+                        "reflection_mode": self.settings.reflection_mode,
+                        "policy_mode": self.settings.policy_mode,
+                        "temporal_graphrag_mode": self.settings.temporal_graphrag_mode,
+                    },
+                    "agentic_state": agentic_state,
+                },
             },
         )
         decision.audit_path = audit_path

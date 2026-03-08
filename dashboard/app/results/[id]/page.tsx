@@ -2,39 +2,37 @@ export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ArticleSummaryBoard } from "@/components/article-summary-board";
 import { ResultCanvas } from "@/components/result-canvas";
-
-const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000") + "/api/v1";
-
-async function fetchAudit(issueKey: string, timestamp: string) {
-  const r = await fetch(`${API_BASE}/audit/results/${issueKey}/${timestamp}`, {
-    cache: "no-store",
-  });
-  if (!r.ok) return null;
-  return r.json();
-}
+import { getResultById } from "@/lib/results-data";
 
 interface Props {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
 export default async function ResultCanvasPage({ params }: Props) {
-  // id format: ISSUEKEY__TIMESTAMP
-  const [issueKey, timestamp] = decodeURIComponent(params.id).split("__");
+  const { id } = await params;
+  const [issueKey, timestamp] = decodeURIComponent(id).split("__");
   if (!issueKey || !timestamp) notFound();
 
-  const audit = await fetchAudit(issueKey, timestamp);
+  const audit = await getResultById(`${issueKey}__${timestamp}`);
   if (!audit) notFound();
 
   return (
-    <main className="page page--canvas">
+    <main className="page page--result-detail">
       <div className="rc__breadcrumb">
         <Link href="/results" className="rc__breadcrumb-back">← Resultados</Link>
         <span className="rc__breadcrumb-sep">/</span>
         <span className="rc__breadcrumb-id">{issueKey}</span>
         <span className="rc__breadcrumb-ts">{timestamp}</span>
       </div>
-      <ResultCanvas audit={audit} />
+      <section className="rc__shell">
+        <ResultCanvas audit={audit} />
+      </section>
+      <ArticleSummaryBoard
+        articleCards={audit.knowledge_map.article_cards}
+        themeClusters={audit.knowledge_map.theme_clusters}
+      />
     </main>
   );
 }

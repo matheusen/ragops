@@ -366,7 +366,14 @@ class FlowDescribeResponse(BaseModel):
     llm_model: str
     embedding_model: str
     retrieval: dict[str, bool]
+    agentic: dict[str, bool]
     reranker: bool
+    distiller: str  # "simple" | "refrag"
+    planner_mode: str
+    query_rewriter_mode: str
+    reflection_mode: str
+    policy_mode: str
+    temporal_graphrag_mode: str
     confidentiality: bool
     langgraph: bool
     dspy_active: bool

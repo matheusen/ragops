@@ -64,8 +64,9 @@ class HybridRetriever:
         attachment_facts: AttachmentFacts,
         rules: RuleEvaluation,
         top_k: int = 8,
+        query_text_override: str | None = None,
     ) -> list[RetrievedEvidence]:
-        query = self.build_query(issue, attachment_facts, rules)
+        query = (query_text_override or self.build_query(issue, attachment_facts, rules)).strip()
         query_tokens = self._tokenize(query)
         documents = self._build_documents(issue, attachment_facts)
         # Qdrant: cascade (quantized two-pass) or regular hybrid search
@@ -79,6 +80,7 @@ class HybridRetriever:
         graph_results: list[RetrievedEvidence] = []
         if self.neo4j and self.neo4j.is_available():
             graph_results = self.neo4j.search_related(issue, limit=top_k // 2 or 4)
+        temporal_results = self._build_temporal_results(issue) if self.settings and self.settings.enable_temporal_graphrag else []
 
         ranked: list[RetrievedEvidence] = []
         for evidence_id, source, content, metadata in documents:
@@ -111,6 +113,9 @@ class HybridRetriever:
 
         for graph_ev in graph_results:
             ranked.append(graph_ev)
+
+        for temporal_ev in temporal_results:
+            ranked.append(temporal_ev)
 
         if self.reranker is None:
             return sorted(ranked, key=lambda item: item.final_score, reverse=True)[:top_k]
@@ -170,6 +175,42 @@ class HybridRetriever:
         for evidence_id, content in POLICY_SNIPPETS:
             documents.append((evidence_id, evidence_id, content, {"category": "policy"}))
         return documents
+
+    @staticmethod
+    def _build_temporal_results(issue: IssueCanonical) -> list[RetrievedEvidence]:
+        results: list[RetrievedEvidence] = []
+        if issue.affected_version:
+            results.append(
+                RetrievedEvidence(
+                    evidence_id=f"temporal:{issue.issue_key}:version",
+                    source=f"temporal:{issue.issue_key}:version",
+                    content=f"Issue {issue.issue_key} references affected version {issue.affected_version}. Version-sensitive behaviour may require checking policy or rollout history.",
+                    metadata={"category": "temporal", "backend": "temporal", "issue_key": issue.issue_key},
+                    sparse_score=0.58,
+                    dense_score=0.0,
+                    final_score=0.58,
+                )
+            )
+
+        for index, event in enumerate(sorted(issue.changelog, key=lambda item: item.changed_at or issue.collected_at, reverse=True)[:4], start=1):
+            changed_at = event.changed_at.isoformat() if event.changed_at else "unknown"
+            content = (
+                f"Timeline event for {issue.issue_key}: field={event.field}, "
+                f"from={event.from_value or '-'}, to={event.to_value or '-'}, changed_at={changed_at}."
+            )
+            results.append(
+                RetrievedEvidence(
+                    evidence_id=f"temporal:{issue.issue_key}:change:{index}",
+                    source=f"temporal:{issue.issue_key}:change:{index}",
+                    content=content,
+                    metadata={"category": "temporal", "backend": "temporal", "issue_key": issue.issue_key},
+                    sparse_score=0.54,
+                    dense_score=0.0,
+                    final_score=0.54,
+                )
+            )
+
+        return results
 
     @staticmethod
     def _tokenize(text: str) -> Counter[str]:

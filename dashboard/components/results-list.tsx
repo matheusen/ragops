@@ -2,24 +2,9 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import type { AuditSummary } from "@/lib/results-data";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-
-export interface AuditSummary {
-  id: string;
-  issue_key: string;
-  timestamp: string;
-  summary: string;
-  classification: "bug" | "not_bug" | "needs_review" | string;
-  is_bug: boolean;
-  is_complete: boolean;
-  ready_for_dev: boolean;
-  confidence: number;
-  provider: string;
-  requires_human_review: boolean;
-  financial_impact_detected: boolean;
-  generated_at: string;
-}
 
 const CLS_META: Record<string, { label: string; mod: string; icon: string }> = {
   bug:          { label: "Bug",           mod: "ris__badge--bug",    icon: "🐛" },
@@ -139,6 +124,9 @@ export function ResultsList({ items }: { items: AuditSummary[] }) {
                 <div className="ris__card-head">
                   <span className="ris__issue-key">{item.issue_key}</span>
                   <span className={`ris__badge ${cls.mod}`}>{cls.icon} {cls.label}</span>
+                  {item.data_source === "mock" && (
+                    <span className="ris__badge ris__badge--mock">mock canvas</span>
+                  )}
                   <span className="ris__date">{fmt(item.generated_at)}</span>
                 </div>
 

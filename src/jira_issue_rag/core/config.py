@@ -23,7 +23,12 @@ class Settings(BaseSettings):
     enable_reranker: bool = Field(default=True, alias="ENABLE_RERANKER")
     enable_external_retrieval: bool = Field(default=True, alias="ENABLE_EXTERNAL_RETRIEVAL")
     enable_modular_judge: bool = Field(default=False, alias="ENABLE_MODULAR_JUDGE")
+    enable_planner: bool = Field(default=False, alias="ENABLE_PLANNER")
+    enable_query_rewriter: bool = Field(default=False, alias="ENABLE_QUERY_REWRITER")
+    enable_reflection_memory: bool = Field(default=False, alias="ENABLE_REFLECTION_MEMORY")
+    enable_policy_loop: bool = Field(default=False, alias="ENABLE_POLICY_LOOP")
     second_opinion_confidence_threshold: float = Field(default=0.65, alias="SECOND_OPINION_CONFIDENCE_THRESHOLD")
+    max_planning_iterations: int = Field(default=4, alias="MAX_PLANNING_ITERATIONS")
 
     primary_model: str = Field(default="mock-judge-v1", alias="PRIMARY_MODEL")
     openai_model: str = Field(default="gpt-5-mini", alias="OPENAI_MODEL")
@@ -61,6 +66,12 @@ class Settings(BaseSettings):
     neo4j_password: str | None = Field(default=None, alias="NEO4J_PASSWORD")
     neo4j_database: str = Field(default="neo4j", alias="NEO4J_DATABASE")
     enable_graphrag: bool = Field(default=False, alias="ENABLE_GRAPHRAG")
+    enable_temporal_graphrag: bool = Field(default=False, alias="ENABLE_TEMPORAL_GRAPHRAG")
+    planner_mode: str = Field(default="step-plan", alias="PLANNER_MODE")
+    query_rewriter_mode: str = Field(default="metadata-aware", alias="QUERY_REWRITER_MODE")
+    reflection_mode: str = Field(default="summary-log", alias="REFLECTION_MODE")
+    policy_mode: str = Field(default="rule-gated", alias="POLICY_MODE")
+    temporal_graphrag_mode: str = Field(default="versioned-graph", alias="TEMPORAL_GRAPHRAG_MODE")
 
     # Ollama local provider (from article: oLLM / Programação Agentic totalmente local)
     ollama_base_url: str = Field(default="http://localhost:11434", alias="OLLAMA_BASE_URL")
@@ -68,6 +79,12 @@ class Settings(BaseSettings):
 
     # Auto-improvement threshold (from article: Criando arquitetura de treinamento)
     auto_improvement_threshold: float = Field(default=0.75, alias="AUTO_IMPROVEMENT_THRESHOLD")
+
+    # Distiller mode: "simple" (rule-based, zero cost) or "refrag" (LLM-based REFRAG compression)
+    distiller_mode: str = Field(default="simple", alias="DISTILLER_MODE")
+    # Provider used for the compression LLM in refrag mode — defaults to the primary provider.
+    # Set to a cheaper/faster model (e.g. "openai" with gpt-5-mini) to keep latency low.
+    distiller_provider: str = Field(default="", alias="DISTILLER_PROVIDER")
 
     # DSPy optimization lab (item 11)
     dspy_lab_dir: Path = Field(default=Path("data/dspy_lab"), alias="DSPY_LAB_DIR")
@@ -77,7 +94,12 @@ class Settings(BaseSettings):
     golden_dataset_path: Path = Field(default=Path("examples/golden_dataset.json"), alias="GOLDEN_DATASET_PATH")
     prompts_dir: Path = Field(default=Path("prompts"), alias="PROMPTS_DIR")
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        populate_by_name=True,
+    )
 
     def allows_provider(self, provider_name: str | None) -> bool:
         lowered = (provider_name or "mock").lower()

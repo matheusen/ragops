@@ -1,0 +1,206 @@
+{
+  "issue": {
+    "issue_key": "PAY-9999",
+    "summary": "Payment mismatch in ledger export",
+    "description": "actual mismatch after release v2.4.1",
+    "comments": [],
+    "acceptance_criteria": [],
+    "reproduction_steps": [],
+    "expected_behavior": "",
+    "actual_behavior": "",
+    "priority": null,
+    "issue_type": "Bug",
+    "status": null,
+    "project": null,
+    "component": null,
+    "service": null,
+    "environment": null,
+    "affected_version": null,
+    "labels": [],
+    "issue_links": [],
+    "attachments": [],
+    "changelog": [],
+    "collected_at": "2026-03-08T13:03:46.301391Z"
+  },
+  "attachment_facts": {
+    "issue_key": "PAY-9999",
+    "artifacts": [],
+    "contradictions": [],
+    "missing_information": []
+  },
+  "rule_evaluation": {
+    "missing_items": [
+      "actual_result_detail",
+      "affected_version_confirmation",
+      "environment",
+      "expected_result_detail",
+      "reproduction_steps"
+    ],
+    "contradictions": [],
+    "financial_impact_detected": true,
+    "requires_human_review": true,
+    "results": [
+      {
+        "rule_name": "financial_impact_detected",
+        "severity": "critical",
+        "message": "Issue contains financial language or monetary evidence",
+        "metadata": {}
+      }
+    ]
+  },
+  "retrieved": [
+    {
+      "evidence_id": "issue:summary",
+      "source": "issue.summary",
+      "content": "PAY-9999 Payment mismatch in ledger export actual mismatch after release v2.4.1",
+      "metadata": {
+        "category": "issue"
+      },
+      "sparse_score": 1.0,
+      "dense_score": 0.6,
+      "final_score": 9.0652
+    },
+    {
+      "evidence_id": "policy:financial-review",
+      "source": "policy:financial-review",
+      "content": "Any issue with payment, refund, chargeback, or ledger mismatch must require human review unless deterministic checks fully reconcile the evidence.",
+      "metadata": {
+        "category": "policy"
+      },
+      "sparse_score": 0.5,
+      "dense_score": 0.1304,
+      "final_score": -0.9493
+    },
+    {
+      "evidence_id": "issue:expected_actual",
+      "source": "issue.behavior",
+      "content": "Expected: \nActual: ",
+      "metadata": {
+        "category": "issue"
+      },
+      "sparse_score": 0.0,
+      "dense_score": 0.0,
+      "final_score": -10.6837
+    },
+    {
+      "evidence_id": "policy:bug-ready",
+      "source": "policy:bug-ready",
+      "content": "A bug should include expected behavior, actual behavior, reproduction steps, environment, and affected version before it is marked ready for development.",
+      "metadata": {
+        "category": "policy"
+      },
+      "sparse_score": 0.0,
+      "dense_score": 0.0,
+      "final_score": -11.4406
+    },
+    {
+      "evidence_id": "policy:contradictions",
+      "source": "policy:contradictions",
+      "content": "If one artifact shows failure and another shows success for the same flow, the issue must be escalated for review.",
+      "metadata": {
+        "category": "policy"
+      },
+      "sparse_score": 0.0,
+      "dense_score": 0.0,
+      "final_score": -11.4613
+    }
+  ],
+  "distilled": {
+    "key_facts": [
+      "issue.summary: PAY-9999 Payment mismatch in ledger export actual mismatch after release v2.4.1",
+      "policy:financial-review: Any issue with payment, refund, chargeback, or ledger mismatch must require human review unless deterministic checks fully reconcile the evidence.",
+      "issue.behavior: Expected: \nActual:",
+      "policy:bug-ready: A bug should include expected behavior, actual behavior, reproduction steps, environment, and affected version before it is marked ready for development.",
+      "policy:contradictions: If one artifact shows failure and another shows success for the same flow, the issue must be escalated for review."
+    ],
+    "preserved_quotes": [
+      "PAY-9999",
+      "v2.4.1"
+    ],
+    "evidence": [
+      {
+        "evidence_id": "issue:summary",
+        "source": "issue.summary",
+        "content": "PAY-9999 Payment mismatch in ledger export actual mismatch after release v2.4.1",
+        "metadata": {
+          "category": "issue"
+        },
+        "sparse_score": 1.0,
+        "dense_score": 0.6,
+        "final_score": 9.0652
+      },
+      {
+        "evidence_id": "policy:financial-review",
+        "source": "policy:financial-review",
+        "content": "Any issue with payment, refund, chargeback, or ledger mismatch must require human review unless deterministic checks fully reconcile the evidence.",
+        "metadata": {
+          "category": "policy"
+        },
+        "sparse_score": 0.5,
+        "dense_score": 0.1304,
+        "final_score": -0.9493
+      },
+      {
+        "evidence_id": "issue:expected_actual",
+        "source": "issue.behavior",
+        "content": "Expected: \nActual: ",
+        "metadata": {
+          "category": "issue"
+        },
+        "sparse_score": 0.0,
+        "dense_score": 0.0,
+        "final_score": -10.6837
+      },
+      {
+        "evidence_id": "policy:bug-ready",
+        "source": "policy:bug-ready",
+        "content": "A bug should include expected behavior, actual behavior, reproduction steps, environment, and affected version before it is marked ready for development.",
+        "metadata": {
+          "category": "policy"
+        },
+        "sparse_score": 0.0,
+        "dense_score": 0.0,
+        "final_score": -11.4406
+      },
+      {
+        "evidence_id": "policy:contradictions",
+        "source": "policy:contradictions",
+        "content": "If one artifact shows failure and another shows success for the same flow, the issue must be escalated for review.",
+        "metadata": {
+          "category": "policy"
+        },
+        "sparse_score": 0.0,
+        "dense_score": 0.0,
+        "final_score": -11.4613
+      }
+    ]
+  },
+  "decision": {
+    "issue_key": "PAY-9999",
+    "classification": "needs_review",
+    "is_bug": true,
+    "is_complete": false,
+    "ready_for_dev": false,
+    "missing_items": [
+      "actual_result_detail",
+      "affected_version_confirmation",
+      "environment",
+      "expected_result_detail",
+      "reproduction_steps"
+    ],
+    "evidence_used": [
+      "issue:summary",
+      "policy:financial-review",
+      "policy:bug-ready"
+    ],
+    "contradictions": [],
+    "financial_impact_detected": true,
+    "confidence": 0.98,
+    "requires_human_review": true,
+    "provider": "gemini",
+    "model": "gemini-2.5-pro",
+    "rationale": "The issue is classified as a bug based on its issue type and the summary 'Payment mismatch in ledger export', which describes a clear functional defect. However, the issue is incomplete and not ready for development because it is missing several key fields, including reproduction steps, expected/actual behavior, and environment, as confirmed by the `rule_evaluation`. The nature of the issue ('Payment mismatch') triggers a financial impact warning, which, according to the `policy:financial-review`, requires human oversight. Therefore, the issue needs review before it can proceed.",
+    "audit_path": null,
+    "generated_at": "2026-03-08T13:04:02.861737Z"
+  }
+}

@@ -1,9 +1,20 @@
-export function PageHeader({ eyebrow, title, description }: { eyebrow: string; title: string; description: string }) {
+export function PageHeader({
+  eyebrow,
+  title,
+  description,
+  subtitle,
+}: {
+  eyebrow?: string;
+  title: string;
+  description?: string;
+  subtitle?: string;
+}) {
+  const copy = description ?? subtitle ?? "";
   return (
     <header className="page-header">
-      <div className="mini-label">{eyebrow}</div>
+      {eyebrow && <div className="mini-label">{eyebrow}</div>}
       <h1>{title}</h1>
-      <p>{description}</p>
+      {copy && <p>{copy}</p>}
     </header>
   );
 }

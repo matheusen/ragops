@@ -133,6 +133,34 @@ const NODE_CATALOG: CatalogEntry[] = [
     serviceFile: "rules.py",
   },
   {
+    id: "planner",
+    category: "prompt",
+    label: "Tool-Aware Planner",
+    description: "Decompõe a issue em subtarefas, decide se cada passo precisa de retrieval vetorial, grafo, artefato local ou validação determinística e produz um plano iterativo em vez de uma única query linear.",
+    tech: ["Planning", "Task decomposition", "LangGraph state"],
+    optional: true,
+    serviceFile: "langgraph_workflow.py",
+    variants: [
+      { id: "step-plan", label: "Step plan", description: "Plano simples com 2-5 subperguntas orientadas por evidência.", tech: ["Research steps", "Low latency"] },
+      { id: "tool-aware", label: "Tool-aware", description: "Planejador escolhe explicitamente retrieval, grafo, regras ou revisão humana por etapa.", tech: ["Tool routing", "Agentic"] },
+    ],
+    selectedVariant: "tool-aware",
+  },
+  {
+    id: "query-rewriter",
+    category: "prompt",
+    label: "Query Rewriter",
+    description: "Reescreve e expande a consulta por tipo de evidência: erro, regra oculta, versão conflitante, multi-hop ou agregação. É a peça que tira o app do `build_query()` único.",
+    tech: ["Query rewriting", "Metadata-aware", "HyDE optional"],
+    optional: true,
+    serviceFile: "retrieval.py",
+    variants: [
+      { id: "metadata-aware", label: "Metadata-aware", description: "Gera queries separadas por labels, componente, serviço e versão.", tech: ["Metadata", "Precision"] },
+      { id: "hyde", label: "HyDE", description: "Expansão hipotética da query para recall maior em bases ruidosas.", tech: ["HyDE", "Recall"] },
+    ],
+    selectedVariant: "metadata-aware",
+  },
+  {
     id: "embeddings",
     category: "retrieval",
     label: "Embeddings",
@@ -174,6 +202,20 @@ const NODE_CATALOG: CatalogEntry[] = [
     serviceFile: "neo4j_store.py",
   },
   {
+    id: "temporal-graphrag",
+    category: "retrieval",
+    label: "Temporal GraphRAG",
+    description: "Enriquecimento do fluxo com fatos, políticas, versões e relações temporais para lidar com hidden rules, conflitos de versão e multi-hop real entre artefatos.",
+    tech: ["Temporal graph", "Entity resolution", "Versioned facts"],
+    optional: true,
+    serviceFile: "neo4j_store.py",
+    variants: [
+      { id: "fact-graph", label: "Fact graph", description: "Expande o grafo atual de issues para fatos e entidades extraídas.", tech: ["Facts", "Entities"] },
+      { id: "versioned-graph", label: "Versioned graph", description: "Inclui histórico e validade temporal para políticas e comportamento esperado.", tech: ["Temporal edges", "Policy history"] },
+    ],
+    selectedVariant: "versioned-graph",
+  },
+  {
     id: "reranker",
     category: "retrieval",
     label: "Reranker",
@@ -186,6 +228,48 @@ const NODE_CATALOG: CatalogEntry[] = [
       { id: "cohere", label: "Cohere Rerank",        description: "Cohere Rerank API — alta qualidade, latência baixa, pago por chamada", tech: ["Cohere", "API", "High quality"] },
     ],
     selectedVariant: "local",
+  },
+  {
+    id: "distiller",
+    category: "retrieval",
+    label: "Distiller",
+    description: "Comprime o contexto recuperado antes de enviá-lo ao LLM judge. Simple: extrai primeira frase e tokens exatos (IDs, valores, timestamps). REFRAG (Meta 2025): usa um LLM auxiliar leve para reescrever cada chunk em forma compacta, preservando literalmente todos os tokens críticos — ~30x menos tokens sem perda de precisão.",
+    tech: ["Context compression", "Token preservation", "REFRAG"],
+    optional: true,
+    serviceFile: "distiller.py",
+    variants: [
+      { id: "simple", label: "Simple",  description: "Extração rule-based: primeira frase + tokens exatos por regex. Zero custo de LLM.", tech: ["Regex", "Rule-based", "Free"] },
+      { id: "refrag", label: "REFRAG",  description: "Compressão LLM-based estilo REFRAG (Meta 2025): reescreve evidências com modelo auxiliar, preserva tokens críticos literalmente.", tech: ["LLM compression", "Token preservation", "REFRAG"] },
+    ],
+    selectedVariant: "simple",
+  },
+  {
+    id: "reflection-memory",
+    category: "processing",
+    label: "Reflection Memory",
+    description: "Guarda o histórico cumulativo da pesquisa: o que já foi confirmado, o que continua em aberto e quais estratégias falharam. É a memória curta do loop agentic.",
+    tech: ["Research history", "Summaries", "Checkpoint state"],
+    optional: true,
+    serviceFile: "langgraph_workflow.py",
+    variants: [
+      { id: "summary-log", label: "Summary log", description: "Cada iteração adiciona um resumo factual curto ao estado.", tech: ["Summaries", "Low token"] },
+      { id: "evidence-ledger", label: "Evidence ledger", description: "Mantém ledger estruturado de claims, fontes e gaps ainda não resolvidos.", tech: ["Claims", "Traceability"] },
+    ],
+    selectedVariant: "evidence-ledger",
+  },
+  {
+    id: "policy-loop",
+    category: "execution",
+    label: "Policy Loop",
+    description: "Nó de controle do LangGraph que decide se o pipeline encerra, replaneja, pede mais evidência, sobe para revisão humana ou chama uma segunda opinião.",
+    tech: ["Conditional edges", "Human review", "Control flow"],
+    optional: true,
+    serviceFile: "langgraph_workflow.py",
+    variants: [
+      { id: "rule-gated", label: "Rule-gated", description: "Usa sinais determinísticos para decidir continuar, revisar ou encerrar.", tech: ["Rules", "Deterministic"] },
+      { id: "policy-agent", label: "Policy agent", description: "Usa um agente leve para escolher próxima ação com base no histórico de pesquisa.", tech: ["Agentic loop", "Dynamic routing"] },
+    ],
+    selectedVariant: "rule-gated",
   },
   {
     id: "provider",
@@ -252,15 +336,21 @@ const DEFAULT_POSITIONS: Record<string, { x: number; y: number }> = {
   "normalizer":     { x: 540,  y: 170 },
   "artifacts":      { x: 810,  y: 60  },
   "rules":          { x: 810,  y: 270 },
-  "embeddings":     { x: 1080, y: 170 },
-  "retriever":      { x: 1350, y: 60  },
-  "neo4j":          { x: 1350, y: 290 },
-  "reranker":       { x: 1620, y: 170 },
-  "provider":       { x: 1890, y: 60  },
-  "dspy":           { x: 1890, y: 290 },
-  "result-norm":    { x: 2160, y: 60  },
-  "audit":          { x: 2160, y: 250 },
-  "ragas":          { x: 2160, y: 440 },
+  "planner":        { x: 1080, y: 20  },
+  "query-rewriter": { x: 1080, y: 300 },
+  "embeddings":     { x: 1350, y: 170 },
+  "retriever":      { x: 1620, y: 20  },
+  "neo4j":          { x: 1620, y: 210 },
+  "temporal-graphrag": { x: 1620, y: 400 },
+  "reranker":       { x: 1890, y: 170 },
+  "distiller":      { x: 2160, y: 20  },
+  "reflection-memory": { x: 2160, y: 210 },
+  "policy-loop":    { x: 2430, y: 170 },
+  "provider":       { x: 2700, y: 20  },
+  "dspy":           { x: 2700, y: 250 },
+  "result-norm":    { x: 2970, y: 20  },
+  "audit":          { x: 2970, y: 210 },
+  "ragas":          { x: 2970, y: 400 },
 };
 
 function buildDefaultNodes(overrides?: SavedFlow["nodes"]): PipelineNode[] {
@@ -297,17 +387,27 @@ const DEFAULT_EDGES: Edge[] = [
   { id:"e04", source:"confidentiality",target:"normalizer",       style: eStyle, markerEnd: mk },
   { id:"e05", source:"normalizer",     target:"artifacts",        style: eStyle, markerEnd: mk },
   { id:"e06", source:"normalizer",     target:"rules",            style: eStyle, markerEnd: mk },
-  { id:"e07", source:"artifacts",      target:"embeddings",       style: eStyle, markerEnd: mk },
-  { id:"e08", source:"rules",          target:"embeddings",       style: eStyle, markerEnd: mk },
-  { id:"e09", source:"embeddings",     target:"retriever",        style: eStyle, markerEnd: mk },
-  { id:"e10", source:"embeddings",     target:"neo4j",            style: eDash,  markerEnd: { ...mk, color: "#cbd5e1" } },
-  { id:"e11", source:"retriever",      target:"reranker",         style: eStyle, markerEnd: mk },
-  { id:"e12", source:"neo4j",          target:"reranker",         style: eDash,  markerEnd: { ...mk, color: "#cbd5e1" } },
-  { id:"e13", source:"reranker",       target:"provider",         style: eStyle, markerEnd: mk },
-  { id:"e14", source:"provider",       target:"result-norm",      style: eStyle, markerEnd: mk },
-  { id:"e15", source:"dspy",           target:"provider",         style: eDash,  markerEnd: { ...mk, color: "#cbd5e1" } },
-  { id:"e16", source:"result-norm",    target:"audit",            style: eStyle, markerEnd: mk },
-  { id:"e17", source:"result-norm",    target:"ragas",            style: eDash,  markerEnd: { ...mk, color: "#cbd5e1" } },
+  { id:"e07", source:"rules",          target:"planner",          style: eDash,  markerEnd: { ...mk, color: "#cbd5e1" } },
+  { id:"e08", source:"artifacts",      target:"planner",          style: eDash,  markerEnd: { ...mk, color: "#cbd5e1" } },
+  { id:"e09", source:"planner",        target:"query-rewriter",   style: eDash,  markerEnd: { ...mk, color: "#cbd5e1" } },
+  { id:"e10", source:"artifacts",      target:"embeddings",       style: eStyle, markerEnd: mk },
+  { id:"e11", source:"rules",          target:"embeddings",       style: eStyle, markerEnd: mk },
+  { id:"e12", source:"query-rewriter", target:"embeddings",       style: eDash,  markerEnd: { ...mk, color: "#cbd5e1" } },
+  { id:"e13", source:"embeddings",     target:"retriever",        style: eStyle, markerEnd: mk },
+  { id:"e14", source:"embeddings",     target:"neo4j",            style: eDash,  markerEnd: { ...mk, color: "#cbd5e1" } },
+  { id:"e15", source:"neo4j",          target:"temporal-graphrag",style: eDash,  markerEnd: { ...mk, color: "#cbd5e1" } },
+  { id:"e16", source:"retriever",      target:"reranker",         style: eStyle, markerEnd: mk },
+  { id:"e17", source:"temporal-graphrag", target:"reranker",      style: eDash,  markerEnd: { ...mk, color: "#cbd5e1" } },
+  { id:"e18", source:"neo4j",          target:"reranker",         style: eDash,  markerEnd: { ...mk, color: "#cbd5e1" } },
+  { id:"e19", source:"reranker",       target:"distiller",        style: eStyle, markerEnd: mk },
+  { id:"e20", source:"distiller",      target:"reflection-memory",style: eDash,  markerEnd: { ...mk, color: "#cbd5e1" } },
+  { id:"e21", source:"reflection-memory", target:"policy-loop",   style: eDash,  markerEnd: { ...mk, color: "#cbd5e1" } },
+  { id:"e22", source:"distiller",      target:"policy-loop",      style: eStyle, markerEnd: mk },
+  { id:"e23", source:"policy-loop",    target:"provider",         style: eDash,  markerEnd: { ...mk, color: "#cbd5e1" } },
+  { id:"e24", source:"dspy",           target:"provider",         style: eDash,  markerEnd: { ...mk, color: "#cbd5e1" } },
+  { id:"e25", source:"provider",       target:"result-norm",      style: eStyle, markerEnd: mk },
+  { id:"e26", source:"result-norm",    target:"audit",            style: eStyle, markerEnd: mk },
+  { id:"e27", source:"result-norm",    target:"ragas",            style: eDash,  markerEnd: { ...mk, color: "#cbd5e1" } },
 ];
 
 // ── Custom node component ──────────────────────────────────────────────────────
@@ -528,7 +628,16 @@ function LoadPanel({
 type FlowDescription = {
   provider: string; llm_model: string; embedding_model: string;
   retrieval: { external: boolean; graphrag: boolean; cascade: boolean };
-  reranker: boolean; confidentiality: boolean; langgraph: boolean;
+  agentic: {
+    planner: boolean;
+    query_rewriter: boolean;
+    reflection_memory: boolean;
+    policy_loop: boolean;
+    temporal_graphrag: boolean;
+  };
+  reranker: boolean; distiller: string; confidentiality: boolean; langgraph: boolean;
+  planner_mode: string; query_rewriter_mode: string; reflection_mode: string;
+  policy_mode: string; temporal_graphrag_mode: string;
   dspy_active: boolean; ragas_active: boolean;
 };
 
@@ -547,6 +656,13 @@ function buildFlowNodePayload(nodes: PipelineNode[]) {
     const variantLabel = entry?.variants?.find((v) => v.id === n.data.selectedVariant)?.label ?? null;
     return { id: n.id, active: n.data.active, selected_variant: variantLabel };
   });
+}
+
+function formatModeLabel(mode: string) {
+  return mode
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function RunFlowPanel({
@@ -624,17 +740,27 @@ function RunFlowPanel({
         <div className="pc__run-preview">
           {descLoading && <span className="pc__run-desc-loading">A carregar configuração…</span>}
           {desc && !descLoading && (
-            <div className="pc__run-desc-chips">
-              <span className="pc__run-chip pc__run-chip--provider">
-                {desc.provider} · {desc.llm_model}
-              </span>
-              {desc.retrieval.external && <span className="pc__run-chip">Qdrant</span>}
-              {desc.retrieval.graphrag  && <span className="pc__run-chip pc__run-chip--graph">Neo4j GraphRAG</span>}
-              {desc.reranker            && <span className="pc__run-chip">Reranker ✓</span>}
-              {!desc.retrieval.external && <span className="pc__run-chip pc__run-chip--warn">In-memory</span>}
-              {desc.confidentiality     && <span className="pc__run-chip pc__run-chip--safe">🔒 Confidencial</span>}
-              {desc.ragas_active        && <span className="pc__run-chip">RAGAS ✓</span>}
-            </div>
+            <>
+              <div className="pc__run-desc-chips">
+                <span className="pc__run-chip pc__run-chip--provider">
+                  {desc.provider} · {desc.llm_model}
+                </span>
+                {desc.retrieval.external && <span className="pc__run-chip">Qdrant</span>}
+                {desc.retrieval.graphrag  && <span className="pc__run-chip pc__run-chip--graph">Neo4j GraphRAG</span>}
+                {desc.reranker            && <span className="pc__run-chip">Reranker ✓</span>}
+                {desc.distiller === "refrag"
+                  ? <span className="pc__run-chip pc__run-chip--refrag">⚡ REFRAG</span>
+                  : <span className="pc__run-chip pc__run-chip--muted">Distiller: simple</span>}
+                {!desc.retrieval.external && <span className="pc__run-chip pc__run-chip--warn">In-memory</span>}
+                {desc.confidentiality     && <span className="pc__run-chip pc__run-chip--safe">🔒 Confidencial</span>}
+                {desc.ragas_active        && <span className="pc__run-chip">RAGAS ✓</span>}
+                {desc.agentic.planner && <span className="pc__run-chip">Planner · {formatModeLabel(desc.planner_mode)}</span>}
+                {desc.agentic.query_rewriter && <span className="pc__run-chip">Rewriter · {formatModeLabel(desc.query_rewriter_mode)}</span>}
+                {desc.agentic.reflection_memory && <span className="pc__run-chip">Reflection · {formatModeLabel(desc.reflection_mode)}</span>}
+                {desc.agentic.policy_loop && <span className="pc__run-chip">Policy loop · {formatModeLabel(desc.policy_mode)}</span>}
+                {desc.agentic.temporal_graphrag && <span className="pc__run-chip pc__run-chip--graph">Temporal Graph · {formatModeLabel(desc.temporal_graphrag_mode)}</span>}
+              </div>
+            </>
           )}
         </div>
 

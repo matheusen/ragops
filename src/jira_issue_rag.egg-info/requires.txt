@@ -18,9 +18,29 @@ pytest-asyncio>=1.1.0
 [eval]
 ragas>=0.3.0
 
+[graphrag]
+neo4j>=5.0.0
+
+[ocr]
+pytesseract>=0.3.13
+pdf2image>=1.17.0
+
+[ocr-advanced]
+httpx>=0.27.0
+
+[optimization]
+dspy-ai>=2.6.0
+
+[parsing]
+docling>=2.0.0
+
 [providers]
 openai>=2.0.0
+google-auth>=2.40.0
 google-genai>=1.30.0
+
+[rerank]
+sentence-transformers>=3.0.0
 
 [retrieval]
 qdrant-client>=1.15.0

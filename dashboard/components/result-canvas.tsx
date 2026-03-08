@@ -1,70 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ResultAudit } from "@/lib/results-data";
 
-// ── Audit JSON types (minimal) ─────────────────────────────────────────────────
-
-interface ArtifactFact {
-  artifact_id: string;
-  artifact_type: string;
-  source_path: string;
-  extracted_text: string;
-  facts: Record<string, unknown>;
-  confidence: number;
-}
-
-interface RetrievedItem {
-  evidence_id: string;
-  source: string;
-  content: string;
-  metadata: { category: string; type?: string };
-  final_score: number;
-}
-
-interface AuditJSON {
-  issue: {
-    issue_key: string;
-    summary: string;
-    description: string;
-    priority: string | null;
-    issue_type: string;
-    status: string | null;
-    project: string | null;
-    component: string | null;
-    service: string | null;
-    environment: string | null;
-  };
-  attachment_facts?: {
-    artifacts?: ArtifactFact[];
-    contradictions?: string[];
-  };
-  rule_evaluation?: {
-    missing_items?: string[];
-    contradictions?: string[];
-    results?: { rule_name: string; severity: string; message: string }[];
-  };
-  retrieved?: RetrievedItem[];
-  decision?: {
-    issue_key: string;
-    classification: string;
-    is_bug: boolean;
-    is_complete: boolean;
-    ready_for_dev: boolean;
-    confidence: number;
-    missing_items: string[];
-    evidence_used: string[];
-    contradictions: string[];
-    financial_impact_detected: boolean;
-    requires_human_review: boolean;
-    rationale: string;
-    provider: string;
-    model: string;
-  };
-}
+type AuditJSON = ResultAudit;
 
 // ── Graph types ────────────────────────────────────────────────────────────────
 
-type NodeType = "issue" | "artifact" | "policy" | "decision" | "contradiction" | "missing" | "rule";
+type NodeType =
+  | "issue"
+  | "artifact"
+  | "policy"
+  | "decision"
+  | "contradiction"
+  | "missing"
+  | "rule"
+  | "topic"
+  | "document";
 
 interface CANode {
   id: string;
@@ -96,6 +48,8 @@ const NODE_THEME: Record<NodeType, { border: string; bg: string; icon: string; d
   contradiction: { border: "#ef4444", bg: "#fef2f2", icon: "⚡", dark: "#b91c1c" },
   missing:       { border: "#f59e0b", bg: "#fffbeb", icon: "❓", dark: "#b45309" },
   rule:          { border: "#06b6d4", bg: "#ecfeff", icon: "📏", dark: "#0e7490" },
+  topic:         { border: "#0f766e", bg: "#ecfdf5", icon: "🧠", dark: "#115e59" },
+  document:      { border: "#7c3aed", bg: "#faf5ff", icon: "🗂️", dark: "#6d28d9" },
 };
 
 const CLS_DECISION_THEME: Record<string, { border: string; bg: string }> = {
@@ -107,7 +61,17 @@ const CLS_DECISION_THEME: Record<string, { border: string; bg: string }> = {
 // ── Layout algorithm ───────────────────────────────────────────────────────────
 
 const CX = 650;
-const NODE_W = { issue: 320, artifact: 250, policy: 250, decision: 320, contradiction: 260, missing: 240, rule: 230 };
+const NODE_W = {
+  issue: 320,
+  artifact: 250,
+  policy: 250,
+  decision: 320,
+  contradiction: 260,
+  missing: 240,
+  rule: 230,
+  topic: 220,
+  document: 260,
+};
 const NODE_H_DEFAULT = 90;
 const GAP_Y = 24;
 
@@ -324,7 +288,92 @@ function computeLayout(audit: AuditJSON): { nodes: CANode[]; edges: CAEdge[]; he
     });
   });
 
+  // ── Knowledge map: topics + related documents ────────────────────────────
+  const topics = audit.knowledge_map?.topics ?? [];
+  const documents = audit.knowledge_map?.documents ?? [];
+  const knowledgeY = Math.max(
+    contStartY + contradictions.length * (75 + GAP_Y),
+    missStartY + missing.length * (70 + GAP_Y),
+    decisionY + 210,
+  ) + 36;
+
+  const topicSpacing = NODE_W.topic + 34;
+  const topicStartX = CX - ((Math.max(topics.length, 1) - 1) * topicSpacing) / 2 - NODE_W.topic / 2;
+  topics.forEach((topic, i) => {
+    const nodeId = `topic_${topic.id}`;
+    const topicX = topicStartX + i * topicSpacing;
+    nodes.push({
+      id: nodeId,
+      type: "topic",
+      x: topicX,
+      y: knowledgeY,
+      w: NODE_W.topic,
+      h: 86,
+      title: topic.label,
+      subtitle: `${Math.round(topic.strength * 100)}% de afinidade`,
+      detail: topic.notes,
+      badge: "topic",
+      score: topic.strength,
+    });
+    edges.push({
+      id: `e_dec_topic_${topic.id}`,
+      from: "decision",
+      to: nodeId,
+      color: NODE_THEME.topic.border,
+      dashed: true,
+      label: "tema",
+    });
+  });
+
+  const documentsY = knowledgeY + 132;
+  const docColumns = Math.max(1, Math.min(3, documents.length));
+  documents.forEach((document, i) => {
+    const col = i % docColumns;
+    const row = Math.floor(i / docColumns);
+    const laneWidth = 380;
+    const docX = 160 + col * laneWidth;
+    const docY = documentsY + row * 116;
+    const nodeId = `document_${document.id}`;
+    nodes.push({
+      id: nodeId,
+      type: "document",
+      x: docX,
+      y: docY,
+      w: NODE_W.document,
+      h: 86,
+      title: document.title,
+      subtitle: document.summary,
+      detail: [
+        `Tipo: ${document.kind}`,
+        document.summary,
+        document.evidence_refs.length > 0 ? `Refs: ${document.evidence_refs.join(", ")}` : "",
+      ].filter(Boolean).join("\n\n"),
+      badge: document.kind,
+    });
+
+    if (document.linked_topic_ids.length === 0 && topics[0]) {
+      edges.push({
+        id: `e_doc_fallback_${document.id}`,
+        from: `topic_${topics[0].id}`,
+        to: nodeId,
+        color: NODE_THEME.document.border,
+        dashed: true,
+      });
+    }
+
+    document.linked_topic_ids.forEach((topicId) => {
+      edges.push({
+        id: `e_topic_doc_${topicId}_${document.id}`,
+        from: `topic_${topicId}`,
+        to: nodeId,
+        color: NODE_THEME.document.border,
+      });
+    });
+  });
+
   const finalH = Math.max(
+    knowledgeY + topics.length * 12,
+    documentsY + Math.ceil(documents.length / Math.max(1, Math.min(3, documents.length || 1))) * 116,
     contStartY + contradictions.length * (75 + GAP_Y),
     missStartY + missing.length * (70 + GAP_Y),
     decisionY + 200,
@@ -713,6 +762,13 @@ export function ResultCanvas({ audit }: { audit: AuditJSON }) {
           <span className="rc__issue-summary">{audit.issue.summary}</span>
         </div>
         <Toolbar zoom={zoom} onZoomIn={zoomIn} onZoomOut={zoomOut} onFit={fitView} onReset={resetView} />
+      </div>
+
+      <div className="rc__meta">
+        <span className={`rc__meta-pill rc__meta-pill--${audit.result_meta.data_source}`}>
+          {audit.result_meta.data_source === "mock" ? "mock mode" : "local audit"}
+        </span>
+        <span className="rc__meta-copy">{audit.knowledge_map.summary}</span>
       </div>
 
       {/* canvas viewport */}

@@ -1,0 +1,1277 @@
+{
+  "issue": {
+    "issue_key": "ART-2026",
+    "summary": "Análise do corpus de artigos Medium: RAG, agentes, IA local e multimodal dominam a coleção",
+    "description": "Foi realizada uma leitura exploratória dos 36 PDFs da pasta artigos medium. Os grupos mais fortes foram Agentes e MCP (7), RAG e retrieval (7), Document AI e OCR (6), IA local e offline (6), Áudio, vídeo e multimodal (6), Engenharia e performance (4). O corpus é especialmente útil para desenhar um roadmap de produto focado em retrieval avançado, agentes com memória e execução local/offline, mas ainda precisa de curadoria para virar uma biblioteca operacional consistente.",
+    "comments": [],
+    "acceptance_criteria": [],
+    "reproduction_steps": [],
+    "expected_behavior": "O corpus deveria convergir para uma trilha de estudo coerente, com temas agrupados e recomendações acionáveis por prioridade.",
+    "actual_behavior": "Os artigos cobrem frentes fortes e atuais, mas estão espalhados entre RAG, agentes, OCR, mídia generativa e performance geral sem uma taxonomia única.",
+    "priority": "Medium",
+    "issue_type": "Research",
+    "status": "Analisado",
+    "project": "KNW",
+    "component": "article-corpus",
+    "service": "knowledge-curation",
+    "environment": "local",
+    "affected_version": "2026-03",
+    "labels": [
+      "articles",
+      "medium-corpus",
+      "rag",
+      "agents",
+      "local-ai"
+    ],
+    "issue_links": [],
+    "attachments": [],
+    "changelog": [],
+    "collected_at": "2026-03-08T12:00:00Z"
+  },
+  "attachment_facts": {
+    "issue_key": "ART-2026",
+    "artifacts": [
+      {
+        "artifact_id": "sha256:5968b2650a52fae36cb50f86019e18393883fd8edda7932889613f5b422b5e7c",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\8 servidores MCP imperdíveis que todo desenvolvedor deveria experimentar hoje! _ por Anup Das _ Level Up Coding.pdf",
+        "extracted_text": "8 servidores MCP imperdíveis que todo desenvolvedor deveria conhecer hoje! 8 servidores MCP imperdíveis que todo desenvolvedor deveria conhecer hoje!",
+        "facts": {
+          "article_title": "8 servidores MCP imperdíveis que todo desenvolvedor deveria experimentar hoje! por Anup Das Level Up Coding",
+          "primary_theme": "Agentes e MCP",
+          "secondary_themes": [
+            "RAG e retrieval",
+            "Document AI e OCR"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 14,
+            "agents_mcp": 44,
+            "document_ai": 3,
+            "local_ai": 3,
+            "multimodal_media": 9,
+            "engineering_perf": 3
+          },
+          "artifact_name": "8 servidores MCP imperdíveis que todo desenvolvedor deveria experimentar hoje! _ por Anup Das _ Level Up Coding.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:42528896c8a2e1834a3886175c5070ad197d6c287ccec24c315139baebe6daf1",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\9 Arquiteturas RAG que Todo Desenvolvedor de IA Deve Conhecer_ Um Guia Completo com Exemplos _ por Divy Yadav _ Towards AI.pdf",
+        "extracted_text": "9 arquiteturas RAG que todo desenvolvedor de IA precisa conhecer: um guia completo com exemplos. Pressione Enter ou clique para ver a imagem em tamanho real.",
+        "facts": {
+          "article_title": "9 Arquiteturas RAG que Todo Desenvolvedor de IA Deve Conhecer Um Guia Completo com Exemplos por Divy Yadav Towards AI",
+          "primary_theme": "RAG e retrieval",
+          "secondary_themes": [
+            "Agentes e MCP",
+            "Document AI e OCR"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 97,
+            "agents_mcp": 15,
+            "document_ai": 21,
+            "local_ai": 1,
+            "multimodal_media": 12,
+            "engineering_perf": 1
+          },
+          "artifact_name": "9 Arquiteturas RAG que Todo Desenvolvedor de IA Deve Conhecer_ Um Guia Completo com Exemplos _ por Divy Yadav _ Towards AI.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:f37773957af8f0bf311fd395fc02730d1e0d160c15d1b805ac8b69942b3396bb",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\A alternativa gratuita e de código aberto ao ElevenLabs finalmente chegou _ por Bytefer _ fevereiro de 2026 _ Medium.pdf",
+        "extracted_text": "A alternativa gratuita e de código aberto ao ElevenLabs finalmente chegou. Uma alternativa gratuita e de código aberto ao ElevenLabs finalmente chegou.",
+        "facts": {
+          "article_title": "A alternativa gratuita e de código aberto ao ElevenLabs finalmente chegou por Bytefer fevereiro de 2026 Medium",
+          "primary_theme": "Áudio, vídeo e multimodal",
+          "secondary_themes": [
+            "Document AI e OCR",
+            "IA local e offline"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 0,
+            "agents_mcp": 0,
+            "document_ai": 1,
+            "local_ai": 6,
+            "multimodal_media": 59,
+            "engineering_perf": 1
+          },
+          "artifact_name": "A alternativa gratuita e de código aberto ao ElevenLabs finalmente chegou _ por Bytefer _ fevereiro de 2026 _ Medium.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:4cf2cdbb21c762f41cb58ea8c80432b228383a0106abf21bb648862bd9eb388d",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\A melhor maneira de usar IA para aprendizado _ por Alan Chan _ Heptabase _ Medium.pdf",
+        "extracted_text": "A melhor maneira de usar IA para aprendizado A melhor maneira de usar IA para aprendizado Leitura de 20 minutos 26 de setembro de 2025 Versão em Inglês /中文版請點擊或往下滑 Prefácio Sempre tenho confiança na minha capacidade de aprender. No ensino médio, fiquei entre os 10 melhores da equipe da Olimpíada Nacional de Física.",
+        "facts": {
+          "article_title": "A melhor maneira de usar IA para aprendizado por Alan Chan Heptabase Medium",
+          "primary_theme": "Document AI e OCR",
+          "secondary_themes": [
+            "RAG e retrieval",
+            "Agentes e MCP"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 4,
+            "agents_mcp": 2,
+            "document_ai": 39,
+            "local_ai": 1,
+            "multimodal_media": 15,
+            "engineering_perf": 0
+          },
+          "artifact_name": "A melhor maneira de usar IA para aprendizado _ por Alan Chan _ Heptabase _ Medium.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:b673e83f524f9a670f59b955e1d23ee928a7570c2c4b40506da5588508d2ef24",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\Além da força bruta_ uma análise profunda do REFRAG da Meta, o modelo que torna o RAG 30 vezes mais rápido _ por ElAmir Mansour _ Medium.pdf",
+        "extracted_text": "Além da força bruta: uma análise detalhada do REFRAG da Meta, o modelo que torna o RAG 30 vezes mais rápido. Além da força bruta: uma análise detalhada do REFRAG da Meta, o modelo que torna o RAG 30 vezes mais rápido.",
+        "facts": {
+          "article_title": "Além da força bruta uma análise profunda do REFRAG da Meta, o modelo que torna o RAG 30 vezes mais rápido por ElAmir Mansour Medium",
+          "primary_theme": "RAG e retrieval",
+          "secondary_themes": [
+            "Agentes e MCP",
+            "Document AI e OCR"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 104,
+            "agents_mcp": 15,
+            "document_ai": 14,
+            "local_ai": 2,
+            "multimodal_media": 2,
+            "engineering_perf": 4
+          },
+          "artifact_name": "Além da força bruta_ uma análise profunda do REFRAG da Meta, o modelo que torna o RAG 30 vezes mais rápido _ por ElAmir Mansour _ Medium.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:110f27a48f230745c7d622e8c676115b951592c8bd342c892df6874503bad9c1",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\Codon_ Python que roda 100 vezes mais rápido sem alterar seu código _ por Sumit Pandey _ Rumo ao Aprendizado Profundo.pdf",
+        "extracted_text": "Codon: Python que roda 100 vezes mais rápido sem alterar seu código Codon: Python que roda 100 vezes mais rápido sem alterar seu código Aprenda como o Codon alcança um aumento de velocidade de 100x no Python através da compilação AOT. Multithreading nativo, kernels de GPU, sobrecarga zero.",
+        "facts": {
+          "article_title": "Codon Python que roda 100 vezes mais rápido sem alterar seu código por Sumit Pandey Rumo ao Aprendizado Profundo",
+          "primary_theme": "Engenharia e performance",
+          "secondary_themes": [
+            "RAG e retrieval",
+            "Agentes e MCP"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 1,
+            "agents_mcp": 3,
+            "document_ai": 0,
+            "local_ai": 12,
+            "multimodal_media": 6,
+            "engineering_perf": 94
+          },
+          "artifact_name": "Codon_ Python que roda 100 vezes mais rápido sem alterar seu código _ por Sumit Pandey _ Rumo ao Aprendizado Profundo.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:fd0f6219630976ff863ec7cfb29a1cfcbb815436a793e7a8ba996ac540f0b4ae",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\Coleta de lixo em Java _ Stackademic.pdf",
+        "extracted_text": "99% dos desenvolvedores Java não entendem a coleta de lixo — veja o que realmente acontece. 99% dos desenvolvedores Java não entendem a coleta de lixo — veja o que realmente acontece.",
+        "facts": {
+          "article_title": "Coleta de lixo em Java Stackademic",
+          "primary_theme": "Engenharia e performance",
+          "secondary_themes": [
+            "Agentes e MCP",
+            "IA local e offline"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 0,
+            "agents_mcp": 2,
+            "document_ai": 0,
+            "local_ai": 2,
+            "multimodal_media": 2,
+            "engineering_perf": 28
+          },
+          "artifact_name": "Coleta de lixo em Java _ Stackademic.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:d4654156e23d2711a2bea363559ed385c22d481852764d4cc553e1a67084c26c",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\Como eu criei uma busca vetorial ultrarrápida para documentos jurídicos _ por Dr. Adrian Lucas Malec _ Medium.pdf",
+        "extracted_text": "Como eu criei uma busca vetorial extremamente rápida para documentos jurídicos Como eu criei uma busca vetorial extremamente rápida para documentos jurídicos 12 minutos de leitura 20 de outubro de 2025 Queria ver se conseguiria criar uma busca semântica em um grande conjunto de dados jurídicos — especificamente, todas…",
+        "facts": {
+          "article_title": "Como eu criei uma busca vetorial ultrarrápida para documentos jurídicos por Dr. Adrian Lucas Malec Medium",
+          "primary_theme": "RAG e retrieval",
+          "secondary_themes": [
+            "Agentes e MCP",
+            "Document AI e OCR"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 96,
+            "agents_mcp": 7,
+            "document_ai": 19,
+            "local_ai": 18,
+            "multimodal_media": 2,
+            "engineering_perf": 35
+          },
+          "artifact_name": "Como eu criei uma busca vetorial ultrarrápida para documentos jurídicos _ por Dr. Adrian Lucas Malec _ Medium.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:61b654f30af5c10894d8b4b89c6087b4611f068fabc91967836aebbaa27c1f2f",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\Construindo Memória de Longo Prazo em IA Agêntica _ por Fareed Khan _ Level Up Coding.pdf",
+        "extracted_text": "Construindo memória de longo prazo em IA Agêntica Construindo memória de longo prazo em IA Agência HITL, recurso InMemory, Loop de Feedback e muito mais 36 minutos de leitura 10 de outubro de 2025 Leia esta história gratuitamente: link Uma solução baseada em agentes ou RAG normalmente depende de um sistema de memória …",
+        "facts": {
+          "article_title": "Construindo Memória de Longo Prazo em IA Agêntica por Fareed Khan Level Up Coding",
+          "primary_theme": "Agentes e MCP",
+          "secondary_themes": [
+            "RAG e retrieval",
+            "Document AI e OCR"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 4,
+            "agents_mcp": 477,
+            "document_ai": 4,
+            "local_ai": 3,
+            "multimodal_media": 6,
+            "engineering_perf": 7
+          },
+          "artifact_name": "Construindo Memória de Longo Prazo em IA Agêntica _ por Fareed Khan _ Level Up Coding.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:1fe540340d9d2d22a5bfe2505874322d941671b8dbc4b114821bdcb8dbe4c752",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\Construindo um Pipeline RAG Agente Escalável e Pronto para Produção _ por Fareed Khan _ Level Up Coding.pdf",
+        "extracted_text": "Construindo um pipeline RAG agético escalável e de nível de produção História exclusiva para membros Construindo um pipeline RAG agético escalável e de nível de produção Escalabilidade automática, avaliação, fluxos de trabalho de computação de IA e muito mais 71 minutos de leitura 1 de janeiro de 2026 Leia esta histór…",
+        "facts": {
+          "article_title": "Construindo um Pipeline RAG Agente Escalável e Pronto para Produção por Fareed Khan Level Up Coding",
+          "primary_theme": "RAG e retrieval",
+          "secondary_themes": [
+            "Agentes e MCP",
+            "Document AI e OCR"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 324,
+            "agents_mcp": 172,
+            "document_ai": 107,
+            "local_ai": 118,
+            "multimodal_media": 40,
+            "engineering_perf": 88
+          },
+          "artifact_name": "Construindo um Pipeline RAG Agente Escalável e Pronto para Produção _ por Fareed Khan _ Level Up Coding.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:db57e7318ca532439de24cdd22f4debcb80606eb0a4ffe137e81ca248c6abe17",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\Construindo um Pipeline RAG de Pensamento Profundo e Agente para Resolver Consultas Complexas _ por Fareed Khan _ Level Up Coding.pdf",
+        "extracted_text": "Construindo um pipeline RAG de pensamento profundo e agente para resolver consultas complexas. História exclusiva para membros Construindo um pipeline RAG de pensamento profundo e agente para resolver consultas complexas.",
+        "facts": {
+          "article_title": "Construindo um Pipeline RAG de Pensamento Profundo e Agente para Resolver Consultas Complexas por Fareed Khan Level Up Coding",
+          "primary_theme": "Agentes e MCP",
+          "secondary_themes": [
+            "RAG e retrieval",
+            "Document AI e OCR"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 271,
+            "agents_mcp": 309,
+            "document_ai": 177,
+            "local_ai": 6,
+            "multimodal_media": 24,
+            "engineering_perf": 19
+          },
+          "artifact_name": "Construindo um Pipeline RAG de Pensamento Profundo e Agente para Resolver Consultas Complexas _ por Fareed Khan _ Level Up Coding.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:83ebafa8c03fcbfe5d0bb5d3a4458a749a0c418177fc86a71250905139ed1992",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\Construindo um Sistema Agencial de Pesquisa Profunda de Nível Humano usando o Algoritmo de Difusão de Teste Temporal _ por Fareed Khan _ Level Up Coding.pdf",
+        "extracted_text": "Construindo um Sistema Agencial de Pesquisa Profunda de Nível Humano usando o Algoritmo de Difusão de Teste Temporal História exclusiva para membros Construindo um Sistema Agencial de Pesquisa Profunda de Nível Humano usando o Algoritmo de Difusão de Teste Temporal Loops ReAct, redução de ruído, pesquisa paralela e mu…",
+        "facts": {
+          "article_title": "Construindo um Sistema Agencial de Pesquisa Profunda de Nível Humano usando o Algoritmo de Difusão de Teste Temporal por Fareed Khan Level Up Coding",
+          "primary_theme": "Agentes e MCP",
+          "secondary_themes": [
+            "RAG e retrieval",
+            "Document AI e OCR"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 19,
+            "agents_mcp": 433,
+            "document_ai": 5,
+            "local_ai": 0,
+            "multimodal_media": 30,
+            "engineering_perf": 5
+          },
+          "artifact_name": "Construindo um Sistema Agencial de Pesquisa Profunda de Nível Humano usando o Algoritmo de Difusão de Teste Temporal _ por Fareed Khan _ Level Up Coding.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:51fc903a2682aed71317fcb07c90c5ed7993dcc02fe8b3b4976eefe897456b02",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\Contratos de código Claude_ Pare de programar por impulso, comece a entregar _ Medium.pdf",
+        "extracted_text": "Parei de programar com base em vibrações e comecei a trabalhar com \"contratos imediatos\" — Claude Code passou de apostador a entregador. História exclusiva para membros Parei de programar com base em vibrações e comecei a trabalhar com \"contratos imediatos\" — Claude Code passou de apostador a entregador.",
+        "facts": {
+          "article_title": "Contratos de código Claude Pare de programar por impulso, comece a entregar Medium",
+          "primary_theme": "Agentes e MCP",
+          "secondary_themes": [
+            "RAG e retrieval",
+            "Document AI e OCR"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 3,
+            "agents_mcp": 10,
+            "document_ai": 2,
+            "local_ai": 1,
+            "multimodal_media": 1,
+            "engineering_perf": 0
+          },
+          "artifact_name": "Contratos de código Claude_ Pare de programar por impulso, comece a entregar _ Medium.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:e81a73d6273855fce1e2340d092c512918f97ddcfbb3b21dc2d9bb1f49aa0c2e",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\Corrigindo 14 falhas complexas do RAG com grafos de conhecimento _ por Fareed Khan _ Level Up Coding.pdf",
+        "extracted_text": "Corrigindo 14 falhas complexas do RAG com grafos de conhecimento História exclusiva para membros Corrigindo 14 falhas complexas do RAG com gráficos de conhecimento Ambiguidade, Multi-Hop, Alucinações e muito mais 98 minutos de leitura 5 de dezembro de 2025 Leia esta história gratuitamente: link A maioria das falhas em…",
+        "facts": {
+          "article_title": "Corrigindo 14 falhas complexas do RAG com grafos de conhecimento por Fareed Khan Level Up Coding",
+          "primary_theme": "Document AI e OCR",
+          "secondary_themes": [
+            "RAG e retrieval",
+            "Agentes e MCP"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 230,
+            "agents_mcp": 5,
+            "document_ai": 253,
+            "local_ai": 13,
+            "multimodal_media": 44,
+            "engineering_perf": 12
+          },
+          "artifact_name": "Corrigindo 14 falhas complexas do RAG com grafos de conhecimento _ por Fareed Khan _ Level Up Coding.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:112f9fb372ed44cef0c72aabb7a65416ab8bda9971e2ebd7f2daaa78df21e65f",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\Criando Agentes de IA Web Inteligentes com MCP, LangGraph e FastAPI _ por Shahar Gino _ Jan, 2026 _ Medium.pdf",
+        "extracted_text": "Criando agentes de IA inteligentes para a Web com MCP, LangGraph e FastAPI. Criando agentes de IA inteligentes para a Web com MCP, LangGraph e FastAPI.",
+        "facts": {
+          "article_title": "Criando Agentes de IA Web Inteligentes com MCP, LangGraph e FastAPI por Shahar Gino Jan, 2026 Medium",
+          "primary_theme": "Agentes e MCP",
+          "secondary_themes": [
+            "RAG e retrieval",
+            "Document AI e OCR"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 1,
+            "agents_mcp": 176,
+            "document_ai": 1,
+            "local_ai": 9,
+            "multimodal_media": 1,
+            "engineering_perf": 22
+          },
+          "artifact_name": "Criando Agentes de IA Web Inteligentes com MCP, LangGraph e FastAPI _ por Shahar Gino _ Jan, 2026 _ Medium.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:f767305f652479d54b0625eec8a3d79b96a4b6f91423951a89e707f9f00852eb",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\Criando uma arquitetura de treinamento para agentes de IA com capacidade de autoaperfeiçoamento _ por Fareed Khan _ Level Up Coding.pdf",
+        "extracted_text": "Construindo uma arquitetura de treinamento para agentes de IA com capacidade de autoaperfeiçoamento. História exclusiva para membros Construindo uma arquitetura de treinamento para agentes de IA com capacidade de autoaperfeiçoamento.",
+        "facts": {
+          "article_title": "Criando uma arquitetura de treinamento para agentes de IA com capacidade de autoaperfeiçoamento por Fareed Khan Level Up Coding",
+          "primary_theme": "Agentes e MCP",
+          "secondary_themes": [
+            "RAG e retrieval",
+            "Document AI e OCR"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 23,
+            "agents_mcp": 574,
+            "document_ai": 2,
+            "local_ai": 40,
+            "multimodal_media": 24,
+            "engineering_perf": 19
+          },
+          "artifact_name": "Criando uma arquitetura de treinamento para agentes de IA com capacidade de autoaperfeiçoamento _ por Fareed Khan _ Level Up Coding.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:199b435fadc59a01607c26ec8f8bfb4ae37da2536d8892da054cfa0a701f6e86",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\dots.ocr_ A IA que lê tudo — Uma análise profunda do futuro da análise de documentos _ por Cesar Schneider _ Jan, 2026 _ Medium.pdf",
+        "extracted_text": "dots.ocr: A IA que lê tudo — Uma análise aprofundada do futuro da análise de documentos dots.ocr: A IA que lê tudo — Uma análise aprofundada do futuro da análise de documentos 8 minutos de leitura 9 de janeiro de 2026 Pressione Enter ou clique para ver a imagem em tamanho real.",
+        "facts": {
+          "article_title": "dots.ocr A IA que lê tudo — Uma análise profunda do futuro da análise de documentos por Cesar Schneider Jan, 2026 Medium",
+          "primary_theme": "Document AI e OCR",
+          "secondary_themes": [
+            "RAG e retrieval",
+            "Agentes e MCP"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 2,
+            "agents_mcp": 3,
+            "document_ai": 87,
+            "local_ai": 3,
+            "multimodal_media": 47,
+            "engineering_perf": 3
+          },
+          "artifact_name": "dots.ocr_ A IA que lê tudo — Uma análise profunda do futuro da análise de documentos _ por Cesar Schneider _ Jan, 2026 _ Medium.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:351c79e6e4553bc00b0dd4c8d4dff0c61982c503ecafe55e73b920555a6d2fcc",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\DSPy 3 + GEPA_ A estrutura RAG mais avançada até agora — Raciocínio e sugestões automáticas _ por Gao Dalie (高達烈) _ Rumo à IA.pdf",
+        "extracted_text": "DSPy 3 + GEPA: A estrutura RAG mais avançada até agora — Raciocínio automático e sugestões DSPy 3 + GEPA: A estrutura RAG mais avançada até agora — Raciocínio automático e sugestões 11 minutos de leitura 21 de dezembro de 2025 Pressione Enter ou clique para ver a imagem em tamanho real.",
+        "facts": {
+          "article_title": "DSPy 3 + GEPA A estrutura RAG mais avançada até agora — Raciocínio e sugestões automáticas por Gao Dalie (高達烈) Rumo à IA",
+          "primary_theme": "Document AI e OCR",
+          "secondary_themes": [
+            "RAG e retrieval",
+            "Agentes e MCP"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 19,
+            "agents_mcp": 4,
+            "document_ai": 30,
+            "local_ai": 1,
+            "multimodal_media": 1,
+            "engineering_perf": 2
+          },
+          "artifact_name": "DSPy 3 + GEPA_ A estrutura RAG mais avançada até agora — Raciocínio e sugestões automáticas _ por Gao Dalie (高達烈) _ Rumo à IA.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:ef67631d6b604979cbf53948513e2e9ca443f4abcf93f4bca77411df620132ef",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\DSPy_ A estrutura que elimina a engenharia de prompts (e a substitui por código de verdade) _ Data Science Collective.pdf",
+        "extracted_text": "DSPy: A estrutura que acaba com a engenharia de prompts (e a substitui por código de verdade) História exclusiva para membros DSPy: Uma estrutura que acaba com a engenharia de prompts (e substitui por código de verdade) Pare de implorar por mestrados em direito com sugestões poéticas — comece a programá-los como softw…",
+        "facts": {
+          "article_title": "DSPy A estrutura que elimina a engenharia de prompts (e a substitui por código de verdade) Data Science Collective",
+          "primary_theme": "Áudio, vídeo e multimodal",
+          "secondary_themes": [
+            "Agentes e MCP",
+            "Engenharia e performance"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 0,
+            "agents_mcp": 1,
+            "document_ai": 0,
+            "local_ai": 0,
+            "multimodal_media": 10,
+            "engineering_perf": 3
+          },
+          "artifact_name": "DSPy_ A estrutura que elimina a engenharia de prompts (e a substitui por código de verdade) _ Data Science Collective.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:a9c5129115c4cd62d29ef45297cfc3a59461b29343b8b3c3f013a98704383a31",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\Executei um modelo de IA com 80 bilhões de parâmetros na minha GPU de 8 GB - Minha experiência com oLLM _ por Himanshu Soni _ AI Advances.pdf",
+        "extracted_text": "Executei um modelo de IA com 80 bilhões de parâmetros na minha GPU de 8 GB - Minha experiência com oLLM. Executei um modelo de IA com 80 bilhões de parâmetros na minha GPU de 8 GB - Minha experiência com oLLM.",
+        "facts": {
+          "article_title": "Executei um modelo de IA com 80 bilhões de parâmetros na minha GPU de 8 GB - Minha experiência com oLLM por Himanshu Soni AI Advances",
+          "primary_theme": "IA local e offline",
+          "secondary_themes": [
+            "RAG e retrieval",
+            "Document AI e OCR"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 1,
+            "agents_mcp": 0,
+            "document_ai": 2,
+            "local_ai": 27,
+            "multimodal_media": 4,
+            "engineering_perf": 10
+          },
+          "artifact_name": "Executei um modelo de IA com 80 bilhões de parâmetros na minha GPU de 8 GB - Minha experiência com oLLM _ por Himanshu Soni _ AI Advances.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:5fb25782e87da1126922ff517234873966fa2948f0001f669a62af52a4bb21db",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\Gere 4 minutos de K-Pop em 20 segundos (usando a IA musical mais rápida do Python) _ por HarshVardhan Jain _ Jan, 2026 _ Level Up Coding.pdf",
+        "extracted_text": "Gere 4 minutos de K-Pop em 20 segundos (usando a IA musical mais rápida do Python) Gere 4 minutos de K-Pop em 20 segundos (usando o IA musical mais rápido do Python) 13 minutos de leitura 7 de janeiro de 2026 Além das APIs da Suno: como o modelo de difusão em tempo real 27x da ACE-Step traz geração de música local de …",
+        "facts": {
+          "article_title": "Gere 4 minutos de K-Pop em 20 segundos (usando a IA musical mais rápida do Python) por HarshVardhan Jain Jan, 2026 Level Up Coding",
+          "primary_theme": "Áudio, vídeo e multimodal",
+          "secondary_themes": [
+            "RAG e retrieval",
+            "Agentes e MCP"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 4,
+            "agents_mcp": 2,
+            "document_ai": 4,
+            "local_ai": 13,
+            "multimodal_media": 101,
+            "engineering_perf": 26
+          },
+          "artifact_name": "Gere 4 minutos de K-Pop em 20 segundos (usando a IA musical mais rápida do Python) _ por HarshVardhan Jain _ Jan, 2026 _ Level Up Coding.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:fc761a034d5ddef1ec3f31bffc6d9dc60821c3aa84820f988da27686868af9bb",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\Gere imagens e vídeos ilimitados com IA offline (sem internet) _ Avanços em IA.pdf",
+        "extracted_text": "Gere imagens e vídeos ilimitados com IA localmente — sem internet, sem limites. História exclusiva para membros Parte 1 — Primeiros passos com IA local Gere imagens e vídeos ilimitados com IA localmente — sem internet, sem limites.",
+        "facts": {
+          "article_title": "Gere imagens e vídeos ilimitados com IA offline (sem internet) Avanços em IA",
+          "primary_theme": "Áudio, vídeo e multimodal",
+          "secondary_themes": [
+            "RAG e retrieval",
+            "Agentes e MCP"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 3,
+            "agents_mcp": 1,
+            "document_ai": 0,
+            "local_ai": 21,
+            "multimodal_media": 136,
+            "engineering_perf": 3
+          },
+          "artifact_name": "Gere imagens e vídeos ilimitados com IA offline (sem internet) _ Avanços em IA.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:a0bbecccc8bc602d322c91349024a863256594240e596d1b307ed6fcbac89a0e",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\Gere música localmente com IA usando ACE-Step_ Modelo de texto para música com um clique _ por Md Monsur Ali _ Rumo à IA.pdf",
+        "extracted_text": "Gere música com IA localmente usando o ACE-Step: Modelo de texto para música com um clique Gere música com IA localmente usando o ACE-Step: Modelo de texto para música com um clique Crie músicas completas geradas por IA a partir de prompts de texto, tags e letras usando o modelo de código aberto ACE-Step v1–3.5B — sem…",
+        "facts": {
+          "article_title": "Gere música localmente com IA usando ACE-Step Modelo de texto para música com um clique por Md Monsur Ali Rumo à IA",
+          "primary_theme": "Document AI e OCR",
+          "secondary_themes": [
+            "RAG e retrieval",
+            "Agentes e MCP"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 4,
+            "agents_mcp": 3,
+            "document_ai": 16,
+            "local_ai": 15,
+            "multimodal_media": 13,
+            "engineering_perf": 1
+          },
+          "artifact_name": "Gere música localmente com IA usando ACE-Step_ Modelo de texto para música com um clique _ por Md Monsur Ali _ Rumo à IA.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:8a834bcbde0610ad2400e52468689d0253741cabae21337df04a5864cb89684d",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\Guia completo de otimização do LLM 2025 _ por Hamza Boulahia _ Rumo à IA.pdf",
+        "extracted_text": "Guia abrangente de ajuste fino do LLM 2025 História exclusiva para membros Guia abrangente de ajuste fino do LLM 2025 Tudo o que você precisa saber sobre como otimizar um LLM em 2025 e muito mais! 29 minutos de leitura 9 de dezembro de 2025 Pressione Enter ou clique para ver a imagem em tamanho real.",
+        "facts": {
+          "article_title": "Guia completo de otimização do LLM 2025 por Hamza Boulahia Rumo à IA",
+          "primary_theme": "Áudio, vídeo e multimodal",
+          "secondary_themes": [
+            "RAG e retrieval",
+            "Agentes e MCP"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 4,
+            "agents_mcp": 7,
+            "document_ai": 0,
+            "local_ai": 13,
+            "multimodal_media": 14,
+            "engineering_perf": 13
+          },
+          "artifact_name": "Guia completo de otimização do LLM 2025 _ por Hamza Boulahia _ Rumo à IA.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:055702edb75e9e67eaa4016dee4e3dcf6bd3557afb57c48fee68790d327251da",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\LTX-2 chega ao ComfyUI_ Geração local de áudio e vídeo, fluxos de trabalho simplificados e controle de LoRAs _ por Alex Buzunov _ Jan, 2026 _ Medium.pdf",
+        "extracted_text": "LTX-2 chega ao ComfyUI: geração local de áudio e vídeo, fluxos de trabalho simplificados e controle de LoRAs. LTX-2 chega ao ComfyUI: geração local de áudio e vídeo, fluxos de trabalho simplificados e controle de LoRAs.",
+        "facts": {
+          "article_title": "LTX-2 chega ao ComfyUI Geração local de áudio e vídeo, fluxos de trabalho simplificados e controle de LoRAs por Alex Buzunov Jan, 2026 Medium",
+          "primary_theme": "IA local e offline",
+          "secondary_themes": [
+            "Áudio, vídeo e multimodal"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 0,
+            "agents_mcp": 0,
+            "document_ai": 0,
+            "local_ai": 7,
+            "multimodal_media": 3,
+            "engineering_perf": 0
+          },
+          "artifact_name": "LTX-2 chega ao ComfyUI_ Geração local de áudio e vídeo, fluxos de trabalho simplificados e controle de LoRAs _ por Alex Buzunov _ Jan, 2026 _ Medium.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:c331e9fddf5f541681be79a8305972cdb45fec5a790e4bb2d7031888f298e775",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\Mestrados em Direito Locais que Podem Substituir o Código Claude _ por Agent Native _ Jan, 2026 _ Medium.pdf",
+        "extracted_text": "Mestrados em Direito locais que podem substituir o código Claude Mestrados em Direito locais que podem substituir o código Claude 6 minutos de leitura 20 de janeiro de 2026 Uma pequena equipe de engenheiros pode facilmente gastar mais de US$ 2.000 por mês com o Claude Code da Anthropic (Sonnet/Opus 4.5).",
+        "facts": {
+          "article_title": "Mestrados em Direito Locais que Podem Substituir o Código Claude por Agent Native Jan, 2026 Medium",
+          "primary_theme": "IA local e offline",
+          "secondary_themes": [
+            "Agentes e MCP",
+            "Áudio, vídeo e multimodal"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 0,
+            "agents_mcp": 10,
+            "document_ai": 0,
+            "local_ai": 15,
+            "multimodal_media": 1,
+            "engineering_perf": 1
+          },
+          "artifact_name": "Mestrados em Direito Locais que Podem Substituir o Código Claude _ por Agent Native _ Jan, 2026 _ Medium.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:cd5ded0fa52c4cccd3b366bb1ee3a6e6b749c9813fd71fedd23c43612a0f9682",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\Model Once, Represent Everywhere_ UDA (Unified Data Architecture) at Netflix _ by Netflix Technology Blog _ Netflix TechBlog.pdf",
+        "extracted_text": "Modele uma vez, represente em todos os lugares: UDA (Arquitetura Unificada de Dados) na Netflix Modele uma vez, represente em todos os lugares: UDA (Arquitetura Unificada de Dados) na Netflix 15 minutos de leitura 12 de junho de 2025 Por Alex Hutter , Alexandre Bertails , Claire Wang , Haoyuan He , Kishore Banala , Pe…",
+        "facts": {
+          "article_title": "Model Once, Represent Everywhere UDA (Unified Data Architecture) at Netflix by Netflix Technology Blog Netflix TechBlog",
+          "primary_theme": "Engenharia e performance",
+          "secondary_themes": [
+            "RAG e retrieval",
+            "Agentes e MCP"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 3,
+            "agents_mcp": 1,
+            "document_ai": 2,
+            "local_ai": 3,
+            "multimodal_media": 9,
+            "engineering_perf": 19
+          },
+          "artifact_name": "Model Once, Represent Everywhere_ UDA (Unified Data Architecture) at Netflix _ by Netflix Technology Blog _ Netflix TechBlog.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:74944a45adcd7799e289afd69825034ba738a1f0d027e1cbe89b9128354f3c6a",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\O novo recurso do Postgres que acabou com o hype do Vector Database _ por Ark Protocol _ Medium.pdf",
+        "extracted_text": "O novo recurso do Postgres que acabou com o hype do Vector Database. História exclusiva para membros O novo recurso do Postgres que acabou com o hype do Vector Database.",
+        "facts": {
+          "article_title": "O novo recurso do Postgres que acabou com o hype do Vector Database por Ark Protocol Medium",
+          "primary_theme": "RAG e retrieval",
+          "secondary_themes": [
+            "Document AI e OCR",
+            "IA local e offline"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 87,
+            "agents_mcp": 0,
+            "document_ai": 2,
+            "local_ai": 2,
+            "multimodal_media": 1,
+            "engineering_perf": 3
+          },
+          "artifact_name": "O novo recurso do Postgres que acabou com o hype do Vector Database _ por Ark Protocol _ Medium.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:a093ded781a7f74cbee7f399219dfa9a1f646469197b3b201b1ad596c99a7948",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\oLLM_ A Biblioteca Python Revolucionária que Executa Modelos de Linguagem Poderosos em Computadores Comuns _ por Mihailo Zoin _ Medium.pdf",
+        "extracted_text": "oLLM: A biblioteca Python revolucionária que executa modelos de linguagem poderosos em computadores comuns. oLLM: Uma biblioteca Python revolucionária que executa modelos de linguagem poderosos em computadores comuns.",
+        "facts": {
+          "article_title": "oLLM A Biblioteca Python Revolucionária que Executa Modelos de Linguagem Poderosos em Computadores Comuns por Mihailo Zoin Medium",
+          "primary_theme": "IA local e offline",
+          "secondary_themes": [
+            "RAG e retrieval",
+            "Agentes e MCP"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 1,
+            "agents_mcp": 3,
+            "document_ai": 8,
+            "local_ai": 12,
+            "multimodal_media": 2,
+            "engineering_perf": 12
+          },
+          "artifact_name": "oLLM_ A Biblioteca Python Revolucionária que Executa Modelos de Linguagem Poderosos em Computadores Comuns _ por Mihailo Zoin _ Medium.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:18a4e6660307bca80d25cd72b1fc73a153c15fe3bd1b891c6ad8ebb8fdc01d3b",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\Pare de escrever != null_ Como desenvolvedores seniores lidam com valores nulos com segurança _ por Java Interview _ Medium.pdf",
+        "extracted_text": "Pare de escrever != null: Como desenvolvedores seniores lidam com valores nulos de forma segura Pare de escrever != null: como desenvolvedores seniores lidam com valores nulos de forma segura 3 minutos de leitura 27 de setembro de 2025 Se você programar em Java há algum tempo, é provável que seu código esteja repleto …",
+        "facts": {
+          "article_title": "Pare de escrever != null Como desenvolvedores seniores lidam com valores nulos com segurança por Java Interview Medium",
+          "primary_theme": "Engenharia e performance",
+          "secondary_themes": [
+            "Agentes e MCP",
+            "Áudio, vídeo e multimodal"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 0,
+            "agents_mcp": 1,
+            "document_ai": 0,
+            "local_ai": 0,
+            "multimodal_media": 1,
+            "engineering_perf": 40
+          },
+          "artifact_name": "Pare de escrever != null_ Como desenvolvedores seniores lidam com valores nulos com segurança _ por Java Interview _ Medium.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:8cabfdfff72848275737c853a3c55023956dc8799d7b01c1818d7d0db459e14e",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\Pesquise 40 milhões de documentos em menos de 200 ms em uma CPU usando embeddings binários e reavaliação de int8. _ por Civil Learning _ Coding Nexus _ Jan, 2026 _ Medium.pdf",
+        "extracted_text": "Pesquise 40 milhões de documentos em menos de 200 ms em uma CPU usando embeddings binários e reavaliação de inteiros (int8). Execute 40 milhões de documentos em menos de 200 ms em uma CPU usando embeddings binários e reavaliação de inteiros (int8).",
+        "facts": {
+          "article_title": "Pesquise 40 milhões de documentos em menos de 200 ms em uma CPU usando embeddings binários e reavaliação de int8. por Civil Learning Coding Nexus Jan, 2026 Medium",
+          "primary_theme": "RAG e retrieval",
+          "secondary_themes": [
+            "Agentes e MCP",
+            "Document AI e OCR"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 27,
+            "agents_mcp": 1,
+            "document_ai": 8,
+            "local_ai": 3,
+            "multimodal_media": 1,
+            "engineering_perf": 9
+          },
+          "artifact_name": "Pesquise 40 milhões de documentos em menos de 200 ms em uma CPU usando embeddings binários e reavaliação de int8. _ por Civil Learning _ Coding Nexus _ Jan, 2026 _ Medium.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:8045b81be32cd9afd74d69897dd792f2c6c4480f79a208781b397ce2867ba193",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\Programação Agentic totalmente local em localhost_ Claude Code, Codex, llama.cpp, Ollama e Docker MR _ por Agent Native _ Jan, 2026 _ Medium.pdf",
+        "extracted_text": "Programação Agentic totalmente local em localhost: Claude Code, Codex, llama.cpp, Ollama e Docker MR Programação Agentic totalmente local em localhost: Claude Code, Codex, llama.cpp, Ollama e Docker MR 11 minutos de leitura 30 de janeiro de 2026 Esta é uma configuração que eu gostaria de ter feito na primeira vez que …",
+        "facts": {
+          "article_title": "Programação Agentic totalmente local em localhost Claude Code, Codex, llama.cpp, Ollama e Docker MR por Agent Native Jan, 2026 Medium",
+          "primary_theme": "IA local e offline",
+          "secondary_themes": [
+            "RAG e retrieval",
+            "Agentes e MCP"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 2,
+            "agents_mcp": 31,
+            "document_ai": 1,
+            "local_ai": 89,
+            "multimodal_media": 3,
+            "engineering_perf": 4
+          },
+          "artifact_name": "Programação Agentic totalmente local em localhost_ Claude Code, Codex, llama.cpp, Ollama e Docker MR _ por Agent Native _ Jan, 2026 _ Medium.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:4c68a636a4157d4219a436c471521d59fde8d43d878efa52286e6e7ee00f9515",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\Stanford acaba de quebrar o paradigma da engenharia de prompts _ AIGuys.pdf",
+        "extracted_text": "Stanford acaba de quebrar a engenharia de prompts — AMOSTRAGEM VERBALIZADA Stanford acaba de quebrar a engenharia de prompts — AMOSTRAGEM VERBALIZADA 7 minutos de leitura 27 de outubro de 2025 Tenho certeza de que você já viu centenas de posts sobre engenharia de prompts.",
+        "facts": {
+          "article_title": "Stanford acaba de quebrar o paradigma da engenharia de prompts AIGuys",
+          "primary_theme": "RAG e retrieval",
+          "secondary_themes": [
+            "Document AI e OCR",
+            "Áudio, vídeo e multimodal"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 11,
+            "agents_mcp": 0,
+            "document_ai": 3,
+            "local_ai": 0,
+            "multimodal_media": 5,
+            "engineering_perf": 2
+          },
+          "artifact_name": "Stanford acaba de quebrar o paradigma da engenharia de prompts _ AIGuys.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:15772b8f2018b97fdf90ae7ff9888cc38248d1e413847745efae1346afd2e34a",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\Utilizando IA para Ler Artigos de Pesquisa Técnica _ por Aayush Agrawal _ Data Science Collective _ Fev, 2026 _ Medium.pdf",
+        "extracted_text": "Utilizando IA para ler artigos de pesquisa técnica Utilizando IA para ler artigos de pesquisa técnica Leitura de 10 minutos 1 de fevereiro de 2026 Um guia prático para usar mestrados em direitos locais ou pagos para entender artigos técnicos complexos no seu próprio ritmo.",
+        "facts": {
+          "article_title": "Utilizando IA para Ler Artigos de Pesquisa Técnica por Aayush Agrawal Data Science Collective Fev, 2026 Medium",
+          "primary_theme": "IA local e offline",
+          "secondary_themes": [
+            "Document AI e OCR",
+            "Áudio, vídeo e multimodal"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 0,
+            "agents_mcp": 0,
+            "document_ai": 17,
+            "local_ai": 23,
+            "multimodal_media": 14,
+            "engineering_perf": 4
+          },
+          "artifact_name": "Utilizando IA para Ler Artigos de Pesquisa Técnica _ por Aayush Agrawal _ Data Science Collective _ Fev, 2026 _ Medium.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:23a663b6f34805a924e7927ec48e30a2a2f2caf748657145047bdb4e2b522aed",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\YOLO acabou. Conheça o RF-DETR_ Detecção em tempo real de 60 mAP _ Médio.pdf",
+        "extracted_text": "Conheça o RF-DETR, o modelo que acaba de destruir 10 anos de domínio da visão computacional. Conheça o RF-DETR, o modelo que acaba de destruir 10 anos de domínio da visão computacional.",
+        "facts": {
+          "article_title": "YOLO acabou. Conheça o RF-DETR Detecção em tempo real de 60 mAP Médio",
+          "primary_theme": "Áudio, vídeo e multimodal",
+          "secondary_themes": [
+            "RAG e retrieval",
+            "Agentes e MCP"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 1,
+            "agents_mcp": 3,
+            "document_ai": 1,
+            "local_ai": 0,
+            "multimodal_media": 9,
+            "engineering_perf": 5
+          },
+          "artifact_name": "YOLO acabou. Conheça o RF-DETR_ Detecção em tempo real de 60 mAP _ Médio.pdf"
+        },
+        "confidence": 0.78
+      },
+      {
+        "artifact_id": "sha256:f3638627f10ce5742580fcacdf5c369a3d48e48c3147c4ad055b866e8beed464",
+        "artifact_type": "pdf",
+        "source_path": "artigos medium\\🐒 MonkeyOCR v1.5_ Tornando PDFs complexos finalmente analisáveis ___ por Greek Ai _ Fev, 2026 _ GoPenAI.pdf",
+        "extracted_text": "🐒 MonkeyOCR v1.5: Tornando PDFs complexos finalmente analisáveis História exclusiva para membros 🐒 MonkeyOCR v1.5: Tornando PDFs complexos finalmente analisáveis 5 minutos de leitura 17 de fevereiro de 2026 Pressione Enter ou clique para ver a imagem em tamanho real.",
+        "facts": {
+          "article_title": "🐒 MonkeyOCR v1.5 Tornando PDFs complexos finalmente analisáveis por Greek Ai Fev, 2026 GoPenAI",
+          "primary_theme": "Document AI e OCR",
+          "secondary_themes": [
+            "RAG e retrieval",
+            "Áudio, vídeo e multimodal"
+          ],
+          "theme_scores": {
+            "rag_retrieval": 1,
+            "agents_mcp": 0,
+            "document_ai": 40,
+            "local_ai": 0,
+            "multimodal_media": 13,
+            "engineering_perf": 0
+          },
+          "artifact_name": "🐒 MonkeyOCR v1.5_ Tornando PDFs complexos finalmente analisáveis ___ por Greek Ai _ Fev, 2026 _ GoPenAI.pdf"
+        },
+        "confidence": 0.78
+      }
+    ],
+    "contradictions": [
+      "O corpus alterna entre stacks locais/offline e arquiteturas de produção apoiadas em serviços e pipelines mais pesados.",
+      "Há propostas concorrentes para substituir engenharia de prompt tradicional por contratos, DSPy e estratégias de amostragem verbalizada.",
+      "Parte dos artigos reduz a necessidade de vector databases especializados, enquanto outra parte depende fortemente de RAG híbrido, rerankers e grafos de conhecimento."
+    ],
+    "missing_information": []
+  },
+  "rule_evaluation": {
+    "missing_items": [
+      "taxonomia canônica dos temas do corpus",
+      "ranking objetivo por maturidade e aplicabilidade",
+      "benchmark comum de custo, latência e qualidade entre abordagens"
+    ],
+    "contradictions": [
+      "O corpus alterna entre stacks locais/offline e arquiteturas de produção apoiadas em serviços e pipelines mais pesados.",
+      "Há propostas concorrentes para substituir engenharia de prompt tradicional por contratos, DSPy e estratégias de amostragem verbalizada.",
+      "Parte dos artigos reduz a necessidade de vector databases especializados, enquanto outra parte depende fortemente de RAG híbrido, rerankers e grafos de conhecimento."
+    ],
+    "financial_impact_detected": false,
+    "requires_human_review": true,
+    "results": [
+      {
+        "rule_name": "theme_cluster_detected",
+        "severity": "info",
+        "message": "Temas dominantes detectados no corpus: Agentes e MCP (7), RAG e retrieval (7), Document AI e OCR (6), IA local e offline (6), Áudio, vídeo e multimodal (6), Engenharia e performance (4).",
+        "metadata": {
+          "theme_counts": {
+            "agents_mcp": 7,
+            "rag_retrieval": 7,
+            "multimodal_media": 6,
+            "document_ai": 6,
+            "engineering_perf": 4,
+            "local_ai": 6
+          }
+        }
+      },
+      {
+        "rule_name": "rag_cluster_is_strong",
+        "severity": "info",
+        "message": "O conjunto contém material suficiente para uma trilha robusta sobre RAG de produção, retrieval híbrido, rerank e knowledge graphs.",
+        "metadata": {}
+      },
+      {
+        "rule_name": "agent_cluster_is_strong",
+        "severity": "info",
+        "message": "Há densidade alta de artigos sobre MCP, memória de longo prazo, deep research e arquiteturas de autoaperfeiçoamento.",
+        "metadata": {}
+      },
+      {
+        "rule_name": "curation_gap_detected",
+        "severity": "warning",
+        "message": "O corpus ainda precisa de taxonomia, benchmark comparável e priorização para se tornar uma biblioteca operacional de referência.",
+        "metadata": {}
+      }
+    ]
+  },
+  "retrieved": [
+    {
+      "evidence_id": "sha256:f767305f652479d54b0625eec8a3d79b96a4b6f91423951a89e707f9f00852eb",
+      "source": "article:Criando uma arquitetura de treinamento para agentes de IA com capacidade de autoaperfeiçoamento _ por Fareed Khan _ Level Up Coding.pdf",
+      "content": "Construindo uma arquitetura de treinamento para agentes de IA com capacidade de autoaperfeiçoamento. História exclusiva para membros Construindo uma arquitetura de treinamento para agentes de IA com capacidade de autoaperfeiçoamento.",
+      "metadata": {
+        "category": "article",
+        "type": "pdf",
+        "primary_theme": "Agentes e MCP"
+      },
+      "sparse_score": 0.8096,
+      "dense_score": 0.7728,
+      "final_score": 0.92
+    },
+    {
+      "evidence_id": "sha256:61b654f30af5c10894d8b4b89c6087b4611f068fabc91967836aebbaa27c1f2f",
+      "source": "article:Construindo Memória de Longo Prazo em IA Agêntica _ por Fareed Khan _ Level Up Coding.pdf",
+      "content": "Construindo memória de longo prazo em IA Agêntica Construindo memória de longo prazo em IA Agência HITL, recurso InMemory, Loop de Feedback e muito mais 36 minutos de leitura 10 de outubro de 2025 Leia esta história gratuitamente: link Uma solução baseada em agentes ou RAG normalmente depende de um sistema de memória …",
+      "metadata": {
+        "category": "article",
+        "type": "pdf",
+        "primary_theme": "Agentes e MCP"
+      },
+      "sparse_score": 0.8096,
+      "dense_score": 0.7728,
+      "final_score": 0.92
+    },
+    {
+      "evidence_id": "sha256:1fe540340d9d2d22a5bfe2505874322d941671b8dbc4b114821bdcb8dbe4c752",
+      "source": "article:Construindo um Pipeline RAG Agente Escalável e Pronto para Produção _ por Fareed Khan _ Level Up Coding.pdf",
+      "content": "Construindo um pipeline RAG agético escalável e de nível de produção História exclusiva para membros Construindo um pipeline RAG agético escalável e de nível de produção Escalabilidade automática, avaliação, fluxos de trabalho de computação de IA e muito mais 71 minutos de leitura 1 de janeiro de 2026 Leia esta histór…",
+      "metadata": {
+        "category": "article",
+        "type": "pdf",
+        "primary_theme": "RAG e retrieval"
+      },
+      "sparse_score": 0.8096,
+      "dense_score": 0.7728,
+      "final_score": 0.92
+    },
+    {
+      "evidence_id": "sha256:b673e83f524f9a670f59b955e1d23ee928a7570c2c4b40506da5588508d2ef24",
+      "source": "article:Além da força bruta_ uma análise profunda do REFRAG da Meta, o modelo que torna o RAG 30 vezes mais rápido _ por ElAmir Mansour _ Medium.pdf",
+      "content": "Além da força bruta: uma análise detalhada do REFRAG da Meta, o modelo que torna o RAG 30 vezes mais rápido. Além da força bruta: uma análise detalhada do REFRAG da Meta, o modelo que torna o RAG 30 vezes mais rápido.",
+      "metadata": {
+        "category": "article",
+        "type": "pdf",
+        "primary_theme": "RAG e retrieval"
+      },
+      "sparse_score": 0.8096,
+      "dense_score": 0.7728,
+      "final_score": 0.92
+    },
+    {
+      "evidence_id": "sha256:e81a73d6273855fce1e2340d092c512918f97ddcfbb3b21dc2d9bb1f49aa0c2e",
+      "source": "article:Corrigindo 14 falhas complexas do RAG com grafos de conhecimento _ por Fareed Khan _ Level Up Coding.pdf",
+      "content": "Corrigindo 14 falhas complexas do RAG com grafos de conhecimento História exclusiva para membros Corrigindo 14 falhas complexas do RAG com gráficos de conhecimento Ambiguidade, Multi-Hop, Alucinações e muito mais 98 minutos de leitura 5 de dezembro de 2025 Leia esta história gratuitamente: link A maioria das falhas em…",
+      "metadata": {
+        "category": "article",
+        "type": "pdf",
+        "primary_theme": "Document AI e OCR"
+      },
+      "sparse_score": 0.8096,
+      "dense_score": 0.7728,
+      "final_score": 0.92
+    },
+    {
+      "evidence_id": "sha256:199b435fadc59a01607c26ec8f8bfb4ae37da2536d8892da054cfa0a701f6e86",
+      "source": "article:dots.ocr_ A IA que lê tudo — Uma análise profunda do futuro da análise de documentos _ por Cesar Schneider _ Jan, 2026 _ Medium.pdf",
+      "content": "dots.ocr: A IA que lê tudo — Uma análise aprofundada do futuro da análise de documentos dots.ocr: A IA que lê tudo — Uma análise aprofundada do futuro da análise de documentos 8 minutos de leitura 9 de janeiro de 2026 Pressione Enter ou clique para ver a imagem em tamanho real.",
+      "metadata": {
+        "category": "article",
+        "type": "pdf",
+        "primary_theme": "Document AI e OCR"
+      },
+      "sparse_score": 0.7656,
+      "dense_score": 0.7308,
+      "final_score": 0.87
+    },
+    {
+      "evidence_id": "sha256:8045b81be32cd9afd74d69897dd792f2c6c4480f79a208781b397ce2867ba193",
+      "source": "article:Programação Agentic totalmente local em localhost_ Claude Code, Codex, llama.cpp, Ollama e Docker MR _ por Agent Native _ Jan, 2026 _ Medium.pdf",
+      "content": "Programação Agentic totalmente local em localhost: Claude Code, Codex, llama.cpp, Ollama e Docker MR Programação Agentic totalmente local em localhost: Claude Code, Codex, llama.cpp, Ollama e Docker MR 11 minutos de leitura 30 de janeiro de 2026 Esta é uma configuração que eu gostaria de ter feito na primeira vez que …",
+      "metadata": {
+        "category": "article",
+        "type": "pdf",
+        "primary_theme": "IA local e offline"
+      },
+      "sparse_score": 0.7832,
+      "dense_score": 0.7476,
+      "final_score": 0.89
+    },
+    {
+      "evidence_id": "sha256:a9c5129115c4cd62d29ef45297cfc3a59461b29343b8b3c3f013a98704383a31",
+      "source": "article:Executei um modelo de IA com 80 bilhões de parâmetros na minha GPU de 8 GB - Minha experiência com oLLM _ por Himanshu Soni _ AI Advances.pdf",
+      "content": "Executei um modelo de IA com 80 bilhões de parâmetros na minha GPU de 8 GB - Minha experiência com oLLM. Executei um modelo de IA com 80 bilhões de parâmetros na minha GPU de 8 GB - Minha experiência com oLLM.",
+      "metadata": {
+        "category": "article",
+        "type": "pdf",
+        "primary_theme": "IA local e offline"
+      },
+      "sparse_score": 0.3696,
+      "dense_score": 0.3528,
+      "final_score": 0.42
+    },
+    {
+      "evidence_id": "sha256:fc761a034d5ddef1ec3f31bffc6d9dc60821c3aa84820f988da27686868af9bb",
+      "source": "article:Gere imagens e vídeos ilimitados com IA offline (sem internet) _ Avanços em IA.pdf",
+      "content": "Gere imagens e vídeos ilimitados com IA localmente — sem internet, sem limites. História exclusiva para membros Parte 1 — Primeiros passos com IA local Gere imagens e vídeos ilimitados com IA localmente — sem internet, sem limites.",
+      "metadata": {
+        "category": "article",
+        "type": "pdf",
+        "primary_theme": "Áudio, vídeo e multimodal"
+      },
+      "sparse_score": 0.8096,
+      "dense_score": 0.7728,
+      "final_score": 0.92
+    },
+    {
+      "evidence_id": "sha256:5fb25782e87da1126922ff517234873966fa2948f0001f669a62af52a4bb21db",
+      "source": "article:Gere 4 minutos de K-Pop em 20 segundos (usando a IA musical mais rápida do Python) _ por HarshVardhan Jain _ Jan, 2026 _ Level Up Coding.pdf",
+      "content": "Gere 4 minutos de K-Pop em 20 segundos (usando a IA musical mais rápida do Python) Gere 4 minutos de K-Pop em 20 segundos (usando o IA musical mais rápido do Python) 13 minutos de leitura 7 de janeiro de 2026 Além das APIs da Suno: como o modelo de difusão em tempo real 27x da ACE-Step traz geração de música local de …",
+      "metadata": {
+        "category": "article",
+        "type": "pdf",
+        "primary_theme": "Áudio, vídeo e multimodal"
+      },
+      "sparse_score": 0.8096,
+      "dense_score": 0.7728,
+      "final_score": 0.92
+    }
+  ],
+  "distilled": {
+    "key_facts": [
+      "Corpus analisado: 36 artigos em PDF.",
+      "Temas dominantes: Agentes e MCP (7), RAG e retrieval (7), Document AI e OCR (6), IA local e offline (6), Áudio, vídeo e multimodal (6), Engenharia e performance (4).",
+      "Os artigos de RAG cobrem arquiteturas, rerank, knowledge graphs, REFRAG, Postgres e busca vetorial rápida.",
+      "Os artigos de agentes enfatizam MCP, LangGraph, memória longa, pesquisa profunda e treinamento com autoaperfeiçoamento.",
+      "A trilha de IA local/offline aparece em oLLM, Ollama, localhost, mídia local e execução em GPUs menores.",
+      "Document AI aparece com força em MonkeyOCR, dots.ocr e leitura assistida de artigos técnicos."
+    ],
+    "preserved_quotes": [
+      "RAG",
+      "MCP",
+      "LangGraph",
+      "MonkeyOCR",
+      "oLLM",
+      "Postgres",
+      "DSPy",
+      "Heptabase"
+    ],
+    "evidence": [
+      {
+        "evidence_id": "sha256:f767305f652479d54b0625eec8a3d79b96a4b6f91423951a89e707f9f00852eb",
+        "source": "article:Criando uma arquitetura de treinamento para agentes de IA com capacidade de autoaperfeiçoamento _ por Fareed Khan _ Level Up Coding.pdf",
+        "content": "Construindo uma arquitetura de treinamento para agentes de IA com capacidade de autoaperfeiçoamento. História exclusiva para membros Construindo uma arquitetura de treinamento para agentes de IA com capacidade de autoaperfeiçoamento.",
+        "metadata": {
+          "category": "article",
+          "type": "pdf",
+          "primary_theme": "Agentes e MCP"
+        },
+        "sparse_score": 0.8096,
+        "dense_score": 0.7728,
+        "final_score": 0.92
+      },
+      {
+        "evidence_id": "sha256:61b654f30af5c10894d8b4b89c6087b4611f068fabc91967836aebbaa27c1f2f",
+        "source": "article:Construindo Memória de Longo Prazo em IA Agêntica _ por Fareed Khan _ Level Up Coding.pdf",
+        "content": "Construindo memória de longo prazo em IA Agêntica Construindo memória de longo prazo em IA Agência HITL, recurso InMemory, Loop de Feedback e muito mais 36 minutos de leitura 10 de outubro de 2025 Leia esta história gratuitamente: link Uma solução baseada em agentes ou RAG normalmente depende de um sistema de memória …",
+        "metadata": {
+          "category": "article",
+          "type": "pdf",
+          "primary_theme": "Agentes e MCP"
+        },
+        "sparse_score": 0.8096,
+        "dense_score": 0.7728,
+        "final_score": 0.92
+      },
+      {
+        "evidence_id": "sha256:1fe540340d9d2d22a5bfe2505874322d941671b8dbc4b114821bdcb8dbe4c752",
+        "source": "article:Construindo um Pipeline RAG Agente Escalável e Pronto para Produção _ por Fareed Khan _ Level Up Coding.pdf",
+        "content": "Construindo um pipeline RAG agético escalável e de nível de produção História exclusiva para membros Construindo um pipeline RAG agético escalável e de nível de produção Escalabilidade automática, avaliação, fluxos de trabalho de computação de IA e muito mais 71 minutos de leitura 1 de janeiro de 2026 Leia esta histór…",
+        "metadata": {
+          "category": "article",
+          "type": "pdf",
+          "primary_theme": "RAG e retrieval"
+        },
+        "sparse_score": 0.8096,
+        "dense_score": 0.7728,
+        "final_score": 0.92
+      },
+      {
+        "evidence_id": "sha256:b673e83f524f9a670f59b955e1d23ee928a7570c2c4b40506da5588508d2ef24",
+        "source": "article:Além da força bruta_ uma análise profunda do REFRAG da Meta, o modelo que torna o RAG 30 vezes mais rápido _ por ElAmir Mansour _ Medium.pdf",
+        "content": "Além da força bruta: uma análise detalhada do REFRAG da Meta, o modelo que torna o RAG 30 vezes mais rápido. Além da força bruta: uma análise detalhada do REFRAG da Meta, o modelo que torna o RAG 30 vezes mais rápido.",
+        "metadata": {
+          "category": "article",
+          "type": "pdf",
+          "primary_theme": "RAG e retrieval"
+        },
+        "sparse_score": 0.8096,
+        "dense_score": 0.7728,
+        "final_score": 0.92
+      },
+      {
+        "evidence_id": "sha256:e81a73d6273855fce1e2340d092c512918f97ddcfbb3b21dc2d9bb1f49aa0c2e",
+        "source": "article:Corrigindo 14 falhas complexas do RAG com grafos de conhecimento _ por Fareed Khan _ Level Up Coding.pdf",
+        "content": "Corrigindo 14 falhas complexas do RAG com grafos de conhecimento História exclusiva para membros Corrigindo 14 falhas complexas do RAG com gráficos de conhecimento Ambiguidade, Multi-Hop, Alucinações e muito mais 98 minutos de leitura 5 de dezembro de 2025 Leia esta história gratuitamente: link A maioria das falhas em…",
+        "metadata": {
+          "category": "article",
+          "type": "pdf",
+          "primary_theme": "Document AI e OCR"
+        },
+        "sparse_score": 0.8096,
+        "dense_score": 0.7728,
+        "final_score": 0.92
+      },
+      {
+        "evidence_id": "sha256:199b435fadc59a01607c26ec8f8bfb4ae37da2536d8892da054cfa0a701f6e86",
+        "source": "article:dots.ocr_ A IA que lê tudo — Uma análise profunda do futuro da análise de documentos _ por Cesar Schneider _ Jan, 2026 _ Medium.pdf",
+        "content": "dots.ocr: A IA que lê tudo — Uma análise aprofundada do futuro da análise de documentos dots.ocr: A IA que lê tudo — Uma análise aprofundada do futuro da análise de documentos 8 minutos de leitura 9 de janeiro de 2026 Pressione Enter ou clique para ver a imagem em tamanho real.",
+        "metadata": {
+          "category": "article",
+          "type": "pdf",
+          "primary_theme": "Document AI e OCR"
+        },
+        "sparse_score": 0.7656,
+        "dense_score": 0.7308,
+        "final_score": 0.87
+      },
+      {
+        "evidence_id": "sha256:8045b81be32cd9afd74d69897dd792f2c6c4480f79a208781b397ce2867ba193",
+        "source": "article:Programação Agentic totalmente local em localhost_ Claude Code, Codex, llama.cpp, Ollama e Docker MR _ por Agent Native _ Jan, 2026 _ Medium.pdf",
+        "content": "Programação Agentic totalmente local em localhost: Claude Code, Codex, llama.cpp, Ollama e Docker MR Programação Agentic totalmente local em localhost: Claude Code, Codex, llama.cpp, Ollama e Docker MR 11 minutos de leitura 30 de janeiro de 2026 Esta é uma configuração que eu gostaria de ter feito na primeira vez que …",
+        "metadata": {
+          "category": "article",
+          "type": "pdf",
+          "primary_theme": "IA local e offline"
+        },
+        "sparse_score": 0.7832,
+        "dense_score": 0.7476,
+        "final_score": 0.89
+      },
+      {
+        "evidence_id": "sha256:a9c5129115c4cd62d29ef45297cfc3a59461b29343b8b3c3f013a98704383a31",
+        "source": "article:Executei um modelo de IA com 80 bilhões de parâmetros na minha GPU de 8 GB - Minha experiência com oLLM _ por Himanshu Soni _ AI Advances.pdf",
+        "content": "Executei um modelo de IA com 80 bilhões de parâmetros na minha GPU de 8 GB - Minha experiência com oLLM. Executei um modelo de IA com 80 bilhões de parâmetros na minha GPU de 8 GB - Minha experiência com oLLM.",
+        "metadata": {
+          "category": "article",
+          "type": "pdf",
+          "primary_theme": "IA local e offline"
+        },
+        "sparse_score": 0.3696,
+        "dense_score": 0.3528,
+        "final_score": 0.42
+      },
+      {
+        "evidence_id": "sha256:fc761a034d5ddef1ec3f31bffc6d9dc60821c3aa84820f988da27686868af9bb",
+        "source": "article:Gere imagens e vídeos ilimitados com IA offline (sem internet) _ Avanços em IA.pdf",
+        "content": "Gere imagens e vídeos ilimitados com IA localmente — sem internet, sem limites. História exclusiva para membros Parte 1 — Primeiros passos com IA local Gere imagens e vídeos ilimitados com IA localmente — sem internet, sem limites.",
+        "metadata": {
+          "category": "article",
+          "type": "pdf",
+          "primary_theme": "Áudio, vídeo e multimodal"
+        },
+        "sparse_score": 0.8096,
+        "dense_score": 0.7728,
+        "final_score": 0.92
+      },
+      {
+        "evidence_id": "sha256:5fb25782e87da1126922ff517234873966fa2948f0001f669a62af52a4bb21db",
+        "source": "article:Gere 4 minutos de K-Pop em 20 segundos (usando a IA musical mais rápida do Python) _ por HarshVardhan Jain _ Jan, 2026 _ Level Up Coding.pdf",
+        "content": "Gere 4 minutos de K-Pop em 20 segundos (usando a IA musical mais rápida do Python) Gere 4 minutos de K-Pop em 20 segundos (usando o IA musical mais rápido do Python) 13 minutos de leitura 7 de janeiro de 2026 Além das APIs da Suno: como o modelo de difusão em tempo real 27x da ACE-Step traz geração de música local de …",
+        "metadata": {
+          "category": "article",
+          "type": "pdf",
+          "primary_theme": "Áudio, vídeo e multimodal"
+        },
+        "sparse_score": 0.8096,
+        "dense_score": 0.7728,
+        "final_score": 0.92
+      }
+    ]
+  },
+  "decision": {
+    "issue_key": "ART-2026",
+    "classification": "needs_review",
+    "is_bug": false,
+    "is_complete": false,
+    "ready_for_dev": false,
+    "missing_items": [
+      "taxonomia canônica dos temas do corpus",
+      "ranking objetivo por maturidade e aplicabilidade",
+      "benchmark comum de custo, latência e qualidade entre abordagens"
+    ],
+    "evidence_used": [
+      "artigos medium\\8 servidores MCP imperdíveis que todo desenvolvedor deveria experimentar hoje! _ por Anup Das _ Level Up Coding.pdf",
+      "artigos medium\\9 Arquiteturas RAG que Todo Desenvolvedor de IA Deve Conhecer_ Um Guia Completo com Exemplos _ por Divy Yadav _ Towards AI.pdf",
+      "artigos medium\\A alternativa gratuita e de código aberto ao ElevenLabs finalmente chegou _ por Bytefer _ fevereiro de 2026 _ Medium.pdf",
+      "artigos medium\\A melhor maneira de usar IA para aprendizado _ por Alan Chan _ Heptabase _ Medium.pdf",
+      "artigos medium\\Além da força bruta_ uma análise profunda do REFRAG da Meta, o modelo que torna o RAG 30 vezes mais rápido _ por ElAmir Mansour _ Medium.pdf",
+      "artigos medium\\Codon_ Python que roda 100 vezes mais rápido sem alterar seu código _ por Sumit Pandey _ Rumo ao Aprendizado Profundo.pdf",
+      "artigos medium\\Coleta de lixo em Java _ Stackademic.pdf",
+      "artigos medium\\Como eu criei uma busca vetorial ultrarrápida para documentos jurídicos _ por Dr. Adrian Lucas Malec _ Medium.pdf",
+      "artigos medium\\Construindo Memória de Longo Prazo em IA Agêntica _ por Fareed Khan _ Level Up Coding.pdf",
+      "artigos medium\\Construindo um Pipeline RAG Agente Escalável e Pronto para Produção _ por Fareed Khan _ Level Up Coding.pdf",
+      "artigos medium\\Construindo um Pipeline RAG de Pensamento Profundo e Agente para Resolver Consultas Complexas _ por Fareed Khan _ Level Up Coding.pdf",
+      "artigos medium\\Construindo um Sistema Agencial de Pesquisa Profunda de Nível Humano usando o Algoritmo de Difusão de Teste Temporal _ por Fareed Khan _ Level Up Coding.pdf"
+    ],
+    "contradictions": [
+      "O corpus alterna entre stacks locais/offline e arquiteturas de produção apoiadas em serviços e pipelines mais pesados.",
+      "Há propostas concorrentes para substituir engenharia de prompt tradicional por contratos, DSPy e estratégias de amostragem verbalizada.",
+      "Parte dos artigos reduz a necessidade de vector databases especializados, enquanto outra parte depende fortemente de RAG híbrido, rerankers e grafos de conhecimento."
+    ],
+    "financial_impact_detected": false,
+    "confidence": 0.89,
+    "requires_human_review": true,
+    "provider": "manual-analysis",
+    "model": "codex-article-review-v1",
+    "rationale": "A análise mostra um corpus forte e atual, com três eixos claros: RAG/retrieval de produção, agentes/MCP com memória e automação local/offline. Também há um bloco relevante sobre OCR/document AI e outro sobre mídia generativa. O resultado ainda exige revisão humana porque a coleção mistura estratégias concorrentes e carece de uma curadoria final que ordene leitura, maturidade e custo-benefício.",
+    "audit_path": null,
+    "generated_at": "2026-03-08T12:00:00Z"
+  }
+}
