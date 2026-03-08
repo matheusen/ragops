@@ -7,10 +7,18 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_ENV_FILE = PROJECT_ROOT / ".env"
+
+
 class Settings(BaseSettings):
     app_name: str = Field(default="Jira Issue Validation RAG", alias="APP_NAME")
     app_env: str = Field(default="dev", alias="APP_ENV")
     api_prefix: str = Field(default="/api/v1", alias="API_PREFIX")
+    cors_allowed_origins_raw: str = Field(
+        default="http://localhost:3000,http://127.0.0.1:3000",
+        alias="CORS_ALLOWED_ORIGINS",
+    )
     confidentiality_mode: bool = Field(default=True, alias="CONFIDENTIALITY_MODE")
     allow_third_party_llm: bool = Field(default=False, alias="ALLOW_THIRD_PARTY_LLM")
     allow_third_party_embeddings: bool = Field(default=False, alias="ALLOW_THIRD_PARTY_EMBEDDINGS")
@@ -49,7 +57,7 @@ class Settings(BaseSettings):
     jira_api_token: str | None = Field(default=None, alias="JIRA_API_TOKEN")
     jira_project_key: str | None = Field(default=None, alias="JIRA_PROJECT_KEY")
     jira_verify_ssl: bool = Field(default=True, alias="JIRA_VERIFY_SSL")
-    staging_dir: Path = Field(default=Path("data/staging"), alias="STAGING_DIR")
+    staging_dir: Path = Field(default=PROJECT_ROOT / "data/staging", alias="STAGING_DIR")
 
     qdrant_url: str | None = Field(default=None, alias="QDRANT_URL")
     qdrant_collection: str = Field(default="issue_evidence", alias="QDRANT_COLLECTION")
@@ -87,19 +95,26 @@ class Settings(BaseSettings):
     distiller_provider: str = Field(default="", alias="DISTILLER_PROVIDER")
 
     # DSPy optimization lab (item 11)
-    dspy_lab_dir: Path = Field(default=Path("data/dspy_lab"), alias="DSPY_LAB_DIR")
+    dspy_lab_dir: Path = Field(default=PROJECT_ROOT / "data/dspy_lab", alias="DSPY_LAB_DIR")
 
-    audit_dir: Path = Field(default=Path("data/audit"), alias="AUDIT_DIR")
-    eval_reports_dir: Path = Field(default=Path("data/eval_reports"), alias="EVAL_REPORTS_DIR")
-    golden_dataset_path: Path = Field(default=Path("examples/golden_dataset.json"), alias="GOLDEN_DATASET_PATH")
-    prompts_dir: Path = Field(default=Path("prompts"), alias="PROMPTS_DIR")
+    audit_dir: Path = Field(default=PROJECT_ROOT / "data/audit", alias="AUDIT_DIR")
+    eval_reports_dir: Path = Field(default=PROJECT_ROOT / "data/eval_reports", alias="EVAL_REPORTS_DIR")
+    golden_dataset_path: Path = Field(default=PROJECT_ROOT / "examples/golden_dataset.json", alias="GOLDEN_DATASET_PATH")
+    prompts_dir: Path = Field(default=PROJECT_ROOT / "prompts", alias="PROMPTS_DIR")
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(DEFAULT_ENV_FILE),
         env_file_encoding="utf-8",
         extra="ignore",
         populate_by_name=True,
     )
+
+    def cors_allowed_origins(self) -> list[str]:
+        return [
+            origin.strip()
+            for origin in self.cors_allowed_origins_raw.split(",")
+            if origin.strip()
+        ]
 
     def allows_provider(self, provider_name: str | None) -> bool:
         lowered = (provider_name or "mock").lower()

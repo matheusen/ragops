@@ -24,6 +24,7 @@ from jira_issue_rag.shared.models import (
     FlowDescribeRequest,
     FlowDescribeResponse,
     FlowRunRequest,
+    FlowRunResponse,
     FolderValidationRequest,
     HealthResponse,
     IndexIssueRequest,
@@ -366,13 +367,13 @@ def get_audit_result(
 
 @router.post(
     "/run-flow",
-    response_model=DecisionResult,
+    response_model=FlowRunResponse,
     tags=["canvas"],
-    summary="Executar validação com configuração do canvas",
+    summary="Executar flow dinâmico com configuração do canvas",
     description=(
-        "Executa o pipeline de validação usando a configuração de nós exportada pelo **Pipeline Canvas** do dashboard. "
+        "Executa o flow selecionado no **Pipeline Canvas** usando a configuração de nós exportada pelo dashboard. "
         "Cada nó ativo e sua variante escolhida são traduzidos em flags de runtime (`enable_reranker`, `default_provider`, modelos de embedding, etc.) "
-        "sem necessidade de reiniciar o servidor. "
+        "sem necessidade de reiniciar o servidor. O dispatcher suporta cenários como `issue-validation` e `article-analysis`. "
         "\n\n**Exemplo mínimo de nodes:**\n"
         "```json\n"
         '[{\"id\":\"provider\",\"active\":true,\"selected_variant\":\"GPT-4o\"},'
@@ -384,10 +385,10 @@ def get_audit_result(
 def run_flow_endpoint(
     request: FlowRunRequest,
     settings: Settings = Depends(get_settings),
-) -> DecisionResult:
+) -> FlowRunResponse:
     return run_flow(
         nodes=request.nodes,
-        request=request.validation,
+        request=request,
         base_settings=settings,
     )
 
@@ -403,8 +404,11 @@ def run_flow_endpoint(
         "Use para mostrar ao usuário o que o fluxo faz antes de rodar."
     ),
 )
-def describe_flow_endpoint(request: FlowDescribeRequest) -> FlowDescribeResponse:
-    return FlowDescribeResponse(**describe_flow(request.nodes))
+def describe_flow_endpoint(
+    request: FlowDescribeRequest,
+    settings: Settings = Depends(get_settings),
+) -> FlowDescribeResponse:
+    return FlowDescribeResponse(**describe_flow(request.nodes, base_settings=settings))
 
 
 # ---------------------------------------------------------------------------

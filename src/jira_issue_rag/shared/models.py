@@ -345,14 +345,29 @@ class FlowNodeState(BaseModel):
     """Label of the chosen variant, e.g. 'GPT-4o', 'Hybrid BM25+Dense'."""
 
 
+class FlowArticleRunRequest(BaseModel):
+    title: str
+    content: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    prompt_name: str = "article_analysis"
+    provider: str | None = None
+    search_query: str | None = None
+    top_k: int = Field(default=5, ge=1, le=12)
+    related_doc_id: str | None = None
+    related_limit: int = Field(default=5, ge=1, le=20)
+
+
 class FlowRunRequest(BaseModel):
-    """Run a full validation using the pipeline configuration from the canvas."""
+    """Run one of the supported canvas flow modes using the current node configuration."""
 
     nodes: list[FlowNodeState] = Field(
         description="Ordered list of active/inactive canvas nodes with their variant selections."
     )
-    validation: ValidationRequest
-    """The issue + artefact paths to validate."""
+    validation: ValidationRequest | None = None
+    """Issue-validation payload. Required when flow_mode resolves to issue-validation."""
+
+    article: FlowArticleRunRequest | None = None
+    """Article-analysis payload. Required when flow_mode resolves to article-analysis."""
 
 
 class FlowDescribeRequest(BaseModel):
@@ -362,8 +377,11 @@ class FlowDescribeRequest(BaseModel):
 
 
 class FlowDescribeResponse(BaseModel):
+    flow_mode: str = "issue-validation"
     provider: str
     llm_model: str
+    configured_provider: str
+    configured_llm_model: str
     embedding_model: str
     retrieval: dict[str, bool]
     agentic: dict[str, bool]
@@ -378,6 +396,29 @@ class FlowDescribeResponse(BaseModel):
     langgraph: bool
     dspy_active: bool
     ragas_active: bool
+    supported_runtime_nodes: list[str] = Field(default_factory=list)
+    ignored_nodes: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class FlowDSPyOptimizationResult(BaseModel):
+    active: bool = False
+    optimizer: str | None = None
+    provider: str | None = None
+    triggered: bool = False
+    skipped_reason: str | None = None
+    dev_score: float | None = None
+    exported_files: list[str] = Field(default_factory=list)
+
+
+class FlowRunResponse(BaseModel):
+    flow_mode: str
+    decision: DecisionResult | None = None
+    prompt_execution: PromptExecutionResponse | None = None
+    article_search: list[ArticleSearchResult] = Field(default_factory=list)
+    related_articles: list[dict[str, Any]] = Field(default_factory=list)
+    dspy_optimization: FlowDSPyOptimizationResult | None = None
+    warnings: list[str] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -407,6 +448,10 @@ class ArticleIngestResponse(BaseModel):
     path: str
     chunks_indexed: int
     topics: list[str] = Field(default_factory=list)
+    canonical_title: str | None = None
+    published_at: str | None = None
+    published_year: int | None = None
+    version_label: str | None = None
     ok: bool = True
     error: str | None = None
 
@@ -426,6 +471,10 @@ class ArticleSearchResult(BaseModel):
     topics: list[str] = Field(default_factory=list)
     score: float
     source_path: str = ""
+    canonical_title: str | None = None
+    published_at: str | None = None
+    published_year: int | None = None
+    version_label: str | None = None
 
 
 class ArticleRelatedRequest(BaseModel):

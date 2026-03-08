@@ -21,6 +21,7 @@ from __future__ import annotations
 import hashlib
 import re
 import uuid
+import unicodedata
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
@@ -39,12 +40,47 @@ ARTICLE_COLLECTION = "articles"
 # ── Regex helpers ─────────────────────────────────────────────────────────────
 _SECTION_BREAK = re.compile(r"\n{2,}")          # blank line = paragraph break
 _CAMEL_SPLIT   = re.compile(r"(?<=[a-z])(?=[A-Z])")
+_ISO_DATE      = re.compile(r"\b(20\d{2})[-_/](\d{1,2})[-_/](\d{1,2})\b")
+_DAY_MONTH_YEAR = re.compile(
+    r"\b(\d{1,2})\s+de\s+([a-z]+)\s+de\s+(20\d{2})\b"
+)
+_MONTH_YEAR = re.compile(r"\b([a-z]+)\s+de\s+(20\d{2})\b")
+_YEAR_ONLY = re.compile(r"\b(19\d{2}|20\d{2})\b")
+_VERSION_PATTERN = re.compile(r"\b(?:v|ver(?:sion)?)[\s._-]*(\d+(?:\.\d+)*)\b")
+_MULTISPACE = re.compile(r"\s+")
 
 # ── Stopwords PT/EN mínimas para extração de tópicos ─────────────────────────
 _STOPWORDS = {
     "de", "da", "do", "em", "para", "com", "por", "que", "uma", "um",
     "the", "of", "and", "in", "to", "a", "is", "for", "this", "that",
     "are", "with", "be", "as", "an", "at", "it", "or", "by", "on",
+}
+
+_MONTHS = {
+    "january": 1,
+    "janeiro": 1,
+    "february": 2,
+    "fevereiro": 2,
+    "march": 3,
+    "marco": 3,
+    "april": 4,
+    "abril": 4,
+    "may": 5,
+    "maio": 5,
+    "june": 6,
+    "junho": 6,
+    "july": 7,
+    "julho": 7,
+    "august": 8,
+    "agosto": 8,
+    "september": 9,
+    "setembro": 9,
+    "october": 10,
+    "outubro": 10,
+    "november": 11,
+    "novembro": 11,
+    "december": 12,
+    "dezembro": 12,
 }
 
 
@@ -70,6 +106,7 @@ class ArticleStore:
         # Após ingerir todos, recalcula arestas SHARES_TOPIC no Neo4j
         if self.settings.enable_graphrag:
             self._refresh_shared_topics_edges(collection=collection)
+            self._refresh_temporal_version_edges()
         return results
 
     def search(
@@ -116,6 +153,10 @@ class ArticleStore:
                 topics=pl.get("topics", []),
                 score=final,
                 source_path=pl.get("source_path", ""),
+                canonical_title=pl.get("canonical_title"),
+                published_at=pl.get("published_at"),
+                published_year=pl.get("published_year"),
+                version_label=pl.get("version_label"),
             ))
         results.sort(key=lambda r: r.score, reverse=True)
         return results[:top_k]
@@ -151,6 +192,7 @@ class ArticleStore:
                 error="Não foi possível extrair texto do arquivo.",
             )
 
+        temporal_meta = self._extract_temporal_metadata(path=path, title=title, raw_text=raw_text)
         chunks = self._chunk(raw_text)
         topics_per_chunk = [self._extract_topics(c) for c in chunks]
         all_topics = sorted({t for ts in topics_per_chunk for t in ts})
@@ -176,6 +218,10 @@ class ArticleStore:
                         "chunk_index": idx,
                         "content":     chunk,
                         "topics":      topics_per_chunk[idx],
+                        "canonical_title": temporal_meta["canonical_title"],
+                        "published_at": temporal_meta["published_at"],
+                        "published_year": temporal_meta["published_year"],
+                        "version_label": temporal_meta["version_label"],
                     },
                 })
             self._qdrant(
@@ -190,11 +236,18 @@ class ArticleStore:
             self._neo4j_index_article(
                 doc_id=doc_id, title=title, path=str(path),
                 topics=all_topics, chunk_count=len(chunks),
+                temporal_meta=temporal_meta,
             )
 
         return ArticleIngestResponse(
             doc_id=doc_id, title=title, path=str(path),
-            chunks_indexed=indexed, topics=all_topics, ok=True,
+            chunks_indexed=indexed,
+            topics=all_topics,
+            canonical_title=temporal_meta["canonical_title"],
+            published_at=temporal_meta["published_at"],
+            published_year=temporal_meta["published_year"],
+            version_label=temporal_meta["version_label"],
+            ok=True,
         )
 
     # ── Text extraction & chunking ────────────────────────────────────────────
@@ -404,6 +457,79 @@ class ArticleStore:
     def _doc_id(path: Path) -> str:
         return hashlib.sha1(str(path.resolve()).encode()).hexdigest()[:16]
 
+    @staticmethod
+    def _normalize_ascii(text: str) -> str:
+        text = unicodedata.normalize("NFKD", text)
+        text = "".join(ch for ch in text if not unicodedata.combining(ch))
+        return text.lower()
+
+    @classmethod
+    def _extract_temporal_metadata(
+        cls,
+        *,
+        path: Path,
+        title: str,
+        raw_text: str,
+    ) -> dict[str, Any]:
+        probe = cls._normalize_ascii(f"{title}\n{path.stem}\n{raw_text[:1800]}")
+        published_at: str | None = None
+        published_year: int | None = None
+
+        if match := _ISO_DATE.search(probe):
+            year, month, day = (int(part) for part in match.groups())
+            published_at = f"{year:04d}-{month:02d}-{day:02d}"
+            published_year = year
+        elif match := _DAY_MONTH_YEAR.search(probe):
+            day = int(match.group(1))
+            month = _MONTHS.get(match.group(2))
+            year = int(match.group(3))
+            if month is not None:
+                published_at = f"{year:04d}-{month:02d}-{day:02d}"
+                published_year = year
+        elif match := _MONTH_YEAR.search(probe):
+            month = _MONTHS.get(match.group(1))
+            year = int(match.group(2))
+            if month is not None:
+                published_at = f"{year:04d}-{month:02d}-01"
+                published_year = year
+        elif match := _YEAR_ONLY.search(probe):
+            published_year = int(match.group(1))
+            published_at = f"{published_year:04d}-01-01"
+
+        version_label: str | None = None
+        version_number: float | None = None
+        if match := _VERSION_PATTERN.search(probe):
+            version_label = f"v{match.group(1)}"
+            try:
+                version_number = float(match.group(1))
+            except ValueError:
+                version_number = None
+
+        canonical_title = cls._canonicalize_title(title or path.stem)
+        return {
+            "canonical_title": canonical_title or None,
+            "published_at": published_at,
+            "published_year": published_year,
+            "version_label": version_label,
+            "version_number": version_number,
+        }
+
+    @classmethod
+    def _canonicalize_title(cls, title: str) -> str:
+        raw = title.replace("_", " | ")
+        raw = re.split(r"\s[|]\s", raw, maxsplit=1)[0]
+        normalized = cls._normalize_ascii(raw)
+        normalized = re.sub(r"\b(por|by)\s+[a-z0-9].*$", " ", normalized)
+        normalized = re.sub(r"\b(level up coding|medium)\b", " ", normalized)
+        normalized = _VERSION_PATTERN.sub(" ", normalized)
+        normalized = _ISO_DATE.sub(" ", normalized)
+        normalized = _DAY_MONTH_YEAR.sub(" ", normalized)
+        normalized = _MONTH_YEAR.sub(" ", normalized)
+        normalized = _YEAR_ONLY.sub(" ", normalized)
+        normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+        normalized = _MULTISPACE.sub(" ", normalized).strip()
+        return normalized
+
     # ── Qdrant helpers ────────────────────────────────────────────────────────
 
     def _qdrant_available(self) -> bool:
@@ -463,6 +589,7 @@ class ArticleStore:
         path: str,
         topics: list[str],
         chunk_count: int,
+        temporal_meta: dict[str, Any],
     ) -> None:
         try:
             import neo4j as _neo4j  # type: ignore[import-untyped]
@@ -477,9 +604,22 @@ class ArticleStore:
                     MERGE (a:Article {id: $id})
                     SET a.title        = $title,
                         a.path         = $path,
-                        a.chunk_count  = $chunk_count
+                        a.chunk_count  = $chunk_count,
+                        a.canonical_title = $canonical_title,
+                        a.published_at = $published_at,
+                        a.published_year = $published_year,
+                        a.version_label = $version_label,
+                        a.version_number = $version_number
                     """,
-                    id=doc_id, title=title, path=path, chunk_count=chunk_count,
+                    id=doc_id,
+                    title=title,
+                    path=path,
+                    chunk_count=chunk_count,
+                    canonical_title=temporal_meta.get("canonical_title"),
+                    published_at=temporal_meta.get("published_at"),
+                    published_year=temporal_meta.get("published_year"),
+                    version_label=temporal_meta.get("version_label"),
+                    version_number=temporal_meta.get("version_number"),
                 )
                 for topic in topics:
                     session.run(
@@ -491,6 +631,46 @@ class ArticleStore:
                         """,
                         name=topic, doc_id=doc_id,
                     )
+        finally:
+            driver.close()
+
+    def _refresh_temporal_version_edges(self) -> None:
+        """Cria arestas temporais entre artigos da mesma família (mesmo título canônico)."""
+        try:
+            import neo4j as _neo4j  # type: ignore[import-untyped]
+        except ImportError:
+            return
+        s = self.settings
+        driver = _neo4j.GraphDatabase.driver(s.neo4j_url, auth=(s.neo4j_user, s.neo4j_password))
+        try:
+            with driver.session(database=s.neo4j_database) as session:
+                session.run("MATCH ()-[r:EARLIER_VERSION_OF|LATER_VERSION_OF]->() DELETE r")
+                session.run(
+                    """
+                    MATCH (older:Article), (newer:Article)
+                    WHERE older.id <> newer.id
+                      AND coalesce(older.canonical_title, '') <> ''
+                      AND older.canonical_title = newer.canonical_title
+                      AND (
+                        (older.published_at IS NOT NULL AND newer.published_at IS NOT NULL AND older.published_at < newer.published_at)
+                        OR (
+                          older.published_at IS NULL AND newer.published_at IS NULL
+                          AND older.published_year IS NOT NULL AND newer.published_year IS NOT NULL
+                          AND older.published_year < newer.published_year
+                        )
+                        OR (
+                          older.published_at IS NULL AND newer.published_at IS NULL
+                          AND coalesce(older.published_year, 0) = coalesce(newer.published_year, 0)
+                          AND older.version_number IS NOT NULL AND newer.version_number IS NOT NULL
+                          AND older.version_number < newer.version_number
+                        )
+                      )
+                    MERGE (older)-[r:EARLIER_VERSION_OF]->(newer)
+                    SET r.weight = 1
+                    MERGE (newer)-[r2:LATER_VERSION_OF]->(older)
+                    SET r2.weight = 1
+                    """
+                )
         finally:
             driver.close()
 
@@ -528,28 +708,69 @@ class ArticleStore:
             return []
         s = self.settings
         driver = _neo4j.GraphDatabase.driver(s.neo4j_url, auth=(s.neo4j_user, s.neo4j_password))
-        results: list[dict[str, Any]] = []
+        merged: dict[str, dict[str, Any]] = {}
         try:
             with driver.session(database=s.neo4j_database) as session:
-                records = session.run(
+                topic_records = session.run(
                     """
                     MATCH (a:Article {id: $id})-[r:SHARES_TOPIC]->(b:Article)
-                    RETURN b.id AS doc_id, b.title AS title, r.weight AS shared_topics
+                    RETURN b.id AS doc_id, b.title AS title, r.weight AS shared_topics,
+                           b.published_at AS published_at, b.published_year AS published_year,
+                           b.version_label AS version_label
                     ORDER BY r.weight DESC
                     LIMIT $limit
                     """,
                     id=doc_id, limit=limit,
                 )
-                for rec in records:
-                    results.append({
-                        "doc_id":        rec["doc_id"],
-                        "title":         rec["title"],
+                for rec in topic_records:
+                    did = rec["doc_id"]
+                    merged[did] = {
+                        "doc_id": did,
+                        "title": rec["title"],
                         "shared_topics": rec["shared_topics"],
-                        "relation":      "SHARES_TOPIC",
-                    })
+                        "relation": "SHARES_TOPIC",
+                        "published_at": rec["published_at"],
+                        "published_year": rec["published_year"],
+                        "version_label": rec["version_label"],
+                    }
+
+                temporal_records = session.run(
+                    """
+                    MATCH (a:Article {id: $id})-[r:EARLIER_VERSION_OF|LATER_VERSION_OF]->(b:Article)
+                    RETURN b.id AS doc_id, b.title AS title, type(r) AS relation,
+                           b.published_at AS published_at, b.published_year AS published_year,
+                           b.version_label AS version_label
+                    LIMIT $limit
+                    """,
+                    id=doc_id, limit=limit,
+                )
+                for rec in temporal_records:
+                    did = rec["doc_id"]
+                    existing = merged.get(did)
+                    if existing is None:
+                        merged[did] = {
+                            "doc_id": did,
+                            "title": rec["title"],
+                            "shared_topics": 0,
+                            "relation": rec["relation"],
+                            "published_at": rec["published_at"],
+                            "published_year": rec["published_year"],
+                            "version_label": rec["version_label"],
+                        }
+                        continue
+                    if rec["relation"] not in str(existing["relation"]).split("+"):
+                        existing["relation"] = f"{existing['relation']}+{rec['relation']}"
         finally:
             driver.close()
-        return results
+        results = list(merged.values())
+        results.sort(
+            key=lambda item: (
+                0 if "VERSION" in str(item.get("relation", "")) else 1,
+                -int(item.get("shared_topics", 0) or 0),
+                str(item.get("title", "")),
+            )
+        )
+        return results[:limit]
 
     def _qdrant_related(self, doc_id: str, limit: int) -> list[dict[str, Any]]:
         """Fallback when Neo4j is off: agrupa por doc_id nos chunks mais similares."""

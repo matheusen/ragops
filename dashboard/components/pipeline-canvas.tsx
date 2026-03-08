@@ -21,9 +21,11 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { saveFlowAction, deleteFlowAction } from "@/app/actions";
+import { getApiBase } from "@/lib/api-base";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type NodeCategory = "input" | "processing" | "retrieval" | "execution" | "prompt" | "output";
+type FlowMode = "issue-validation" | "article-analysis";
 
 interface NodeVariant {
   id: string;
@@ -78,6 +80,20 @@ interface CatalogEntry {
 }
 
 const NODE_CATALOG: CatalogEntry[] = [
+  {
+    id: "flow-mode",
+    category: "input",
+    label: "Flow Mode",
+    description: "Seleciona qual cenário o backend dinâmico executa a partir do canvas. Use issue validation para triagem de Jira e article analysis para resumir ou analisar textos com busca opcional no corpus de artigos.",
+    tech: ["Dynamic dispatch", "Issue validation", "Article analysis"],
+    optional: false,
+    serviceFile: "flow_runner.py",
+    variants: [
+      { id: "issue-validation", label: "Issue validation", description: "Triagem e validação de issues Jira com ValidationWorkflow e LangGraph.", tech: ["ValidationRequest", "DecisionResult"] },
+      { id: "article-analysis", label: "Article analysis", description: "Análise de artigos com PromptCatalog e busca opcional no corpus indexado.", tech: ["PromptExecution", "ArticleStore"] },
+    ],
+    selectedVariant: "issue-validation",
+  },
   {
     id: "api-ingress",
     category: "input",
@@ -294,8 +310,8 @@ const NODE_CATALOG: CatalogEntry[] = [
     id: "dspy",
     category: "prompt",
     label: "DSPy Optimizer",
-    description: "Laboratório offline de otimização de prompts. Treina assinaturas DSPy contra o golden dataset usando BootstrapFewShot ou MIPROv2, seleciona os melhores programas por métrica RAGAS e exporta de volta para prompts/ — fechando o loop de melhoria contínua.",
-    tech: ["DSPy", "BootstrapFewShot", "MIPROv2", "Golden dataset", "Prompt export"],
+    description: "Quando ativo no issue-validation, roda o lab de otimização com DSPy 3 + GEPA sobre o golden dataset, exporta prompts otimizados para prompts/ e reaproveita o catálogo atualizado no runtime.",
+    tech: ["DSPy 3", "GEPA", "Golden dataset", "Prompt export"],
     optional: true,
     serviceFile: "dspy_optimizer.py",
   },
@@ -328,8 +344,40 @@ const NODE_CATALOG: CatalogEntry[] = [
   },
 ];
 
+const NON_RUNTIME_OPTIONAL_NODES = new Set<string>(["ragas"]);
+
+const SCENARIO_UNSUPPORTED_OPTIONAL_NODES: Record<FlowMode, Set<string>> = {
+  "issue-validation": new Set([...NON_RUNTIME_OPTIONAL_NODES]),
+  "article-analysis": new Set([
+    ...NON_RUNTIME_OPTIONAL_NODES,
+    "normalizer",
+    "artifacts",
+    "rules",
+    "planner",
+    "query-rewriter",
+    "temporal-graphrag",
+    "reranker",
+    "distiller",
+    "reflection-memory",
+    "policy-loop",
+    "result-norm",
+    "audit",
+    "dspy",
+  ]),
+};
+
+const DSPY_SUPPORTED_PROVIDER_VARIANTS = new Set<string>([
+  "gpt4o",
+  "gpt4o-mini",
+  "gpt41",
+  "gemini-flash",
+  "gemini-pro",
+  "ollama",
+]);
+
 // ── Default layout ─────────────────────────────────────────────────────────────
 const DEFAULT_POSITIONS: Record<string, { x: number; y: number }> = {
+  "flow-mode":      { x: -270, y: 170 },
   "api-ingress":    { x: 0,    y: 170 },
   "prompt-catalog": { x: 270,  y: 60  },
   "confidentiality":{ x: 270,  y: 270 },
@@ -381,6 +429,7 @@ const eDash  = { stroke: "#cbd5e1", strokeWidth: 1.5, strokeDasharray: "6,4" };
 const mk = { type: MarkerType.ArrowClosed, color: "#94a3b8", width: 16, height: 16 };
 
 const DEFAULT_EDGES: Edge[] = [
+  { id:"e00", source:"flow-mode",      target:"api-ingress",      style: eStyle, markerEnd: mk },
   { id:"e01", source:"api-ingress",    target:"prompt-catalog",   style: eStyle, markerEnd: mk },
   { id:"e02", source:"api-ingress",    target:"confidentiality",  style: eStyle, markerEnd: mk },
   { id:"e03", source:"prompt-catalog", target:"normalizer",       style: eStyle, markerEnd: mk },
@@ -453,15 +502,18 @@ const nodeTypes = { pipeline: PipelineNodeComponent };
 // ── Node Sidebar ───────────────────────────────────────────────────────────────
 function NodeSidebar({
   node,
+  nodes,
   onClose,
   onUpdate,
 }: {
   node: PipelineNode;
+  nodes: PipelineNode[];
   onClose: () => void;
   onUpdate: (id: string, patch: Partial<PipelineNodeData>) => void;
 }) {
   const d = node.data;
   const cfg = CATEGORY_CONFIG[d.category];
+  const availability = getNodeRuntimeAvailability(node.id, nodes);
   return (
     <aside className="pc__sidebar">
       <div className="pc__sb-header" style={{ borderTopColor: cfg.color }}>
@@ -482,14 +534,26 @@ function NodeSidebar({
         {d.optional && (
           <div className="pc__sb-section">
             <div className="pc__sb-section-label">Status</div>
+            {!availability.selectable && (
+              <p className="pc__sb-desc" style={{ marginBottom: ".6rem", color: "#b45309" }}>
+                Indisponível neste flow: {availability.reason}
+              </p>
+            )}
             <label className="pc__toggle">
               <input
                 type="checkbox"
                 checked={d.active}
+                disabled={!availability.selectable}
                 onChange={(e) => onUpdate(node.id, { active: e.target.checked })}
               />
               <span className="pc__toggle-track" style={{ "--t-on": cfg.color } as React.CSSProperties} />
-              <span className="pc__toggle-label">{d.active ? "Ativo na pipeline" : "Desativado (bypass)"}</span>
+              <span className="pc__toggle-label">
+                {!availability.selectable
+                  ? "Indisponível neste flow"
+                  : d.active
+                    ? "Ativo na pipeline"
+                    : "Desativado (bypass)"}
+              </span>
             </label>
           </div>
         )}
@@ -626,7 +690,10 @@ function LoadPanel({
 
 // ── Run Flow panel ───────────────────────────────────────────────────────────
 type FlowDescription = {
-  provider: string; llm_model: string; embedding_model: string;
+  flow_mode: string;
+  provider: string; llm_model: string;
+  configured_provider: string; configured_llm_model: string;
+  embedding_model: string;
   retrieval: { external: boolean; graphrag: boolean; cascade: boolean };
   agentic: {
     planner: boolean;
@@ -639,6 +706,9 @@ type FlowDescription = {
   planner_mode: string; query_rewriter_mode: string; reflection_mode: string;
   policy_mode: string; temporal_graphrag_mode: string;
   dspy_active: boolean; ragas_active: boolean;
+  supported_runtime_nodes: string[];
+  ignored_nodes: string[];
+  warnings: string[];
 };
 
 type RunDecisionResult = {
@@ -650,6 +720,104 @@ type RunDecisionResult = {
   requires_human_review: boolean; provider: string; model: string; rationale: string;
 };
 
+type RunPromptResult = {
+  prompt_name: string;
+  mode: "decision" | "text";
+  provider: string;
+  model: string;
+  output_text: string;
+};
+
+type ArticleSearchHit = {
+  chunk_id: string;
+  doc_id: string;
+  title: string;
+  chunk_index: number;
+  content: string;
+  topics: string[];
+  score: number;
+  source_path: string;
+};
+
+type DSPyOptimizationResult = {
+  active: boolean;
+  optimizer: string | null;
+  provider: string | null;
+  triggered: boolean;
+  skipped_reason: string | null;
+  dev_score: number | null;
+  exported_files: string[];
+};
+
+type FlowRunResponse = {
+  flow_mode: string;
+  decision: RunDecisionResult | null;
+  prompt_execution: RunPromptResult | null;
+  article_search: ArticleSearchHit[];
+  related_articles: Array<Record<string, unknown>>;
+  dspy_optimization: DSPyOptimizationResult | null;
+  warnings: string[];
+};
+
+function normalizeFlowDescription(raw: unknown, fallbackMode: string): FlowDescription {
+  const data = (raw && typeof raw === "object") ? raw as Record<string, unknown> : {};
+  const retrieval = (data.retrieval && typeof data.retrieval === "object")
+    ? data.retrieval as Record<string, unknown>
+    : {};
+  const agentic = (data.agentic && typeof data.agentic === "object")
+    ? data.agentic as Record<string, unknown>
+    : {};
+
+  return {
+    flow_mode: typeof data.flow_mode === "string" ? data.flow_mode : fallbackMode,
+    provider: typeof data.provider === "string" ? data.provider : "unknown",
+    llm_model: typeof data.llm_model === "string" ? data.llm_model : "unknown",
+    configured_provider: typeof data.configured_provider === "string" ? data.configured_provider : (typeof data.provider === "string" ? data.provider : "unknown"),
+    configured_llm_model: typeof data.configured_llm_model === "string" ? data.configured_llm_model : (typeof data.llm_model === "string" ? data.llm_model : "unknown"),
+    embedding_model: typeof data.embedding_model === "string" ? data.embedding_model : "unknown",
+    retrieval: {
+      external: Boolean(retrieval.external),
+      graphrag: Boolean(retrieval.graphrag),
+      cascade: Boolean(retrieval.cascade),
+    },
+    agentic: {
+      planner: Boolean(agentic.planner),
+      query_rewriter: Boolean(agentic.query_rewriter),
+      reflection_memory: Boolean(agentic.reflection_memory),
+      policy_loop: Boolean(agentic.policy_loop),
+      temporal_graphrag: Boolean(agentic.temporal_graphrag),
+    },
+    reranker: Boolean(data.reranker),
+    distiller: typeof data.distiller === "string" ? data.distiller : "simple",
+    confidentiality: Boolean(data.confidentiality),
+    langgraph: Boolean(data.langgraph),
+    planner_mode: typeof data.planner_mode === "string" ? data.planner_mode : "",
+    query_rewriter_mode: typeof data.query_rewriter_mode === "string" ? data.query_rewriter_mode : "",
+    reflection_mode: typeof data.reflection_mode === "string" ? data.reflection_mode : "",
+    policy_mode: typeof data.policy_mode === "string" ? data.policy_mode : "",
+    temporal_graphrag_mode: typeof data.temporal_graphrag_mode === "string" ? data.temporal_graphrag_mode : "",
+    dspy_active: Boolean(data.dspy_active),
+    ragas_active: Boolean(data.ragas_active),
+    supported_runtime_nodes: Array.isArray(data.supported_runtime_nodes) ? data.supported_runtime_nodes.filter((value): value is string => typeof value === "string") : [],
+    ignored_nodes: Array.isArray(data.ignored_nodes) ? data.ignored_nodes.filter((value): value is string => typeof value === "string") : [],
+    warnings: Array.isArray(data.warnings) ? data.warnings.filter((value): value is string => typeof value === "string") : [],
+  };
+}
+
+function normalizeFlowRunResponse(raw: unknown, fallbackMode: string): FlowRunResponse {
+  const data = (raw && typeof raw === "object") ? raw as Record<string, unknown> : {};
+
+  return {
+    flow_mode: typeof data.flow_mode === "string" ? data.flow_mode : fallbackMode,
+    decision: (data.decision && typeof data.decision === "object") ? data.decision as RunDecisionResult : null,
+    prompt_execution: (data.prompt_execution && typeof data.prompt_execution === "object") ? data.prompt_execution as RunPromptResult : null,
+    article_search: Array.isArray(data.article_search) ? data.article_search as ArticleSearchHit[] : [],
+    related_articles: Array.isArray(data.related_articles) ? data.related_articles as Array<Record<string, unknown>> : [],
+    dspy_optimization: (data.dspy_optimization && typeof data.dspy_optimization === "object") ? data.dspy_optimization as DSPyOptimizationResult : null,
+    warnings: Array.isArray(data.warnings) ? data.warnings.filter((value): value is string => typeof value === "string") : [],
+  };
+}
+
 function buildFlowNodePayload(nodes: PipelineNode[]) {
   return nodes.map((n) => {
     const entry = NODE_CATALOG.find((c) => c.id === n.id);
@@ -658,11 +826,77 @@ function buildFlowNodePayload(nodes: PipelineNode[]) {
   });
 }
 
-function formatModeLabel(mode: string) {
+function formatModeLabel(mode?: string | null) {
+  if (!mode) {
+    return "Auto";
+  }
+
   return mode
     .split("-")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function inferFlowMode(nodes: PipelineNode[]): FlowMode {
+  const variant = nodes.find((node) => node.id === "flow-mode")?.data.selectedVariant;
+  return variant === "article-analysis" ? "article-analysis" : "issue-validation";
+}
+
+function getNodeRuntimeAvailability(nodeId: string, nodes: PipelineNode[]) {
+  const flowMode = inferFlowMode(nodes);
+
+  if (SCENARIO_UNSUPPORTED_OPTIONAL_NODES[flowMode].has(nodeId)) {
+    if (nodeId === "ragas") {
+      return {
+        selectable: false,
+        reason: "RAGAS continua restrito à avaliação offline e ainda não altera o /run-flow.",
+      };
+    }
+    if (flowMode === "article-analysis") {
+      return {
+        selectable: false,
+        reason: "Este nó não participa do runtime de article-analysis.",
+      };
+    }
+  }
+
+  if (nodeId === "dspy") {
+    const providerVariant = nodes.find((node) => node.id === "provider")?.data.selectedVariant;
+    if (!providerVariant || !DSPY_SUPPORTED_PROVIDER_VARIANTS.has(providerVariant)) {
+      return {
+        selectable: false,
+        reason: "DSPy + GEPA exige provider OpenAI, Gemini ou Ollama no flow atual.",
+      };
+    }
+  }
+
+  return { selectable: true, reason: null as string | null };
+}
+
+function coerceNodesToRuntime(nodes: PipelineNode[]) {
+  const coerced = nodes.map((node) => {
+    if (!node.data.optional) {
+      return node;
+    }
+
+    const availability = getNodeRuntimeAvailability(node.id, nodes);
+    if (!availability.selectable && node.data.active) {
+      return { ...node, data: { ...node.data, active: false } };
+    }
+    return node;
+  });
+
+  const retrieverNode = coerced.find((node) => node.id === "retriever");
+  if (retrieverNode?.data.selectedVariant !== "neo4j") {
+    return coerced;
+  }
+
+  return coerced.map((node) => {
+    if (node.id !== "neo4j" || !node.data.optional || node.data.active) {
+      return node;
+    }
+    return { ...node, data: { ...node.data, active: true } };
+  });
 }
 
 function RunFlowPanel({
@@ -671,51 +905,79 @@ function RunFlowPanel({
   const [issueKey,     setIssueKey]     = useState("PAY-0001");
   const [summary,      setSummary]      = useState("");
   const [description,  setDescription]  = useState("");
+  const [articleTitle, setArticleTitle] = useState("");
+  const [articleContent, setArticleContent] = useState("");
+  const [articleSource, setArticleSource] = useState("");
+  const [articleSearchQuery, setArticleSearchQuery] = useState("");
   const [desc,         setDesc]         = useState<FlowDescription | null>(null);
   const [descLoading,  setDescLoading]  = useState(false);
+  const [descError,    setDescError]    = useState<string | null>(null);
   const [running,      setRunning]      = useState(false);
-  const [result,       setResult]       = useState<RunDecisionResult | null>(null);
+  const [result,       setResult]       = useState<FlowRunResponse | null>(null);
   const [error,        setError]        = useState<string | null>(null);
 
-  const apiBase = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000") + "/api/v1";
+  const apiBase = getApiBase();
   const payload = buildFlowNodePayload(nodes);
+  const inferredFlowMode = inferFlowMode(nodes);
+  const flowMode = desc?.flow_mode ?? inferredFlowMode;
 
   useEffect(() => {
     setDescLoading(true);
+    setDescError(null);
     fetch(`${apiBase}/run-flow/describe`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ nodes: payload }),
     })
-      .then((r) => r.json())
-      .then((d: FlowDescription) => setDesc(d))
-      .catch(() => setDesc(null))
+      .then(async (r) => {
+        if (!r.ok) {
+          throw new Error(await r.text());
+        }
+        return r.json();
+      })
+      .then((d: unknown) => setDesc(normalizeFlowDescription(d, inferredFlowMode)))
+      .catch((e: unknown) => {
+        setDesc(null);
+        setDescError(e instanceof Error ? e.message : "Falha ao descrever o flow.");
+      })
       .finally(() => setDescLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleRun = async () => {
-    if (!issueKey.trim() || !summary.trim()) return;
+    if (flowMode === "issue-validation" && (!issueKey.trim() || !summary.trim())) return;
+    if (flowMode === "article-analysis" && (!articleTitle.trim() || !articleContent.trim())) return;
     setRunning(true);
     setError(null);
     setResult(null);
     try {
+      const body = flowMode === "article-analysis"
+        ? {
+            nodes: payload,
+            article: {
+              title: articleTitle.trim(),
+              content: articleContent.trim(),
+              metadata: articleSource.trim() ? { source: articleSource.trim() } : {},
+              search_query: articleSearchQuery.trim() || undefined,
+            },
+          }
+        : {
+            nodes: payload,
+            validation: {
+              issue: {
+                issue_key: issueKey.trim(),
+                summary: summary.trim(),
+                description: description.trim(),
+              },
+            },
+          };
       const res = await fetch(`${apiBase}/run-flow`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          nodes: payload,
-          validation: {
-            issue: {
-              issue_key: issueKey.trim(),
-              summary: summary.trim(),
-              description: description.trim(),
-            },
-          },
-        }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(await res.text());
-      setResult(await res.json() as RunDecisionResult);
+      setResult(normalizeFlowRunResponse(await res.json(), flowMode));
     } catch (e) {
       setError(String(e));
     } finally {
@@ -739,11 +1001,22 @@ function RunFlowPanel({
         {/* Config preview strip */}
         <div className="pc__run-preview">
           {descLoading && <span className="pc__run-desc-loading">A carregar configuração…</span>}
+          {descError && !descLoading && (
+            <span className="pc__run-desc-loading">Preview indisponível: {descError}</span>
+          )}
           {desc && !descLoading && (
             <>
               <div className="pc__run-desc-chips">
                 <span className="pc__run-chip pc__run-chip--provider">
                   {desc.provider} · {desc.llm_model}
+                </span>
+                {(desc.configured_provider !== desc.provider || desc.configured_llm_model !== desc.llm_model) && (
+                  <span className="pc__run-chip pc__run-chip--warn">
+                    configurado: {desc.configured_provider} · {desc.configured_llm_model}
+                  </span>
+                )}
+                <span className="pc__run-chip pc__run-chip--muted">
+                  modo: {formatModeLabel(desc.flow_mode)}
                 </span>
                 {desc.retrieval.external && <span className="pc__run-chip">Qdrant</span>}
                 {desc.retrieval.graphrag  && <span className="pc__run-chip pc__run-chip--graph">Neo4j GraphRAG</span>}
@@ -759,7 +1032,23 @@ function RunFlowPanel({
                 {desc.agentic.reflection_memory && <span className="pc__run-chip">Reflection · {formatModeLabel(desc.reflection_mode)}</span>}
                 {desc.agentic.policy_loop && <span className="pc__run-chip">Policy loop · {formatModeLabel(desc.policy_mode)}</span>}
                 {desc.agentic.temporal_graphrag && <span className="pc__run-chip pc__run-chip--graph">Temporal Graph · {formatModeLabel(desc.temporal_graphrag_mode)}</span>}
+                {desc.ignored_nodes.length > 0 && (
+                  <span className="pc__run-chip pc__run-chip--muted">
+                    ignorados no runtime: {desc.ignored_nodes.join(", ")}
+                  </span>
+                )}
+                <span className="pc__run-chip pc__run-chip--muted">
+                  runtime: {desc.supported_runtime_nodes.length} nós ativos
+                </span>
               </div>
+              {desc.warnings.length > 0 && (
+                <div className="pc__rr-section" style={{ marginTop: ".75rem" }}>
+                  <div className="pc__rr-label">Avisos do runtime</div>
+                  <ul className="pc__rr-list pc__rr-list--warn">
+                    {desc.warnings.map((warning, index) => <li key={index}>{warning}</li>)}
+                  </ul>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -768,75 +1057,183 @@ function RunFlowPanel({
         <div className="pc__modal-body">
           {!result ? (
             <>
-              <label className="pc__modal-label">Issue Key</label>
-              <input
-                className="pc__modal-input"
-                placeholder="PAY-1421"
-                value={issueKey}
-                onChange={(e) => setIssueKey(e.target.value)}
-              />
-              <label className="pc__modal-label" style={{ marginTop: ".75rem" }}>Sumário *</label>
-              <input
-                className="pc__modal-input"
-                placeholder="Ex: Payment reconciliation mismatch on ledger export"
-                value={summary}
-                onChange={(e) => setSummary(e.target.value)}
-              />
-              <label className="pc__modal-label" style={{ marginTop: ".75rem" }}>Descrição</label>
-              <textarea
-                className="pc__modal-input pc__modal-textarea"
-                rows={3}
-                placeholder="Contexto adicional, comportamento esperado vs actual…"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-              />
+              {flowMode === "article-analysis" ? (
+                <>
+                  <label className="pc__modal-label">Título do artigo *</label>
+                  <input
+                    className="pc__modal-input"
+                    placeholder="Ex: Building a production RAG pipeline"
+                    value={articleTitle}
+                    onChange={(e) => setArticleTitle(e.target.value)}
+                  />
+                  <label className="pc__modal-label" style={{ marginTop: ".75rem" }}>Conteúdo *</label>
+                  <textarea
+                    className="pc__modal-input pc__modal-textarea"
+                    rows={7}
+                    placeholder="Cole aqui o texto do artigo para resumir e analisar…"
+                    value={articleContent}
+                    onChange={(e) => setArticleContent(e.target.value)}
+                  />
+                  <label className="pc__modal-label" style={{ marginTop: ".75rem" }}>Source / metadado</label>
+                  <input
+                    className="pc__modal-input"
+                    placeholder="Ex: medium, internal, arxiv"
+                    value={articleSource}
+                    onChange={(e) => setArticleSource(e.target.value)}
+                  />
+                  <label className="pc__modal-label" style={{ marginTop: ".75rem" }}>Query de busca opcional</label>
+                  <input
+                    className="pc__modal-input"
+                    placeholder="Ex: graph rag policy validation"
+                    value={articleSearchQuery}
+                    onChange={(e) => setArticleSearchQuery(e.target.value)}
+                  />
+                </>
+              ) : (
+                <>
+                  <label className="pc__modal-label">Issue Key</label>
+                  <input
+                    className="pc__modal-input"
+                    placeholder="PAY-1421"
+                    value={issueKey}
+                    onChange={(e) => setIssueKey(e.target.value)}
+                  />
+                  <label className="pc__modal-label" style={{ marginTop: ".75rem" }}>Sumário *</label>
+                  <input
+                    className="pc__modal-input"
+                    placeholder="Ex: Payment reconciliation mismatch on ledger export"
+                    value={summary}
+                    onChange={(e) => setSummary(e.target.value)}
+                  />
+                  <label className="pc__modal-label" style={{ marginTop: ".75rem" }}>Descrição</label>
+                  <textarea
+                    className="pc__modal-input pc__modal-textarea"
+                    rows={3}
+                    placeholder="Contexto adicional, comportamento esperado vs actual…"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                  />
+                </>
+              )}
               {error && <p className="pc__run-error">{error}</p>}
             </>
           ) : (
             <div className="pc__run-result">
-              {/* Classification banner */}
-              <div
-                className="pc__rr-banner"
-                style={{
-                  background: (classColor[result.classification] ?? "#888") + "18",
-                  borderColor: classColor[result.classification] ?? "#888",
-                }}
-              >
-                <span className="pc__rr-class" style={{ color: classColor[result.classification] ?? "#888" }}>
-                  {classLabel[result.classification] ?? result.classification}
-                </span>
-                <span className="pc__rr-conf">{Math.round(result.confidence * 100)}% confiança</span>
-              </div>
-              {/* Status chips */}
-              <div className="pc__rr-chips">
-                {result.is_complete          && <span className="pc__run-chip">Completo ✓</span>}
-                {result.ready_for_dev        && <span className="pc__run-chip pc__run-chip--provider">Pronto p/ dev ✓</span>}
-                {result.financial_impact_detected && <span className="pc__run-chip pc__run-chip--warn">⚠ Impacto financeiro</span>}
-                {result.requires_human_review && <span className="pc__run-chip pc__run-chip--warn">👁 Revisão humana</span>}
-                <span className="pc__run-chip">{result.provider} · {result.model}</span>
-              </div>
-              {/* Rationale */}
-              {result.rationale && (
+              {result.decision && (
+                <>
+                  <div
+                    className="pc__rr-banner"
+                    style={{
+                      background: (classColor[result.decision.classification] ?? "#888") + "18",
+                      borderColor: classColor[result.decision.classification] ?? "#888",
+                    }}
+                  >
+                    <span className="pc__rr-class" style={{ color: classColor[result.decision.classification] ?? "#888" }}>
+                      {classLabel[result.decision.classification] ?? result.decision.classification}
+                    </span>
+                    <span className="pc__rr-conf">{Math.round(result.decision.confidence * 100)}% confiança</span>
+                  </div>
+                  <div className="pc__rr-chips">
+                    {result.decision.is_complete && <span className="pc__run-chip">Completo ✓</span>}
+                    {result.decision.ready_for_dev && <span className="pc__run-chip pc__run-chip--provider">Pronto p/ dev ✓</span>}
+                    {result.decision.financial_impact_detected && <span className="pc__run-chip pc__run-chip--warn">⚠ Impacto financeiro</span>}
+                    {result.decision.requires_human_review && <span className="pc__run-chip pc__run-chip--warn">👁 Revisão humana</span>}
+                    <span className="pc__run-chip">{result.decision.provider} · {result.decision.model}</span>
+                  </div>
+                  {result.decision.rationale && (
+                    <div className="pc__rr-section">
+                      <div className="pc__rr-label">Rationale</div>
+                      <p className="pc__rr-text">{result.decision.rationale}</p>
+                    </div>
+                  )}
+                  {result.decision.missing_items.length > 0 && (
+                    <div className="pc__rr-section">
+                      <div className="pc__rr-label">Itens faltando</div>
+                      <ul className="pc__rr-list">
+                        {result.decision.missing_items.map((m, i) => <li key={i}>{m}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {result.decision.contradictions.length > 0 && (
+                    <div className="pc__rr-section">
+                      <div className="pc__rr-label">Contradições detectadas</div>
+                      <ul className="pc__rr-list pc__rr-list--warn">
+                        {result.decision.contradictions.map((c, i) => <li key={i}>{c}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              )}
+              {result.prompt_execution && (
+                <>
+                  <div className="pc__rr-chips">
+                    <span className="pc__run-chip pc__run-chip--provider">
+                      {result.prompt_execution.provider} · {result.prompt_execution.model}
+                    </span>
+                    <span className="pc__run-chip">
+                      prompt: {result.prompt_execution.prompt_name}
+                    </span>
+                    <span className="pc__run-chip pc__run-chip--muted">
+                      modo: {result.prompt_execution.mode}
+                    </span>
+                  </div>
+                  <div className="pc__rr-section">
+                    <div className="pc__rr-label">Saída do prompt</div>
+                    <p className="pc__rr-text">{result.prompt_execution.output_text}</p>
+                  </div>
+                  {result.article_search.length > 0 && (
+                    <div className="pc__rr-section">
+                      <div className="pc__rr-label">Contexto recuperado de artigos</div>
+                      <ul className="pc__rr-list">
+                        {result.article_search.map((item) => (
+                          <li key={item.chunk_id}>
+                            {item.title} #{item.chunk_index} ({Math.round(item.score * 100)}%) - {item.content.slice(0, 160)}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              )}
+              {result.dspy_optimization && (
                 <div className="pc__rr-section">
-                  <div className="pc__rr-label">Rationale</div>
-                  <p className="pc__rr-text">{result.rationale}</p>
+                  <div className="pc__rr-label">DSPy</div>
+                  <div className="pc__rr-chips">
+                    <span className="pc__run-chip pc__run-chip--provider">
+                      {result.dspy_optimization.optimizer ?? "gepa"}
+                    </span>
+                    {result.dspy_optimization.provider && (
+                      <span className="pc__run-chip">
+                        {result.dspy_optimization.provider}
+                      </span>
+                    )}
+                    <span className={`pc__run-chip ${result.dspy_optimization.triggered ? "" : "pc__run-chip--muted"}`}>
+                      {result.dspy_optimization.triggered ? "Executado" : "Skip"}
+                    </span>
+                    {typeof result.dspy_optimization.dev_score === "number" && (
+                      <span className="pc__run-chip">
+                        dev score {Math.round(result.dspy_optimization.dev_score * 100)}%
+                      </span>
+                    )}
+                  </div>
+                  {result.dspy_optimization.skipped_reason && (
+                    <p className="pc__rr-text">{result.dspy_optimization.skipped_reason}</p>
+                  )}
+                  {result.dspy_optimization.exported_files.length > 0 && (
+                    <>
+                      <div className="pc__rr-label" style={{ marginTop: ".5rem" }}>Prompts exportados</div>
+                      <ul className="pc__rr-list">
+                        {result.dspy_optimization.exported_files.map((path) => <li key={path}>{path}</li>)}
+                      </ul>
+                    </>
+                  )}
                 </div>
               )}
-              {/* Missing items */}
-              {result.missing_items.length > 0 && (
+              {result.warnings.length > 0 && (
                 <div className="pc__rr-section">
-                  <div className="pc__rr-label">Itens faltando</div>
-                  <ul className="pc__rr-list">
-                    {result.missing_items.map((m, i) => <li key={i}>{m}</li>)}
-                  </ul>
-                </div>
-              )}
-              {/* Contradictions */}
-              {result.contradictions.length > 0 && (
-                <div className="pc__rr-section">
-                  <div className="pc__rr-label">Contradições detectadas</div>
+                  <div className="pc__rr-label">Warnings</div>
                   <ul className="pc__rr-list pc__rr-list--warn">
-                    {result.contradictions.map((c, i) => <li key={i}>{c}</li>)}
+                    {result.warnings.map((warning, index) => <li key={index}>{warning}</li>)}
                   </ul>
                 </div>
               )}
@@ -856,7 +1253,11 @@ function RunFlowPanel({
               <button className="btn-sm" onClick={onClose}>Cancelar</button>
               <button
                 className="btn-sm btn-sm--run"
-                disabled={!issueKey.trim() || !summary.trim() || running}
+                disabled={
+                  (flowMode === "issue-validation" && (!issueKey.trim() || !summary.trim()))
+                  || (flowMode === "article-analysis" && (!articleTitle.trim() || !articleContent.trim()))
+                  || running
+                }
                 onClick={handleRun}
               >
                 {running ? "Executando…" : "▶ Executar"}
@@ -896,9 +1297,21 @@ export function PipelineCanvas({ initialFlows = [] }: { initialFlows?: SavedFlow
 
   const handleUpdateNodeData = useCallback((id: string, patch: Partial<PipelineNodeData>) => {
     setNodes((nds) =>
-      nds.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...patch } } : n)),
+      coerceNodesToRuntime(
+        nds.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...patch } } : n)),
+      ),
     );
   }, [setNodes]);
+
+  useEffect(() => {
+    setNodes((nds) => {
+      const next = coerceNodesToRuntime(nds);
+      const changed = next.some((node, index) => (
+        node.data.active !== nds[index]?.data.active
+      ));
+      return changed ? next : nds;
+    });
+  }, [nodes, setNodes]);
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
 
@@ -1012,6 +1425,7 @@ export function PipelineCanvas({ initialFlows = [] }: { initialFlows?: SavedFlow
       {selectedNode && (
         <NodeSidebar
           node={selectedNode}
+          nodes={nodes}
           onClose={() => setSelectedNodeId(null)}
           onUpdate={handleUpdateNodeData}
         />

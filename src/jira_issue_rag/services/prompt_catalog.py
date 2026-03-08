@@ -6,6 +6,9 @@ from pathlib import Path
 from typing import Any
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+
 class PromptCatalog:
     """
     Catálogo de prompts em disco.
@@ -43,19 +46,19 @@ class PromptCatalog:
     def list_prompts(self) -> list[dict[str, str]]:
         seen: set[str] = set()
         prompts: list[dict[str, str]] = []
-        # .md takes priority; then .json fallback
-        for path in sorted(self.prompts_dir.glob("*.md")) + sorted(self.prompts_dir.glob("*.json")):
-            if path.stem in seen:
-                continue
-            seen.add(path.stem)
-            payload = self._parse_file(path)
-            prompts.append(
-                {
-                    "name": str(payload.get("name", path.stem)),
-                    "mode": str(payload.get("mode", "text")),
-                    "description": str(payload.get("description", "")),
-                }
-            )
+        for directory in self._candidate_dirs():
+            for path in sorted(directory.glob("*.md")) + sorted(directory.glob("*.json")):
+                if path.stem in seen:
+                    continue
+                seen.add(path.stem)
+                payload = self._parse_file(path)
+                prompts.append(
+                    {
+                        "name": str(payload.get("name", path.stem)),
+                        "mode": str(payload.get("mode", "text")),
+                        "description": str(payload.get("description", "")),
+                    }
+                )
         return prompts
 
     def render(self, prompt_name: str, variables: dict[str, Any]) -> dict[str, str]:
@@ -76,11 +79,33 @@ class PromptCatalog:
     # ------------------------------------------------------------------
 
     def _load(self, prompt_name: str) -> dict[str, Any]:
-        for ext in (".md", ".json"):
-            path = self.prompts_dir / f"{prompt_name}{ext}"
-            if path.exists():
-                return self._parse_file(path)
-        raise FileNotFoundError(f"Prompt '{prompt_name}' not found in {self.prompts_dir}")
+        searched: list[str] = []
+        for directory in self._candidate_dirs():
+            searched.append(str(directory))
+            for ext in (".md", ".json"):
+                path = directory / f"{prompt_name}{ext}"
+                if path.exists():
+                    return self._parse_file(path)
+        raise FileNotFoundError(
+            f"Prompt '{prompt_name}' not found. Searched: {', '.join(searched)}"
+        )
+
+    def _candidate_dirs(self) -> list[Path]:
+        candidates = [
+            self.prompts_dir,
+            self.prompts_dir.resolve(strict=False),
+            PROJECT_ROOT / "prompts",
+            Path.cwd() / "prompts",
+        ]
+        unique: list[Path] = []
+        seen: set[str] = set()
+        for candidate in candidates:
+            key = str(candidate.resolve(strict=False))
+            if key in seen or not candidate.exists() or not candidate.is_dir():
+                continue
+            seen.add(key)
+            unique.append(candidate)
+        return unique
 
     def _parse_file(self, path: Path) -> dict[str, Any]:
         if path.suffix == ".md":

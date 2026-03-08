@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { getApiBase } from "@/lib/api-base";
 
 const navItems = [
   {
@@ -100,6 +101,85 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
+  // ── Quick Capture state ───────────────────────────────────────────────────
+  const [qkOpen,     setQkOpen]     = useState(false);
+  const [qkIssueKey, setQkIssueKey] = useState("");
+  const [qkProvider, setQkProvider] = useState("mock");
+  const [qkLoading,  setQkLoading]  = useState(false);
+  const [qkResult,   setQkResult]   = useState<null | { classification: string; confidence: number; rationale: string }>(null);
+  const [qkError,    setQkError]    = useState("");
+  const qkInputRef = useRef<HTMLInputElement>(null);
+
+  const openQk = useCallback(() => {
+    setQkOpen(true);
+    setQkResult(null);
+    setQkError("");
+    setQkIssueKey("");
+    setTimeout(() => qkInputRef.current?.focus(), 60);
+  }, []);
+
+  const closeQk = useCallback(() => {
+    setQkOpen(false);
+    setQkResult(null);
+    setQkError("");
+  }, []);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setQkOpen((v) => { if (!v) { setTimeout(() => qkInputRef.current?.focus(), 60); } return !v; });
+      }
+      if (e.key === "Escape") closeQk();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [closeQk]);
+
+  const runQkValidate = useCallback(async () => {
+    if (!qkIssueKey.trim()) return;
+    setQkLoading(true);
+    setQkError("");
+    setQkResult(null);
+    try {
+      const API_BASE = getApiBase();
+      const res = await fetch(`${API_BASE}/validate/issue`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          issue: {
+            issue_key: qkIssueKey.trim().toUpperCase(),
+            summary: "",
+            description: "",
+            issue_type: "Bug",
+          },
+          provider: qkProvider,
+          artifact_paths: [],
+        }),
+      });
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(txt || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setQkResult({
+        classification: data.classification,
+        confidence: data.confidence,
+        rationale: data.rationale ?? "",
+      });
+    } catch (err: unknown) {
+      setQkError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setQkLoading(false);
+    }
+  }, [qkIssueKey, qkProvider]);
+
+  const QK_CLS: Record<string, { label: string; mod: string }> = {
+    bug:          { label: "🐛 Bug confirmado",  mod: "qk__banner--bug"  },
+    not_bug:      { label: "✅ Não é bug",        mod: "qk__banner--ok"  },
+    needs_review: { label: "⚠️ Revisão humana",  mod: "qk__banner--warn" },
+  };
+
   return (
     <div className={`shell ${collapsed ? "shell--collapsed" : ""}`}>
       {/* ── Sidebar ── */}
@@ -177,6 +257,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </nav>
           </div>
           <div className="topbar__right">
+            <button
+              type="button"
+              className="qk__topbar-trigger"
+              onClick={openQk}
+              title="Quick Capture (⌘K)"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <span>Validar</span>
+              <kbd className="qk__kbd">⌘K</kbd>
+            </button>
             <div className="topbar__status">
               <span className="topbar__dot" />
               System healthy
@@ -190,6 +280,89 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {children}
         </div>
       </div>
+
+      {/* ── Quick Capture modal ────────────────────────────────────────── */}
+      {qkOpen && (
+        <>
+          <button
+            type="button"
+            className="qk__overlay"
+            aria-label="Fechar Quick Capture"
+            onClick={closeQk}
+          />
+          <div className="qk__modal" role="dialog" aria-modal aria-label="Quick Capture">
+            <div className="qk__modal-header">
+              <span className="qk__modal-title">⚡ Quick Capture</span>
+              <span className="qk__modal-hint">Valide uma issue sem sair da tela</span>
+              <button type="button" className="qk__close" onClick={closeQk}>✕</button>
+            </div>
+
+            <div className="qk__modal-body">
+              <div className="qk__row">
+                <input
+                  ref={qkInputRef}
+                  className="qk__input"
+                  placeholder="Issue key (ex: PAY-1421)"
+                  value={qkIssueKey}
+                  onChange={(e) => setQkIssueKey(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") runQkValidate(); }}
+                  disabled={qkLoading}
+                />
+                <select
+                  className="qk__select"
+                  value={qkProvider}
+                  onChange={(e) => setQkProvider(e.target.value)}
+                  disabled={qkLoading}
+                >
+                  {["mock","ollama","openai","gemini"].map((p) => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="qk__run-btn"
+                  onClick={runQkValidate}
+                  disabled={qkLoading || !qkIssueKey.trim()}
+                >
+                  {qkLoading ? "…" : "Validar"}
+                </button>
+              </div>
+
+              {qkError && (
+                <div className="qk__error">{qkError}</div>
+              )}
+
+              {qkResult && (() => {
+                const meta = QK_CLS[qkResult.classification] ?? { label: qkResult.classification, mod: "" };
+                const pct  = Math.round(qkResult.confidence * 100);
+                const color = pct >= 80 ? "#16a34a" : pct >= 50 ? "#d97706" : "#dc2626";
+                return (
+                  <div className="qk__result">
+                    <div className={`qk__banner ${meta.mod}`}>{meta.label}</div>
+                    <div className="qk__conf">
+                      <span className="qk__conf-label">Confiança</span>
+                      <div className="qk__conf-track">
+                        <div className="qk__conf-fill" style={{ width: `${pct}%`, background: color }} />
+                      </div>
+                      <span className="qk__conf-pct" style={{ color }}>{pct}%</span>
+                    </div>
+                    {qkResult.rationale && (
+                      <p className="qk__rationale">{qkResult.rationale.slice(0, 280)}{qkResult.rationale.length > 280 ? "…" : ""}</p>
+                    )}
+                    <Link
+                      href="/results"
+                      className="qk__view-link"
+                      onClick={closeQk}
+                    >
+                      Ver em Results →
+                    </Link>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

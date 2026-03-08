@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArticleSummaryBoard } from "@/components/article-summary-board";
+import { EvidenceCards } from "@/components/evidence-cards";
 import { ResultCanvas } from "@/components/result-canvas";
 import { getResultById } from "@/lib/results-data";
 
@@ -33,6 +34,7 @@ export default async function ResultCanvasPage({ params }: Props) {
         articleCards={audit.knowledge_map.article_cards}
         themeClusters={audit.knowledge_map.theme_clusters}
       />
+      <EvidenceCards audit={audit} />
     </main>
   );
 }

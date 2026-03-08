@@ -55,7 +55,9 @@ SET i.summary       = $summary,
     i.issue_type    = $issue_type,
     i.priority      = $priority,
     i.status        = $status,
-    i.affected_version = $affected_version
+    i.affected_version = $affected_version,
+    i.collected_at  = $collected_at,
+    i.latest_change_at = $latest_change_at
 """
 
 _UPSERT_COMPONENT = """
@@ -183,6 +185,10 @@ class Neo4jGraphStore:
         if not self.is_available():
             return
         self.ensure_constraints()
+        latest_change_at = max(
+            (event.changed_at for event in issue.changelog if event.changed_at is not None),
+            default=None,
+        )
         with self._get_driver().session(database=self._database) as session:
             session.run(
                 _UPSERT_ISSUE,
@@ -196,6 +202,8 @@ class Neo4jGraphStore:
                 priority=issue.priority or "",
                 status=issue.status or "",
                 affected_version=issue.affected_version or "",
+                collected_at=issue.collected_at.isoformat(),
+                latest_change_at=latest_change_at.isoformat() if latest_change_at else "",
             )
             if issue.component:
                 session.run(_UPSERT_COMPONENT, name=issue.component, issue_key=issue.issue_key)

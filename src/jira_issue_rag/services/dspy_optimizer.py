@@ -2,7 +2,7 @@
 DSPy optimization lab for the Jira Issue Validation RAG pipeline.
 
 This module is the *optimization side-car* — it runs against a golden dataset,
-tunes each module's prompt/program with BootstrapFewShot or MIPROv2, and
+tunes each module's prompt/program with BootstrapFewShot, MIPROv2 or GEPA, and
 exports the best compiled programs back to the prompts/ directory so they can
 be loaded by the production PromptCatalog.
 
@@ -11,7 +11,7 @@ Usage (standalone CLI):
         --golden examples/golden_dataset.json \
         --provider openai \
         --output prompts/ \
-        --optimizer bootstrap
+        --optimizer gepa
 
 Architecture notes from README:
     - runtime = LangGraph + typed services  (production)
@@ -257,7 +257,7 @@ class DSPyOptimizationLab:
         lab.configure_lm(provider="openai")
         result = lab.optimize(
             golden_path="examples/golden_dataset.json",
-            optimizer="bootstrap",     # or "mipro"
+            optimizer="gepa",          # or "bootstrap" / "mipro"
             metric="classification",   # or "confidence_penalized"
         )
         lab.export_to_prompts(result["program"], output_dir=Path("prompts"))
@@ -329,7 +329,7 @@ class DSPyOptimizationLab:
         Run an optimizer over the golden dataset.
 
         Args:
-            optimizer: "bootstrap" (BootstrapFewShot) or "mipro" (MIPROv2)
+            optimizer: "bootstrap" (BootstrapFewShot), "mipro" (MIPROv2) or "gepa" (DSPy 3 GEPA)
             metric: "classification" or "confidence_penalized"
             max_bootstrapped_demos: demos per module for BootstrapFewShot
             num_candidates: MIPROv2 candidate programs to try
@@ -365,18 +365,18 @@ class DSPyOptimizationLab:
 
     @staticmethod
     def _run_gepa(program: Any, trainset: list, devset: list, metric_fn: Any, num_candidates: int) -> Any:
-        """GEPA optimizer via dspy.COPRO — instruction generation + selection."""
-        teleprompter = dspy.COPRO(
+        """GEPA optimizer using DSPy 3 native GEPA."""
+        teleprompter = dspy.GEPA(
             metric=metric_fn,
-            verbose=False,
-            breadth=num_candidates,
-            depth=3,
+            auto="light",
+            max_metric_calls=max(24, num_candidates * max(6, len(trainset) + len(devset or []))),
+            reflection_minibatch_size=min(3, max(1, len(trainset))),
+            track_stats=False,
         )
-        eval_kwargs = {"num_threads": 1, "display_progress": False, "display_table": False}
         return teleprompter.compile(
-            program,
+            student=program,
             trainset=trainset,
-            eval_kwargs=eval_kwargs,
+            valset=devset or None,
         )
 
     @staticmethod
@@ -479,10 +479,10 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="DSPy optimization lab for Jira Issue RAG")
     parser.add_argument("--golden", default="examples/golden_dataset.json")
-    parser.add_argument("--provider", default="openai", choices=["openai", "gemini"])
+    parser.add_argument("--provider", default="openai", choices=["openai", "gemini", "ollama"])
     parser.add_argument("--model", default=None)
     parser.add_argument("--output", default="prompts")
-    parser.add_argument("--optimizer", default="bootstrap", choices=["bootstrap", "mipro"])
+    parser.add_argument("--optimizer", default="gepa", choices=["bootstrap", "mipro", "gepa"])
     parser.add_argument("--metric", default="classification", choices=["classification", "confidence_penalized"])
     args = parser.parse_args()
 

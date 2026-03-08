@@ -3,6 +3,7 @@
 Implementacao executavel do README de arquitetura em `README_advanced_jira_issue_rag_openai_gemini.md`.
 
 Arquitetura detalhada da aplicacao: [README_architecture.md](README_architecture.md)
+Mapa das tecnicas do app: [README_techniques.md](README_techniques.md)
 
 ## O que existe aqui
 
@@ -75,6 +76,7 @@ Execute a partir da raiz do repositório com o venv ativo:
 ```powershell
 .\.venv\Scripts\Activate.ps1
 python -m uvicorn jira_issue_rag.main:app --reload --host 0.0.0.0 --port 8000
+
 ```
 
 A API sobe em `http://localhost:8000`. Documentacao interativa disponivel em:

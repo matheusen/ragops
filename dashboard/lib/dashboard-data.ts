@@ -571,8 +571,8 @@ function buildTimeline(): TimelineStep[] {
       phase: "05",
       title: "DSPy optimization lab",
       description:
-        "Laboratório offline que treina assinaturas DSPy contra o golden dataset usando BootstrapFewShot ou MIPROv2. Os melhores programas são exportados de volta para o diretório prompts/ como arquivos JSON, fechando o ciclo de melhoria contínua.",
-      tags: ["DSPy", "BootstrapFewShot", "MIPROv2", "Golden dataset", "Prompt export"],
+        "Laboratório offline que treina assinaturas DSPy contra o golden dataset usando DSPy 3 + GEPA. Os melhores programas são exportados de volta para o diretório prompts/ como arquivos JSON, fechando o ciclo de melhoria contínua.",
+      tags: ["DSPy 3", "GEPA", "Golden dataset", "Prompt export"],
     },
     {
       phase: "06",

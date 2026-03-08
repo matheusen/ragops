@@ -179,20 +179,93 @@ class HybridRetriever:
     @staticmethod
     def _build_temporal_results(issue: IssueCanonical) -> list[RetrievedEvidence]:
         results: list[RetrievedEvidence] = []
+        timeline = sorted(
+            issue.changelog,
+            key=lambda item: item.changed_at or issue.collected_at,
+        )
+        latest_change_at = timeline[-1].changed_at if timeline else None
+
+        current_state = {
+            "status": issue.status,
+            "priority": issue.priority,
+            "affected version": issue.affected_version,
+            "component": issue.component,
+            "service": issue.service,
+            "environment": issue.environment,
+        }
+        for event in timeline:
+            field_key = HybridRetriever._normalize_temporal_field(event.field)
+            if field_key in current_state and event.to_value:
+                current_state[field_key] = event.to_value
+
+        current_parts = [f"issue={issue.issue_key}", f"collected_at={issue.collected_at.isoformat()}"]
+        if latest_change_at:
+            current_parts.append(f"latest_change_at={latest_change_at.isoformat()}")
+        for field in ("status", "priority", "affected version", "component", "service", "environment"):
+            value = current_state.get(field)
+            if value:
+                current_parts.append(f"{field}={value}")
+        results.append(
+            RetrievedEvidence(
+                evidence_id=f"temporal:{issue.issue_key}:current-state",
+                source=f"temporal:{issue.issue_key}:current-state",
+                content="Current timeline-aware issue state: " + ", ".join(current_parts) + ".",
+                metadata={
+                    "category": "temporal",
+                    "backend": "temporal",
+                    "issue_key": issue.issue_key,
+                    "temporal_kind": "current_state",
+                },
+                sparse_score=0.62,
+                dense_score=0.0,
+                final_score=0.62,
+            )
+        )
+
         if issue.affected_version:
             results.append(
                 RetrievedEvidence(
                     evidence_id=f"temporal:{issue.issue_key}:version",
                     source=f"temporal:{issue.issue_key}:version",
                     content=f"Issue {issue.issue_key} references affected version {issue.affected_version}. Version-sensitive behaviour may require checking policy or rollout history.",
-                    metadata={"category": "temporal", "backend": "temporal", "issue_key": issue.issue_key},
+                    metadata={
+                        "category": "temporal",
+                        "backend": "temporal",
+                        "issue_key": issue.issue_key,
+                        "temporal_kind": "version",
+                    },
                     sparse_score=0.58,
                     dense_score=0.0,
                     final_score=0.58,
                 )
             )
 
-        for index, event in enumerate(sorted(issue.changelog, key=lambda item: item.changed_at or issue.collected_at, reverse=True)[:4], start=1):
+        if timeline:
+            chronology = " -> ".join(
+                (
+                    f"{(event.changed_at or issue.collected_at).isoformat()}: "
+                    f"{event.field} {event.from_value or '-'} -> {event.to_value or '-'}"
+                )
+                for event in timeline[-4:]
+            )
+            results.append(
+                RetrievedEvidence(
+                    evidence_id=f"temporal:{issue.issue_key}:chronology",
+                    source=f"temporal:{issue.issue_key}:chronology",
+                    content=f"Recent issue chronology for {issue.issue_key}: {chronology}.",
+                    metadata={
+                        "category": "temporal",
+                        "backend": "temporal",
+                        "issue_key": issue.issue_key,
+                        "temporal_kind": "chronology",
+                    },
+                    sparse_score=0.57,
+                    dense_score=0.0,
+                    final_score=0.57,
+                )
+            )
+
+        for index, event in enumerate(reversed(timeline[-4:]), start=1):
             changed_at = event.changed_at.isoformat() if event.changed_at else "unknown"
             content = (
                 f"Timeline event for {issue.issue_key}: field={event.field}, "
@@ -203,7 +276,13 @@ class HybridRetriever:
                     evidence_id=f"temporal:{issue.issue_key}:change:{index}",
                     source=f"temporal:{issue.issue_key}:change:{index}",
                     content=content,
-                    metadata={"category": "temporal", "backend": "temporal", "issue_key": issue.issue_key},
+                    metadata={
+                        "category": "temporal",
+                        "backend": "temporal",
+                        "issue_key": issue.issue_key,
+                        "temporal_kind": "change_event",
+                        "field": event.field,
+                    },
                     sparse_score=0.54,
                     dense_score=0.0,
                     final_score=0.54,
@@ -211,6 +290,21 @@ class HybridRetriever:
             )
 
         return results
+
+    @staticmethod
+    def _normalize_temporal_field(field: str | None) -> str:
+        if not field:
+            return ""
+        normalized = re.sub(r"\s+", " ", field.strip().lower())
+        synonyms = {
+            "fix version": "affected version",
+            "fix versions": "affected version",
+            "affected versions": "affected version",
+            "components": "component",
+            "services": "service",
+            "environments": "environment",
+        }
+        return synonyms.get(normalized, normalized)
 
     @staticmethod
     def _tokenize(text: str) -> Counter[str]:

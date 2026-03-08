@@ -19,11 +19,19 @@ import copy
 from typing import Any
 
 from jira_issue_rag.core.config import Settings
+from jira_issue_rag.providers.mock_provider import MockProvider
+from jira_issue_rag.services.article_store import ArticleStore
+from jira_issue_rag.services.decision import ProviderRouter
+from jira_issue_rag.services.neo4j_store import Neo4jGraphStore
+from jira_issue_rag.services.prompt_catalog import PromptCatalog
+from jira_issue_rag.services.qdrant_store import QdrantStore
 from jira_issue_rag.services.workflow import ValidationWorkflow
 from jira_issue_rag.shared.models import (
-    DecisionResult,
+    FlowDSPyOptimizationResult,
     FlowNodeState,
-    ValidationRequest,
+    FlowRunRequest,
+    FlowRunResponse,
+    PromptExecutionRequest,
 )
 
 
@@ -186,12 +194,48 @@ _TEMPORAL_GRAPH_VARIANTS: dict[str, dict[str, Any]] = {
     },
 }
 
+_FLOW_MODE_VARIANTS: dict[str, str] = {
+    "issue validation": "issue-validation",
+    "jira issue triage": "issue-validation",
+    "article analysis": "article-analysis",
+}
+
+_EXPLORATORY_ONLY_NODES = {"ragas"}
+
+_SCENARIO_IGNORED_NODES: dict[str, set[str]] = {
+    "issue-validation": set(_EXPLORATORY_ONLY_NODES),
+    "article-analysis": {
+        "dspy",
+        *tuple(_EXPLORATORY_ONLY_NODES),
+        "normalizer",
+        "artifacts",
+        "rules",
+        "planner",
+        "query-rewriter",
+        "temporal-graphrag",
+        "reranker",
+        "distiller",
+        "reflection-memory",
+        "policy-loop",
+        "result-norm",
+        "audit",
+    },
+}
+
 
 def _normalise(label: str | None) -> str:
     """Lowercase + strip for loose matching."""
     normalized = (label or "").strip().lower()
     normalized = normalized.replace("(", " ").replace(")", " ")
     return " ".join(normalized.split())
+
+
+def resolve_flow_mode(nodes: list[FlowNodeState]) -> str:
+    for node in nodes:
+        if node.id != "flow-mode":
+            continue
+        return _FLOW_MODE_VARIANTS.get(_normalise(node.selected_variant), "issue-validation")
+    return "issue-validation"
 
 
 # ---------------------------------------------------------------------------
@@ -281,15 +325,90 @@ def settings_from_flow(nodes: list[FlowNodeState], base: Settings | None = None)
     return Settings.model_validate(overrides)
 
 
+def _runtime_settings_from_flow(
+    nodes: list[FlowNodeState],
+    base: Settings | None = None,
+) -> Settings:
+    settings = settings_from_flow(nodes, base=copy.deepcopy(base) if base is not None else None)
+    settings.enforce_runtime_policy()
+    return settings
+
+
 def run_flow(
     nodes: list[FlowNodeState],
-    request: ValidationRequest,
+    request: FlowRunRequest,
     base_settings: Settings | None = None,
-) -> DecisionResult:
-    """Build a workflow from the canvas *nodes* config and run *request*."""
-    settings = settings_from_flow(nodes, base=base_settings)
+) -> FlowRunResponse:
+    """Build a runtime from the canvas *nodes* config and dispatch the selected flow mode."""
+    settings = _runtime_settings_from_flow(nodes, base=base_settings)
+    flow_mode = resolve_flow_mode(nodes)
+    runtime_summary = describe_flow(nodes, base_settings=base_settings)
+    dspy_result = _run_dspy_optimization(
+        nodes=nodes,
+        settings=settings,
+        flow_mode=flow_mode,
+        effective_provider=runtime_summary["provider"],
+    )
+    warnings = list(runtime_summary["warnings"])
+    if dspy_result and dspy_result.skipped_reason:
+        warnings.append(dspy_result.skipped_reason)
+
     workflow = ValidationWorkflow(settings=settings)
-    return workflow.validate_issue(request)
+    if flow_mode == "article-analysis":
+        if request.article is None:
+            raise ValueError("Flow mode 'article-analysis' requires the 'article' payload.")
+        article_store = ArticleStore(settings=settings)
+        article_request = request.article
+        query_text = (
+            article_request.search_query
+            or article_request.title
+            or article_request.content[:280]
+        ).strip()
+        article_search = article_store.search(
+            query=query_text,
+            top_k=article_request.top_k,
+        ) if query_text else []
+        related_articles = article_store.related_articles(
+            doc_id=article_request.related_doc_id,
+            limit=article_request.related_limit,
+        ) if article_request.related_doc_id else []
+
+        prompt_content = article_request.content.strip()
+        if article_search:
+            retrieved_context = "\n\n".join(
+                f"[{item.title} #{item.chunk_index}] {item.content[:480]}"
+                for item in article_search[:article_request.top_k]
+            )
+            prompt_content = (
+                f"{prompt_content}\n\nContexto adicional recuperado do corpus de artigos:\n{retrieved_context}"
+            ).strip()
+
+        prompt_result = workflow.execute_prompt(
+            PromptExecutionRequest(
+                prompt_name=article_request.prompt_name,
+                content=prompt_content,
+                provider=article_request.provider,
+                title=article_request.title,
+                metadata=article_request.metadata,
+            )
+        )
+        return FlowRunResponse(
+            flow_mode=flow_mode,
+            prompt_execution=prompt_result,
+            article_search=article_search,
+            related_articles=related_articles,
+            dspy_optimization=dspy_result,
+            warnings=_dedupe_warnings(warnings),
+        )
+
+    if request.validation is None:
+        raise ValueError("Flow mode 'issue-validation' requires the 'validation' payload.")
+    return FlowRunResponse(
+        flow_mode=flow_mode,
+        decision=workflow.validate_issue(request.validation),
+        dspy_optimization=dspy_result,
+        warnings=_dedupe_warnings(warnings),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -308,12 +427,93 @@ def _toggle(
         overrides[flag] = node.active
 
 
-def describe_flow(nodes: list[FlowNodeState]) -> dict[str, Any]:
+def _run_dspy_optimization(
+    *,
+    nodes: list[FlowNodeState],
+    settings: Settings,
+    flow_mode: str,
+    effective_provider: str,
+) -> FlowDSPyOptimizationResult | None:
+    by_id = {node.id: node for node in nodes}
+    if not by_id.get("dspy", FlowNodeState(id="dspy", active=False)).active:
+        return None
+
+    result = FlowDSPyOptimizationResult(
+        active=True,
+        optimizer="gepa",
+        provider=effective_provider,
+    )
+
+    if flow_mode != "issue-validation":
+        result.skipped_reason = (
+            "DSPy + GEPA currently targets the issue-validation golden dataset and is skipped for article-analysis."
+        )
+        return result
+
+    if not settings.golden_dataset_path.exists():
+        result.skipped_reason = (
+            f"DSPy + GEPA skipped because the golden dataset was not found at '{settings.golden_dataset_path}'."
+        )
+        return result
+
+    if effective_provider not in {"openai", "gemini", "ollama"}:
+        result.skipped_reason = (
+            f"DSPy + GEPA requires openai, gemini or ollama, but the current runtime provider is '{effective_provider}'."
+        )
+        return result
+
+    try:
+        from jira_issue_rag.services.dspy_optimizer import DSPyOptimizationLab
+    except Exception as exc:
+        result.skipped_reason = f"DSPy + GEPA is not available in this environment: {exc}"
+        return result
+
+    try:
+        lab = DSPyOptimizationLab(settings)
+        lab.configure_lm(provider=effective_provider)
+        opt_result = lab.optimize(
+            golden_path=settings.golden_dataset_path,
+            optimizer="gepa",
+        )
+        exported = lab.export_to_prompts(opt_result["program"], output_dir=settings.prompts_dir)
+    except Exception as exc:
+        result.skipped_reason = f"DSPy + GEPA failed at runtime: {exc}"
+        return result
+
+    result.triggered = True
+    result.dev_score = opt_result.get("dev_score")
+    result.exported_files = exported
+    return result
+
+
+def _dedupe_warnings(warnings: list[str]) -> list[str]:
+    unique: list[str] = []
+    seen: set[str] = set()
+    for warning in warnings:
+        if not warning or warning in seen:
+            continue
+        seen.add(warning)
+        unique.append(warning)
+    return unique
+
+
+def describe_flow(
+    nodes: list[FlowNodeState],
+    base_settings: Settings | None = None,
+) -> dict[str, Any]:
     """Return a human-readable summary of what the canvas config will do.
     Useful for the dashboard "explain this flow" feature.
     """
-    settings = settings_from_flow(nodes)
+    configured_settings = settings_from_flow(
+        nodes,
+        base=copy.deepcopy(base_settings) if base_settings is not None else None,
+    )
+    settings = _runtime_settings_from_flow(nodes, base=base_settings)
+    flow_mode = resolve_flow_mode(nodes)
     by_id = {n.id: n for n in nodes}
+    provider_info = _resolve_effective_provider(settings=settings)
+    qdrant_available = QdrantStore(settings).is_available()
+    neo4j_available = Neo4jGraphStore(settings).is_available()
     embedding_label = by_id.get("embeddings").selected_variant if by_id.get("embeddings") else None
     if embedding_label:
         embedding_model = embedding_label
@@ -321,17 +521,41 @@ def describe_flow(nodes: list[FlowNodeState]) -> dict[str, Any]:
         embedding_model = settings.gemini_embedding_model
     else:
         embedding_model = settings.openai_embedding_model
+    ignored_nodes = [
+        node.id
+        for node in nodes
+        if node.active and node.id in _SCENARIO_IGNORED_NODES.get(flow_mode, set())
+    ]
+    supported_runtime_nodes = [
+        node.id
+        for node in nodes
+        if node.active and node.id not in _SCENARIO_IGNORED_NODES.get(flow_mode, set())
+    ]
+    warnings = _build_describe_warnings(
+        nodes=nodes,
+        flow_mode=flow_mode,
+        settings=settings,
+        configured_settings=configured_settings,
+        ignored_nodes=ignored_nodes,
+        provider_warning=provider_info["warning"],
+        effective_provider=provider_info["provider"],
+        qdrant_available=qdrant_available,
+        neo4j_available=neo4j_available,
+    )
     return {
-        "provider": settings.default_provider,
-        "llm_model": settings.openai_model if settings.default_provider == "openai"
-                     else settings.gemini_model if settings.default_provider == "gemini"
-                     else settings.ollama_model if settings.default_provider == "ollama"
-                     else "mock-judge-v1",
+        "flow_mode": flow_mode,
+        "provider": provider_info["provider"],
+        "llm_model": provider_info["model"],
+        "configured_provider": configured_settings.default_provider,
+        "configured_llm_model": _llm_model_for_provider(
+            configured_settings,
+            configured_settings.default_provider,
+        ),
         "embedding_model": embedding_model,
         "retrieval": {
-            "external": settings.enable_external_retrieval,
-            "graphrag": settings.enable_graphrag,
-            "cascade": settings.enable_cascade_retrieval,
+            "external": qdrant_available,
+            "graphrag": neo4j_available,
+            "cascade": qdrant_available and settings.enable_cascade_retrieval,
         },
         "agentic": {
             "planner": settings.enable_planner,
@@ -351,4 +575,134 @@ def describe_flow(nodes: list[FlowNodeState]) -> dict[str, Any]:
         "langgraph": settings.enable_langgraph,
         "dspy_active": (by_id["dspy"].active if "dspy" in by_id else False),
         "ragas_active": (by_id["ragas"].active if "ragas" in by_id else False),
+        "supported_runtime_nodes": supported_runtime_nodes,
+        "ignored_nodes": ignored_nodes,
+        "warnings": warnings,
     }
+
+
+def _llm_model_for_provider(settings: Settings, provider_name: str) -> str:
+    lowered = (provider_name or "mock").lower()
+    if lowered == "openai":
+        return settings.openai_model
+    if lowered == "gemini":
+        return settings.gemini_model
+    if lowered == "ollama":
+        return settings.ollama_model
+    return settings.primary_model
+
+
+def _resolve_effective_provider(settings: Settings) -> dict[str, str]:
+    router = ProviderRouter(settings)
+    configured_provider = settings.default_provider
+    provider = router._get_provider(configured_provider)
+    warning = ""
+    if not provider.is_available():
+        warning = (
+            f"Provider '{configured_provider}' is not available in the current runtime; "
+            "the flow will fall back to mock."
+        )
+        provider = MockProvider(settings.primary_model)
+    return {
+        "provider": provider.provider_name,
+        "model": provider.model_name,
+        "warning": warning,
+    }
+
+
+def _build_describe_warnings(
+    *,
+    nodes: list[FlowNodeState],
+    flow_mode: str,
+    settings: Settings,
+    configured_settings: Settings,
+    ignored_nodes: list[str],
+    provider_warning: str,
+    effective_provider: str,
+    qdrant_available: bool,
+    neo4j_available: bool,
+) -> list[str]:
+    warnings: list[str] = []
+    by_id = {node.id: node for node in nodes}
+
+    if provider_warning:
+        warnings.append(provider_warning)
+
+    if configured_settings.enable_external_retrieval and not qdrant_available:
+        warnings.append(
+            "External retrieval is configured in the canvas, but Qdrant is not available. "
+            "The flow will use only in-memory evidence plus local policies."
+        )
+
+    if configured_settings.enable_graphrag and not neo4j_available:
+        warnings.append(
+            "GraphRAG is configured in the canvas, but Neo4j is not available. "
+            "Related-issue graph traversal will be skipped."
+        )
+
+    if ignored_nodes:
+        warnings.append(
+            "Some active nodes do not affect the selected /run-flow runtime: "
+            + ", ".join(sorted(ignored_nodes))
+            + "."
+        )
+
+    retriever_label = _normalise(by_id.get("retriever").selected_variant if by_id.get("retriever") else None)
+    if retriever_label == "neo4j graphrag" and not by_id.get("neo4j", FlowNodeState(id="neo4j")).active:
+        warnings.append(
+            "Retriever variant 'Neo4j GraphRAG' overlaps with the separate Neo4j node. "
+            "Keep the Neo4j node active if you expect graph retrieval."
+        )
+
+    if not settings.enable_langgraph and any(
+        settings_flag
+        for settings_flag in (
+            settings.enable_planner,
+            settings.enable_query_rewriter,
+            settings.enable_reflection_memory,
+            settings.enable_policy_loop,
+        )
+    ):
+        warnings.append(
+            "Agentic nodes depend on LangGraph. Enable LangGraph in runtime settings for planner, rewriter, reflection and policy loop to execute."
+        )
+
+    if flow_mode == "article-analysis":
+        warnings.append(
+            "Article-analysis mode currently runs through PromptCatalog plus optional ArticleStore search. "
+            "Issue-specific nodes such as normalizer, rules and audit are ignored."
+        )
+
+    dspy_active = by_id.get("dspy", FlowNodeState(id="dspy", active=False)).active
+    if dspy_active:
+        if flow_mode != "issue-validation":
+            warnings.append(
+                "DSPy + GEPA is wired only for issue-validation. In article-analysis mode, the DSPy node is skipped."
+            )
+        elif not settings.golden_dataset_path.exists():
+            warnings.append(
+                f"DSPy + GEPA needs a golden dataset, but '{settings.golden_dataset_path}' does not exist."
+            )
+        elif _normalise(effective_provider) not in {"openai", "gemini", "ollama"}:
+            warnings.append(
+                "DSPy + GEPA requires an OpenAI, Gemini or Ollama runtime provider. "
+                f"Current effective provider: {effective_provider}."
+            )
+
+    try:
+        prompt_catalog = PromptCatalog(settings.prompts_dir)
+        if not prompt_catalog.list_prompts():
+            warnings.append(
+                f"No prompts were found in '{settings.prompts_dir}'. Prompt-driven runs such as article_analysis will fail."
+            )
+    except Exception as exc:
+        warnings.append(f"Prompt catalog could not be read from '{settings.prompts_dir}': {exc}")
+
+    unique_warnings: list[str] = []
+    seen: set[str] = set()
+    for warning in warnings:
+        if warning in seen:
+            continue
+        seen.add(warning)
+        unique_warnings.append(warning)
+    return unique_warnings

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { getApiBase } from "@/lib/api-base";
 
 // ── Types mirroring backend models ────────────────────────────────────────────
 
@@ -33,10 +34,7 @@ interface DecisionResult {
 
 type Tab = "jira" | "manual" | "files";
 
-const API_BASE =
-  (typeof window !== "undefined"
-    ? (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000")
-    : "http://localhost:8000") + "/api/v1";
+const API_BASE = getApiBase();
 
 // ── Small helpers ─────────────────────────────────────────────────────────────
 
