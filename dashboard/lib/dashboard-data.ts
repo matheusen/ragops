@@ -1,7 +1,7 @@
 import { promises as fs } from "fs";
 import path from "path";
 
-import { isMongoConfigured } from "./mongodb";
+import { getMongoUri, isMongoConfigured } from "./mongodb";
 import { getSettingsOverrides } from "./settings-store";
 
 export type PromptMode = "decision" | "text";
@@ -136,7 +136,7 @@ export async function getDashboardData(): Promise<DashboardData> {
 }
 
 async function probeMongoStatus(): Promise<MongoStatus> {
-  const rawUri = process.env.MONGODB_URI ?? "";
+  const rawUri = getMongoUri();
   const configured = Boolean(rawUri);
 
   // Mask credentials in the URI for display

@@ -1,14 +1,19 @@
 from __future__ import annotations
 
-from functools import lru_cache
+import os
 from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pymongo import MongoClient
+from pymongo.errors import PyMongoError
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_ENV_FILE = PROJECT_ROOT / ".env"
+DEFAULT_MONGODB_URI = "mongodb://localhost:27017"
+MONGODB_DB_NAME = "ragflow"
+MONGODB_SETTINGS_COLLECTION = "settings"
 
 
 class Settings(BaseSettings):
@@ -150,9 +155,8 @@ class Settings(BaseSettings):
             self.secondary_provider = "mock"
 
 
-@lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    settings = Settings()
+    settings = _load_settings()
     settings.enforce_runtime_policy()
     settings.audit_dir.mkdir(parents=True, exist_ok=True)
     settings.checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -161,3 +165,37 @@ def get_settings() -> Settings:
     settings.prompts_dir.mkdir(parents=True, exist_ok=True)
     settings.dspy_lab_dir.mkdir(parents=True, exist_ok=True)
     return settings
+
+
+def _load_settings() -> Settings:
+    base = Settings()
+    overrides = _read_mongo_settings_overrides()
+    if not overrides:
+        return base
+    merged = {**base.model_dump(by_alias=True), **overrides}
+    return Settings.model_validate(merged)
+
+
+def _read_mongo_settings_overrides() -> dict[str, str]:
+    uri = _resolve_mongodb_uri()
+    if not uri:
+        return {}
+
+    try:
+        with MongoClient(uri, serverSelectionTimeoutMS=500) as client:
+            docs = client[MONGODB_DB_NAME][MONGODB_SETTINGS_COLLECTION].find({})
+            return {
+                str(doc["_id"]): str(doc.get("value", ""))
+                for doc in docs
+                if "_id" in doc
+            }
+    except PyMongoError:
+        return {}
+
+
+def _resolve_mongodb_uri() -> str:
+    uri = os.getenv("MONGODB_URI", "").strip()
+    if uri:
+        return uri
+    app_env = os.getenv("APP_ENV", "dev").strip().lower()
+    return DEFAULT_MONGODB_URI if app_env != "prod" else ""

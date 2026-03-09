@@ -58,6 +58,20 @@ async function writeLocalFlows(flows: LocalSavedFlowDoc[]): Promise<void> {
   await fs.writeFile(LOCAL_FLOW_FILE, JSON.stringify(flows, null, 2), "utf-8");
 }
 
+function mapLocalFlows(
+  flows: LocalSavedFlowDoc[],
+): Array<{ id: string; name: string; createdAt: string; nodes: SavedFlowDoc["nodes"]; edges: SavedFlowDoc["edges"] }> {
+  return flows
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .map((flow) => ({
+      id: flow.id,
+      name: flow.name,
+      createdAt: flow.createdAt,
+      nodes: flow.nodes,
+      edges: flow.edges,
+    }));
+}
+
 export async function saveFlow(
   name: string,
   nodes: SavedFlowDoc["nodes"],
@@ -81,8 +95,17 @@ export async function saveFlow(
     const result = await c.insertOne({ name, createdAt: new Date(), nodes, edges });
     return { ok: true, id: result.insertedId.toString() };
   } catch (err) {
-    console.error("[flow-store] saveFlow:", err);
-    return { ok: false, id: "" };
+    try {
+      const id = randomUUID();
+      const flows = await readLocalFlows();
+      flows.unshift({ id, name, createdAt: new Date().toISOString(), nodes, edges });
+      await writeLocalFlows(flows.slice(0, 50));
+      return { ok: true, id };
+    } catch (localErr) {
+      console.error("[flow-store] saveFlow:", err);
+      console.error("[flow-store] saveFlow(local-fallback):", localErr);
+      return { ok: false, id: "" };
+    }
   }
 }
 
@@ -117,7 +140,12 @@ export async function getFlows(): Promise<
       edges: d.edges,
     }));
   } catch {
-    return [];
+    try {
+      const flows = await readLocalFlows();
+      return mapLocalFlows(flows);
+    } catch {
+      return [];
+    }
   }
 }
 
@@ -138,6 +166,13 @@ export async function deleteFlow(id: string): Promise<{ ok: boolean }> {
     await c.deleteOne({ _id: new ObjectId(id) });
     return { ok: true };
   } catch {
-    return { ok: false };
+    try {
+      const flows = await readLocalFlows();
+      const nextFlows = flows.filter((flow) => flow.id !== id);
+      await writeLocalFlows(nextFlows);
+      return { ok: nextFlows.length !== flows.length };
+    } catch {
+      return { ok: false };
+    }
   }
 }

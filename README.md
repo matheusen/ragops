@@ -23,6 +23,73 @@ Mapa das tecnicas do app: [README_techniques.md](README_techniques.md)
 - modo confidencial por padrao bloqueando envio para providers e vector stores de terceiros
 - catalogo de prompts em disco com selecao por nome na API
 
+## Ideia do Flow
+
+O canvas em `/flow` nao e apenas uma visualizacao bonita da pipeline. Ele funciona como um compositor de runtime para o endpoint `/api/v1/run-flow`: cada no ativo ou variante selecionada vira configuracao real do backend.
+
+Em termos praticos, o flow existe para:
+
+- montar e comparar variantes da pipeline sem editar codigo
+- alternar entre `issue-validation` e `article-analysis`
+- ligar ou desligar planner, query rewriter, reflection memory, policy loop, reranker, distiller e GraphRAG
+- salvar configuracoes recorrentes da pipeline para replay e comparacao
+
+Nem todo no do canvas tem o mesmo peso hoje. O runtime principal ja respeita de forma forte retrieval, graph, reranking, distillation, LangGraph e `flow-mode`. Alguns elementos continuam mais proximos de laboratorio, como partes da avaliacao offline.
+
+```mermaid
+flowchart LR
+  Canvas[Dashboard /flow] --> Saved[Flow salvo]
+  Saved --> Run[/api/v1/run-flow]
+  Run --> Mode{flow-mode}
+  Mode --> Issue[issue-validation]
+  Mode --> Article[article-analysis]
+
+  Issue --> Core[normalizer -> artifacts -> rules]
+  Core --> Retrieval[retrieval -> reranker -> distiller]
+  Retrieval --> Agentic[planner / rewriter / reflection / policy loop]
+  Agentic --> Judge[provider + prompt]
+  Judge --> Audit[audit + response]
+
+  Article --> ArticlePath[PromptCatalog + ArticleStore + retrieval opcional]
+  ArticlePath --> ArticleJudge[provider + prompt]
+  ArticleJudge --> ArticleOut[summary / analysis]
+```
+
+## Arquitetura Resumida
+
+O sistema segue a ideia de `facts first, judge later`: primeiro estrutura fatos, artefatos, regras e evidencias; depois entrega contexto controlado ao LLM ou provider selecionado. Isso reduz alucinacao, melhora auditabilidade e permite trocar retrieval, provider e modo de execucao sem reescrever a aplicacao inteira.
+
+As camadas principais sao:
+
+- `API layer`: recebe requests HTTP, valida schema e roteia para o workflow
+- `workflow layer`: centraliza a orquestracao entre execucao direta e LangGraph
+- `evidence layer`: normaliza issue e extrai fatos de logs, PDFs, planilhas e imagens
+- `rules layer`: detecta faltas, contradicoes e impacto financeiro antes do LLM
+- `retrieval layer`: combina contexto local, Qdrant, Neo4j, reranker e distillation
+- `provider layer`: renderiza prompt e executa com `mock`, OpenAI, Gemini ou Ollama
+- `audit/eval layer`: grava trilha de execucao e compara cenarios offline
+
+```mermaid
+flowchart TD
+  Client[Client / Dashboard] --> API[FastAPI routes]
+  API --> Workflow[ValidationWorkflow / flow_runner]
+  Workflow --> Normalizer[IssueNormalizer]
+  Workflow --> Artifacts[ArtifactPipeline]
+  Workflow --> Rules[RulesEngine]
+  Workflow --> Retrieval[HybridRetriever]
+  Retrieval --> Qdrant[QdrantStore]
+  Retrieval --> Neo4j[Neo4jGraphStore]
+  Retrieval --> Reranker[Reranker]
+  Retrieval --> Distiller[Distiller]
+  Workflow --> LangGraph[LangGraphValidationRunner]
+  Workflow --> Decision[ProviderRouter + PromptCatalog]
+  Decision --> Providers[Mock / OpenAI / Gemini / Ollama]
+  Workflow --> Audit[AuditStore]
+  Workflow --> Eval[GoldenDatasetEvaluator]
+```
+
+Para mais detalhe de componentes, diagramas e responsabilidades, veja tambem `README_architecture.md` e `README_techniques.md`.
+
 ## Requisitos
 
 - **Python >= 3.12**
@@ -114,15 +181,15 @@ npm install
 npm run dev
 ```
 
-O dashboard le os prompts em `../prompts`, as trilhas em `../data/audit`, os relatorios em `../data/eval_reports` e a configuracao em `../.env`.
+O dashboard le os prompts em `../prompts`, as trilhas em `../data/audit`, os relatorios em `../data/eval_reports` e usa `.env` + MongoDB para configuracao.
 
-Opcionalmente, o dashboard pode persistir configuracoes em MongoDB. Para isso, adicione `MONGODB_URI` no `.env` do dashboard (`dashboard/.env.local`) ou no `.env` raiz:
+Em desenvolvimento local, o dashboard tenta usar Mongo em `mongodb://localhost:27017` automaticamente. Se quiser apontar para outra instancia, defina `MONGODB_URI` no `.env` do dashboard (`dashboard/.env.local`) ou no `.env` raiz:
 
 ```
 MONGODB_URI=mongodb://localhost:27017
 ```
 
-Sem `MONGODB_URI`, o dashboard usa o arquivo `.env` raiz como fallback automaticamente.
+Os overrides ficam em `ragflow.settings` e os flows salvos em `ragflow.flows`. Se o Mongo nao estiver disponivel, o app cai para fallback local em `.env` e arquivo JSON.
 
 ## Testes
 

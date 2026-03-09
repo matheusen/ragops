@@ -59,7 +59,12 @@ export async function getSettingsOverrides(): Promise<Record<string, string>> {
  */
 export async function saveSetting(key: string, value: string): Promise<void> {
   if (isMongoConfigured()) {
-    return saveToMongo(key, value);
+    try {
+      await saveToMongo(key, value);
+      return;
+    } catch {
+      // Keep the app editable even if the local Mongo sidecar is down.
+    }
   }
   return saveToEnv(key, value);
 }
@@ -74,10 +79,10 @@ export async function deleteSetting(key: string): Promise<void> {
     try {
       const mongo = await getMongoClient();
       await mongo.db(DB_NAME).collection<SettingDoc>(COLLECTION).deleteOne({ _id: key });
+      return;
     } catch {
-      // ignore
+      // Fall back to clearing the .env value when Mongo is unavailable.
     }
-    return;
   }
   // In .env fallback, "reset" means clear the value
   await saveToEnv(key, "");
