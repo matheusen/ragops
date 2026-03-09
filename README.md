@@ -38,21 +38,21 @@ Nem todo no do canvas tem o mesmo peso hoje. O runtime principal ja respeita de 
 
 ```mermaid
 flowchart LR
-  Canvas[Dashboard /flow] --> Saved[Flow salvo]
-  Saved --> Run[/api/v1/run-flow]
-  Run --> Mode{flow-mode}
-  Mode --> Issue[issue-validation]
-  Mode --> Article[article-analysis]
+  Canvas["Dashboard /flow"] --> Saved["Flow salvo"]
+  Saved --> RunEndpoint["/api/v1/run-flow"]
+  RunEndpoint --> Mode{"flow-mode"}
+  Mode --> Issue["issue-validation"]
+  Mode --> Article["article-analysis"]
 
-  Issue --> Core[normalizer -> artifacts -> rules]
-  Core --> Retrieval[retrieval -> reranker -> distiller]
-  Retrieval --> Agentic[planner / rewriter / reflection / policy loop]
-  Agentic --> Judge[provider + prompt]
-  Judge --> Audit[audit + response]
+  Issue --> Core["normalizer -> artifacts -> rules"]
+  Core --> Retrieval["retrieval -> reranker -> distiller"]
+  Retrieval --> Agentic["planner / rewriter / reflection / policy loop"]
+  Agentic --> Judge["provider + prompt"]
+  Judge --> Audit["audit + response"]
 
-  Article --> ArticlePath[PromptCatalog + ArticleStore + retrieval opcional]
-  ArticlePath --> ArticleJudge[provider + prompt]
-  ArticleJudge --> ArticleOut[summary / analysis]
+  Article --> ArticlePath["PromptCatalog + ArticleStore + retrieval opcional"]
+  ArticlePath --> ArticleJudge["provider + prompt"]
+  ArticleJudge --> ArticleOut["summary / analysis"]
 ```
 
 ## Arquitetura Resumida
@@ -71,21 +71,21 @@ As camadas principais sao:
 
 ```mermaid
 flowchart TD
-  Client[Client / Dashboard] --> API[FastAPI routes]
-  API --> Workflow[ValidationWorkflow / flow_runner]
-  Workflow --> Normalizer[IssueNormalizer]
-  Workflow --> Artifacts[ArtifactPipeline]
-  Workflow --> Rules[RulesEngine]
-  Workflow --> Retrieval[HybridRetriever]
-  Retrieval --> Qdrant[QdrantStore]
-  Retrieval --> Neo4j[Neo4jGraphStore]
-  Retrieval --> Reranker[Reranker]
-  Retrieval --> Distiller[Distiller]
-  Workflow --> LangGraph[LangGraphValidationRunner]
-  Workflow --> Decision[ProviderRouter + PromptCatalog]
-  Decision --> Providers[Mock / OpenAI / Gemini / Ollama]
-  Workflow --> Audit[AuditStore]
-  Workflow --> Eval[GoldenDatasetEvaluator]
+  Client["Client / Dashboard"] --> API["FastAPI routes"]
+  API --> Workflow["ValidationWorkflow + flow_runner"]
+  Workflow --> Normalizer["IssueNormalizer"]
+  Workflow --> Artifacts["ArtifactPipeline"]
+  Workflow --> Rules["RulesEngine"]
+  Workflow --> Retrieval["HybridRetriever"]
+  Retrieval --> Qdrant["QdrantStore"]
+  Retrieval --> Neo4j["Neo4jGraphStore"]
+  Retrieval --> Reranker["Reranker"]
+  Retrieval --> Distiller["Distiller"]
+  Workflow --> LangGraph["LangGraphValidationRunner"]
+  Workflow --> Decision["ProviderRouter + PromptCatalog"]
+  Decision --> Providers["Mock / OpenAI / Gemini / Ollama"]
+  Workflow --> Audit["AuditStore"]
+  Workflow --> Eval["GoldenDatasetEvaluator"]
 ```
 
 Para mais detalhe de componentes, diagramas e responsabilidades, veja tambem `README_architecture.md` e `README_techniques.md`.
