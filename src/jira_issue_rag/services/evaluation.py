@@ -58,6 +58,7 @@ class GoldenDatasetEvaluator:
             evidence_recall = self._evidence_recall_proxy(example.expected_evidence_refs, decision.evidence_used)
             faithfulness = self._faithfulness_proxy(decision, audit_payload)
             contradiction_alignment = self._contradiction_alignment(example.expected_contradictions, decision.contradictions)
+            trace_grades = self._trace_grades(audit_payload)
             results.append(
                 EvaluationExampleResult(
                     issue_key=example.issue.issue_key,
@@ -73,6 +74,10 @@ class GoldenDatasetEvaluator:
                     evidence_recall_proxy=evidence_recall,
                     faithfulness_proxy=faithfulness,
                     contradiction_alignment=contradiction_alignment,
+                    planner_quality_proxy=trace_grades.get("planner_quality_proxy", 0.0),
+                    retrieval_diversity_proxy=trace_grades.get("retrieval_diversity_proxy", 0.0),
+                    loop_efficiency_proxy=trace_grades.get("loop_efficiency_proxy", 0.0),
+                    trace_completeness=trace_grades.get("trace_completeness", 0.0),
                 )
             )
             classification_hits += int(decision.classification == example.expected_classification)
@@ -123,6 +128,22 @@ class GoldenDatasetEvaluator:
                         value=(sum(item.contradiction_alignment for item in results) / annotated_contradiction_examples)
                         if annotated_contradiction_examples
                         else 0.0,
+                    ),
+                    EvaluationMetric(
+                        name="planner_quality_proxy",
+                        value=sum(item.planner_quality_proxy for item in results) / total,
+                    ),
+                    EvaluationMetric(
+                        name="retrieval_diversity_proxy",
+                        value=sum(item.retrieval_diversity_proxy for item in results) / total,
+                    ),
+                    EvaluationMetric(
+                        name="loop_efficiency_proxy",
+                        value=sum(item.loop_efficiency_proxy for item in results) / total,
+                    ),
+                    EvaluationMetric(
+                        name="trace_completeness",
+                        value=sum(item.trace_completeness for item in results) / total,
                     ),
                 ]
             )
@@ -343,6 +364,22 @@ class GoldenDatasetEvaluator:
         if not path.exists():
             return None
         return json.loads(path.read_text(encoding="utf-8"))
+
+    @staticmethod
+    def _trace_grades(audit_payload: dict | None) -> dict[str, float]:
+        if not audit_payload:
+            return {}
+        runtime = audit_payload.get("runtime", {})
+        if not isinstance(runtime, dict):
+            return {}
+        trace_grades = runtime.get("trace_grades", {})
+        if not isinstance(trace_grades, dict):
+            return {}
+        return {
+            key: float(value)
+            for key, value in trace_grades.items()
+            if isinstance(value, (int, float))
+        }
 
     def _compute_ragas_runtime_metrics(self, results: list[EvaluationExampleResult]) -> tuple[list[EvaluationMetric], bool]:
         if not importlib.util.find_spec("ragas"):

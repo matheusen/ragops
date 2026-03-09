@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from time import perf_counter
 from typing import Any, TypedDict
 
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import Command, interrupt
 
+from jira_issue_rag.services.file_checkpoint import PersistentFileSaver
 from jira_issue_rag.shared.models import (
     AttachmentFacts,
     DecisionResult,
@@ -16,7 +19,12 @@ from jira_issue_rag.shared.models import (
 )
 
 
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 class ValidationState(TypedDict, total=False):
+    thread_id: str
     issue: IssueCanonical
     attachment_facts: AttachmentFacts
     provider: str | None
@@ -32,13 +40,26 @@ class ValidationState(TypedDict, total=False):
     distilled: DistilledContext
     judge_input: JudgeInput
     policy_action: str
+    human_review: dict[str, Any]
+    trace: list[dict[str, Any]]
     decision: DecisionResult
 
 
 class LangGraphValidationRunner:
     def __init__(self, core: Any) -> None:
         self.core = core
-        self._checkpointer = MemorySaver()
+        checkpoint_path = self.core.settings.checkpoint_dir / "langgraph_threads.pkl"
+        self._checkpointer = PersistentFileSaver(checkpoint_path).with_allowlist(
+            {
+                ("jira_issue_rag.shared.models", "IssueCanonical"),
+                ("jira_issue_rag.shared.models", "AttachmentFacts"),
+                ("jira_issue_rag.shared.models", "RuleEvaluation"),
+                ("jira_issue_rag.shared.models", "RetrievedEvidence"),
+                ("jira_issue_rag.shared.models", "DistilledContext"),
+                ("jira_issue_rag.shared.models", "JudgeInput"),
+                ("jira_issue_rag.shared.models", "DecisionResult"),
+            }
+        )
         graph = StateGraph(ValidationState)
         graph.add_node("normalize", self._normalize)
         graph.add_node("rules", self._rules)
@@ -76,57 +97,104 @@ class LangGraphValidationRunner:
         prompt_name: str | None,
         thread_id: str | None = None,
     ) -> dict[str, Any]:
-        config = {"configurable": {"thread_id": thread_id or issue.issue_key}}
+        effective_thread_id = thread_id or issue.issue_key
+        config = {"configurable": {"thread_id": effective_thread_id}}
         return self.graph.invoke(
             {
+                "thread_id": effective_thread_id,
                 "issue": issue,
                 "attachment_facts": attachment_facts,
                 "provider": provider,
                 "prompt_name": prompt_name,
+                "trace": [],
             },
             config=config,
         )
 
-    def resume(self, thread_id: str, patch: dict[str, Any]) -> dict[str, Any]:
+    def resume(self, thread_id: str, resume_value: dict[str, Any]) -> dict[str, Any]:
         config = {"configurable": {"thread_id": thread_id}}
-        return self.graph.invoke(patch, config=config)
+        return self.graph.invoke(Command(resume=resume_value), config=config)
 
     def get_state(self, thread_id: str) -> Any:
         config = {"configurable": {"thread_id": thread_id}}
         return self.graph.get_state(config)
 
     def _normalize(self, state: ValidationState) -> ValidationState:
-        return {"issue": self.core.normalizer.normalize(state["issue"])}
+        started_at = utc_now_iso()
+        started_perf = perf_counter()
+        issue = self.core.normalizer.normalize(state["issue"])
+        return self._with_trace(
+            state,
+            "normalize",
+            started_at,
+            started_perf,
+            {"issue": issue},
+            {"issue_key": issue.issue_key},
+        )
 
     def _rules(self, state: ValidationState) -> ValidationState:
+        started_at = utc_now_iso()
+        started_perf = perf_counter()
         rules = self.core.rules.evaluate(state["issue"], state["attachment_facts"])
-        return {"rule_evaluation": rules}
+        return self._with_trace(
+            state,
+            "rules",
+            started_at,
+            started_perf,
+            {"rule_evaluation": rules},
+            {
+                "missing_items": len(rules.missing_items),
+                "contradictions": len(rules.contradictions),
+                "requires_human_review": rules.requires_human_review,
+            },
+        )
 
     def _plan(self, state: ValidationState) -> ValidationState:
+        started_at = utc_now_iso()
+        started_perf = perf_counter()
         queries = self._build_plan_queries(
             issue=state["issue"],
             attachment_facts=state["attachment_facts"],
             rules=state["rule_evaluation"],
         )
-        return {
-            "plan_queries": queries,
-            "query_index": 0,
-            "iteration_count": 0,
-            "retrieved": [],
-            "latest_retrieved": [],
-            "reflection_notes": [],
-            "policy_action": "judge",
-        }
+        return self._with_trace(
+            state,
+            "plan",
+            started_at,
+            started_perf,
+            {
+                "plan_queries": queries,
+                "query_index": 0,
+                "iteration_count": 0,
+                "retrieved": [],
+                "latest_retrieved": [],
+                "reflection_notes": [],
+                "policy_action": "judge",
+            },
+            {"query_count": len(queries), "mode": self.core.settings.planner_mode},
+        )
 
     def _rewrite(self, state: ValidationState) -> ValidationState:
+        started_at = utc_now_iso()
+        started_perf = perf_counter()
         queries = state.get("plan_queries") or [
             self.core.retriever.build_query(state["issue"], state["attachment_facts"], state["rule_evaluation"])
         ]
         query_index = min(state.get("query_index", 0), len(queries) - 1)
         base_query = queries[query_index]
-        return {"current_query": self._rewrite_query(base_query, state["issue"], state["rule_evaluation"])}
+        current_query = self._rewrite_query(base_query, state["issue"], state["rule_evaluation"])
+        return self._with_trace(
+            state,
+            "rewrite",
+            started_at,
+            started_perf,
+            {"current_query": current_query},
+            {"query_index": query_index, "mode": self.core.settings.query_rewriter_mode},
+        )
 
     def _retrieve(self, state: ValidationState) -> ValidationState:
+        started_at = utc_now_iso()
+        started_perf = perf_counter()
         retrieved_now = self.core.retriever.search(
             state["issue"],
             state["attachment_facts"],
@@ -134,12 +202,31 @@ class LangGraphValidationRunner:
             query_text_override=state.get("current_query"),
         )
         merged = self._merge_evidence(state.get("retrieved", []), retrieved_now)
-        return {
-            "latest_retrieved": retrieved_now,
-            "retrieved": merged,
-        }
+        categories = sorted(
+            {
+                str(item.metadata.get("category", "unknown"))
+                for item in merged
+            }
+        )
+        return self._with_trace(
+            state,
+            "retrieve",
+            started_at,
+            started_perf,
+            {
+                "latest_retrieved": retrieved_now,
+                "retrieved": merged,
+            },
+            {
+                "retrieved_now": len(retrieved_now),
+                "retrieved_total": len(merged),
+                "categories": categories,
+            },
+        )
 
     def _distill(self, state: ValidationState) -> ValidationState:
+        started_at = utc_now_iso()
+        started_perf = perf_counter()
         distilled = self.core.distiller.distill(state.get("retrieved", []), state["rule_evaluation"])
         judge_input = JudgeInput(
             issue=state["issue"],
@@ -148,55 +235,158 @@ class LangGraphValidationRunner:
             retrieved_evidence=state.get("retrieved", []),
             distilled_context=distilled,
         )
-        return {"distilled": distilled, "judge_input": judge_input}
+        return self._with_trace(
+            state,
+            "distill",
+            started_at,
+            started_perf,
+            {"distilled": distilled, "judge_input": judge_input},
+            {
+                "key_facts": len(distilled.key_facts),
+                "quotes": len(distilled.preserved_quotes),
+                "mode": self.core.settings.distiller_mode,
+            },
+        )
 
     def _reflect(self, state: ValidationState) -> ValidationState:
+        started_at = utc_now_iso()
+        started_perf = perf_counter()
         if not self.core.settings.enable_reflection_memory:
-            return {}
+            return self._with_trace(
+                state,
+                "reflect",
+                started_at,
+                started_perf,
+                {},
+                {"enabled": False},
+            )
 
         note = self._build_reflection_note(state)
         if not note:
-            return {}
+            return self._with_trace(
+                state,
+                "reflect",
+                started_at,
+                started_perf,
+                {},
+                {"enabled": True, "note_added": False},
+            )
 
         notes = [*state.get("reflection_notes", []), note]
         distilled = state["distilled"].model_copy(deep=True)
         if note not in distilled.key_facts:
             distilled.key_facts = [*distilled.key_facts, note][:12]
         judge_input = state["judge_input"].model_copy(update={"distilled_context": distilled})
-        return {
-            "reflection_notes": notes,
-            "distilled": distilled,
-            "judge_input": judge_input,
-        }
+        return self._with_trace(
+            state,
+            "reflect",
+            started_at,
+            started_perf,
+            {
+                "reflection_notes": notes,
+                "distilled": distilled,
+                "judge_input": judge_input,
+            },
+            {"enabled": True, "notes_total": len(notes)},
+        )
 
     def _policy(self, state: ValidationState) -> ValidationState:
+        started_at = utc_now_iso()
+        started_perf = perf_counter()
         current_iteration = state.get("iteration_count", 0) + 1
         max_iterations = max(1, self.core.settings.max_planning_iterations)
         has_more_queries = state.get("query_index", 0) + 1 < len(state.get("plan_queries", []))
 
+        if self._needs_human_interrupt(state):
+            human_request = self._build_human_interrupt_payload(state, current_iteration)
+            human_review = self._normalize_human_review(interrupt(human_request))
+            policy_action = "judge"
+            query_index = state.get("query_index", 0)
+            if (
+                human_review.get("action") == "continue_research"
+                and has_more_queries
+                and current_iteration < max_iterations
+            ):
+                policy_action = "rewrite"
+                query_index += 1
+            distilled, judge_input = self._apply_human_review(state, human_review)
+            return self._with_trace(
+                state,
+                "policy",
+                started_at,
+                started_perf,
+                {
+                    "iteration_count": current_iteration,
+                    "query_index": query_index,
+                    "policy_action": policy_action,
+                    "human_review": human_review,
+                    "distilled": distilled,
+                    "judge_input": judge_input,
+                },
+                {
+                    "action": human_review.get("action", "judge"),
+                    "human_review": True,
+                    "iteration": current_iteration,
+                },
+            )
+
         if current_iteration >= max_iterations:
-            return {"iteration_count": current_iteration, "policy_action": "judge"}
+            return self._with_trace(
+                state,
+                "policy",
+                started_at,
+                started_perf,
+                {"iteration_count": current_iteration, "policy_action": "judge"},
+                {"action": "judge", "reason": "max_iterations"},
+            )
 
         if has_more_queries and self._should_continue(state):
-            return {
-                "iteration_count": current_iteration,
-                "query_index": state.get("query_index", 0) + 1,
-                "policy_action": "rewrite",
-            }
+            return self._with_trace(
+                state,
+                "policy",
+                started_at,
+                started_perf,
+                {
+                    "iteration_count": current_iteration,
+                    "query_index": state.get("query_index", 0) + 1,
+                    "policy_action": "rewrite",
+                },
+                {"action": "rewrite", "iteration": current_iteration},
+            )
 
-        return {"iteration_count": current_iteration, "policy_action": "judge"}
+        return self._with_trace(
+            state,
+            "policy",
+            started_at,
+            started_perf,
+            {"iteration_count": current_iteration, "policy_action": "judge"},
+            {"action": "judge", "iteration": current_iteration},
+        )
 
     @staticmethod
     def _route_after_policy(state: ValidationState) -> str:
         return state.get("policy_action", "judge")
 
     def _judge(self, state: ValidationState) -> ValidationState:
+        started_at = utc_now_iso()
+        started_perf = perf_counter()
         decision = self.core.router.judge(
             state["judge_input"],
             provider_override=state.get("provider"),
             prompt_name=state.get("prompt_name"),
         )
-        return {"decision": decision}
+        return self._with_trace(
+            state,
+            "judge",
+            started_at,
+            started_perf,
+            {"decision": decision},
+            {
+                "classification": decision.classification,
+                "confidence": decision.confidence,
+                "provider": decision.provider,
+            },
+        )
 
     def _build_plan_queries(
         self,
@@ -295,6 +485,89 @@ class LangGraphValidationRunner:
         if self.core.settings.policy_mode == "policy-agent":
             return unresolved or not enough_evidence or len(state.get("reflection_notes", [])) == 0
         return unresolved or not enough_evidence
+
+    def _needs_human_interrupt(self, state: ValidationState) -> bool:
+        if not self.core.settings.enable_human_interrupts:
+            return False
+        if state.get("human_review"):
+            return False
+        rules = state.get("rule_evaluation")
+        return bool(rules and rules.requires_human_review)
+
+    def _build_human_interrupt_payload(
+        self,
+        state: ValidationState,
+        current_iteration: int,
+    ) -> dict[str, Any]:
+        issue = state["issue"]
+        rules = state["rule_evaluation"]
+        top_evidence = [
+            {
+                "source": item.source,
+                "category": item.metadata.get("category"),
+                "score": item.final_score,
+            }
+            for item in state.get("retrieved", [])[:3]
+        ]
+        return {
+            "thread_id": state.get("thread_id", issue.issue_key),
+            "issue_key": issue.issue_key,
+            "summary": issue.summary,
+            "iteration": current_iteration,
+            "current_query": state.get("current_query"),
+            "missing_items": rules.missing_items[:6],
+            "contradictions": rules.contradictions[:4],
+            "requires_human_review": rules.requires_human_review,
+            "top_evidence": top_evidence,
+            "suggested_actions": ["judge", "continue_research"],
+        }
+
+    @staticmethod
+    def _normalize_human_review(review: Any) -> dict[str, Any]:
+        if isinstance(review, dict):
+            action = str(review.get("action", "judge")).strip().lower() or "judge"
+            note = str(review.get("note", "")).strip()
+            return {"action": action, "note": note, "raw": review}
+        if review is None:
+            return {"action": "judge", "note": "", "raw": {}}
+        return {"action": "judge", "note": str(review).strip(), "raw": {"value": review}}
+
+    def _apply_human_review(
+        self,
+        state: ValidationState,
+        human_review: dict[str, Any],
+    ) -> tuple[DistilledContext, JudgeInput]:
+        distilled = state["distilled"].model_copy(deep=True)
+        note = human_review.get("note", "").strip()
+        action = human_review.get("action", "judge")
+        review_fact = f"human_review action={action} note={note or 'none'}"
+        if review_fact not in distilled.key_facts:
+            distilled.key_facts = [*distilled.key_facts, review_fact][:12]
+        judge_input = state["judge_input"].model_copy(update={"distilled_context": distilled})
+        return distilled, judge_input
+
+    def _with_trace(
+        self,
+        state: ValidationState,
+        node_name: str,
+        started_at: str,
+        started_perf: float,
+        patch: ValidationState,
+        details: dict[str, Any],
+    ) -> ValidationState:
+        trace = [*state.get("trace", [])]
+        trace.append(
+            {
+                "node": node_name,
+                "started_at": started_at,
+                "finished_at": utc_now_iso(),
+                "duration_ms": round((perf_counter() - started_perf) * 1000, 2),
+                "details": details,
+            }
+        )
+        result = dict(patch)
+        result["trace"] = trace
+        return result
 
     @staticmethod
     def _merge_evidence(

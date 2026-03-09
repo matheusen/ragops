@@ -228,22 +228,36 @@ class ArtifactPipeline:
         return ""
 
     def _extract_pdf_text(self, path: Path) -> str:
-        # 1st pass: Docling (structure-aware, table-aware)
-        text = self._extract_pdf_docling(path)
+        # 1st pass: pypdf (safe and fast for born-digital PDFs)
+        text = self._extract_pdf_pypdf(path)
         if text.strip():
             return text
-        # 2nd pass: pypdf (fast, text-layer only)
-        if PdfReader is not None:
-            try:
-                reader = PdfReader(str(path))
-                text_parts = [page.extract_text() or "" for page in reader.pages]
-                text = "\n".join(text_parts).strip()
-                if text:
-                    return text
-            except Exception:
-                pass
-        # 3rd pass: sidecar .txt
+
+        # 2nd pass: Docling is opt-in because some Windows PDF/OCR stacks are unstable.
+        if self.settings and self.settings.enable_docling_pdf_parser:
+            text = self._extract_pdf_docling(path)
+            if text.strip():
+                return text
+
+        # 3rd pass: OCR via Tesseract for scanned/image-only PDFs.
+        if self.settings is None or self.settings.enable_tesseract_pdf_ocr:
+            text = self._extract_pdf_tesseract(path)
+            if text.strip():
+                return text
+
+        # 4th pass: sidecar .txt
         return self._extract_sidecar_text(path)
+
+    @staticmethod
+    def _extract_pdf_pypdf(path: Path) -> str:
+        if PdfReader is None:
+            return ""
+        try:
+            reader = PdfReader(str(path))
+            text_parts = [page.extract_text() or "" for page in reader.pages]
+            return "\n".join(text_parts).strip()
+        except Exception:
+            return ""
 
     @staticmethod
     def _extract_pdf_docling(path: Path) -> str:
@@ -252,6 +266,18 @@ class ArtifactPipeline:
             converter = DocumentConverter()
             result = converter.convert(str(path))
             return result.document.export_to_markdown().strip()
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _extract_pdf_tesseract(path: Path) -> str:
+        try:
+            import pytesseract  # type: ignore[import-untyped]
+            from pdf2image import convert_from_path  # type: ignore[import-untyped]
+
+            images = convert_from_path(str(path), dpi=300)
+            parts = [pytesseract.image_to_string(img, lang="por+eng") for img in images]
+            return "\n\n".join(parts).strip()
         except Exception:
             return ""
 

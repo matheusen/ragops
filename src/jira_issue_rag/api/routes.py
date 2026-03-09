@@ -37,6 +37,8 @@ from jira_issue_rag.shared.models import (
     PromptInfoResponse,
     ReplayRequest,
     ReplayResponse,
+    ValidationExecutionResponse,
+    ValidationResumeRequest,
     ValidationRequest,
 )
 
@@ -78,6 +80,41 @@ def validate_issue(
     workflow: ValidationWorkflow = Depends(get_workflow),
 ) -> DecisionResult:
     return workflow.validate_issue(request)
+
+
+@router.post(
+    "/validate/issue/interactive",
+    response_model=ValidationExecutionResponse,
+    tags=["validation"],
+    summary="Validar issue com pause/resume humano",
+    description=(
+        "Executa a validação via LangGraph com suporte a `interrupt()/resume()`. "
+        "Quando o policy loop exigir revisão humana, a resposta retorna `interrupted=true`, "
+        "`thread_id` e o payload de contexto necessário para retomar a execução."
+    ),
+)
+def validate_issue_interactive(
+    request: ValidationRequest,
+    workflow: ValidationWorkflow = Depends(get_workflow),
+) -> ValidationExecutionResponse:
+    return workflow.validate_issue_interactive(request)
+
+
+@router.post(
+    "/validate/issue/interactive/resume",
+    response_model=ValidationExecutionResponse,
+    tags=["validation"],
+    summary="Retomar validação interativa",
+    description=(
+        "Retoma uma thread interrompida do LangGraph usando o `thread_id` e um payload "
+        "de revisão humana. O backend continua a partir do último checkpoint persistido."
+    ),
+)
+def resume_issue_interactive(
+    request: ValidationResumeRequest,
+    workflow: ValidationWorkflow = Depends(get_workflow),
+) -> ValidationExecutionResponse:
+    return workflow.resume_interactive_issue(request)
 
 
 @router.post(
@@ -146,11 +183,8 @@ def validate_upload(
             issue=issue,
             folder_path=tmpdir,
             provider=provider or None,
+            prompt_name=prompt_name or None,
         )
-        if prompt_name:
-            req_dict = req.model_dump()
-            req_dict["prompt_name"] = prompt_name
-            # re-build with prompt_name if the model supports it
         return workflow.validate_folder(req)
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
@@ -449,7 +483,7 @@ def ingest_articles(
     summary="Buscar nos artigos (semântica híbrida)",
     description=(
         "Busca em todos os artigos indexados combinando BM25 esparso + embeddings densos "
-        "com Reciprocal Rank Fusion. Retorna os chunks mais relevantes com doc\_id, título, "
+        "com Reciprocal Rank Fusion. Retorna os chunks mais relevantes com doc_id, título, "
         "trecho de texto e tópicos extraídos.\n\n"
         "Use o resultado como contexto para `POST /run-flow` passando os `content` dos chunks "
         "no campo `description` da issue."
@@ -473,7 +507,7 @@ def search_articles(
     summary="Artigos relacionados por tópico",
     description=(
         "Retorna artigos com assuntos correlacionados ao `doc_id` informado.\n\n"
-        "Com **Neo4j ativo**: navega arestas `SHARES\_TOPIC` pesadas pelo número de tópicos em comum.\n\n"
+        "Com **Neo4j ativo**: navega arestas `SHARES_TOPIC` pesadas pelo número de tópicos em comum.\n\n"
         "Sem Neo4j: similaridade vetorial entre chunks (fallback Qdrant).\n\n"
         "O `doc_id` é retornado na resposta de `/articles/ingest` e n `/articles/search`."
     ),

@@ -1,0 +1,381 @@
+{
+  "issue": {
+    "issue_key": "UPLOAD-0AD5F5",
+    "summary": "Upload: A alternativa gratuita e de código aberto ao ElevenLabs finalmente chegou _ por Bytefer _ fevereiro de 2026 _ Medium.pdf",
+    "description": "",
+    "comments": [],
+    "acceptance_criteria": [],
+    "reproduction_steps": [],
+    "expected_behavior": "",
+    "actual_behavior": "",
+    "priority": null,
+    "issue_type": "Bug",
+    "status": null,
+    "project": null,
+    "component": null,
+    "service": null,
+    "environment": null,
+    "affected_version": null,
+    "labels": [],
+    "issue_links": [],
+    "attachments": [],
+    "changelog": [],
+    "collected_at": "2026-03-09T01:04:12.020161Z"
+  },
+  "attachment_facts": {
+    "issue_key": "UPLOAD-0AD5F5",
+    "artifacts": [
+      {
+        "artifact_id": "sha256:65d8b0ab52239694de6b438dc22d4870623878a21deefcef939fd88441d902d5",
+        "artifact_type": "pdf",
+        "source_path": "C:\\Users\\mengl\\AppData\\Local\\Temp\\ragflow_upload_y619x0rz\\A alternativa gratuita e de código aberto ao ElevenLabs finalmente chegou _ por Bytefer _ fevereiro de 2026 _ Medium.pdf",
+        "extracted_text": "A alternativa gratuita e de código aberto ao\nElevenLabs finalmente chegou.\nUma alternativa gratuita e de código aberto ao\nElevenLabs finalmente chegou.\nO pacote definitivo de TTS: clonagem de voz profissional,\ndesign e controle emocional. Adquira, implemente e\nexpanda — sem custo algum.\n4 minutos de leitura\n3 de fevereiro de 2026\nPressione Enter ou clique para ver a imagem em tamanho real.\nFoto de Jumping Jax no Unsplash\nComo desenvolvedor de aplicações de IA, tenho experiência com muitos modelos de TTS de\ncódigo aberto excelentes. Esses modelos têm um desempenho excepcional em determinadas\nsituações, mas também apresentam limitações. Por exemplo, o modelo Kokoro possui boa\nvelocidade de inferência e qualidade de síntese, mas não suporta clonagem de voz. Isso\nrestringe seus casos de uso. Recentemente, esse problema foi finalmente resolvido pelo\nQwen3-TTS . O Qwen3-TTS oferece suporte completo a clonagem de voz, design de voz e\nsíntese de fala de alta qualidade. Está disponível nos tamanhos 0,6B e 1,7B e suporta 10\nidiomas principais, incluindo inglês, chinês, japonês, coreano, alemão, francês, russo,\nportuguês, espanhol e italiano.\nLista de modelos Qwen3-TTS\nArquitetura do Modelo\nPressione Enter ou clique para ver a imagem em tamanho real.\nArquitetura do modelo Qwen3-TTS\nModelo 0,6B\nPressione Enter ou clique para ver a imagem em tamanho real.\nModelo Qwen3 TTS 0.6B\nModelo 1.7B\nPressione Enter ou clique para ver a imagem em tamanho real.\nModelo Qwen3 TTS 1.7B\nDemonstração online\nAcesse https://huggingface.co/spaces/Qwen/Qwen3-TTS no seu navegador para experimentar\nsimultaneamente os recursos de Design de Voz, Clonagem de Voz e Voz Personalizada.\nPressione Enter ou clique para ver a imagem em tamanho real.\nDemonstração online do Qwen3 TTS\nAlém disso, você também pode usar o Vidpai , um estúdio local de criação de conteúdo com\nIA que desenvolvemos, para experimentar todas as funcionalidades do Qwen3-TTS.\nPressione Enter ou clique para ver a imagem em tamanho real.\nvidpai-qwen3-tts\nImplantação local\nA documentação oficial do Qwen3-TTS detalha como implantar o Qwen3-TTS no Windows,\nentão a seguir mostrarei como implantá-lo localmente no macOS usando o mlx-audio .\n1. Configure o ambiente virtual.\npython3 -m venv .venv\nfonte .venv/bin/activate\n2. Instale o mlx-audio\npip install mlx-audio\n3. Faça o download do modelo.\nVocê pode baixar o modelo de quantização correspondente com base na configuração do seu\ncomputador e nas suas necessidades reais.\nPressione Enter ou clique para ver a imagem em tamanho real.\nmlx qwen3 tts\nembraceface-cli download mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-bf16 --\nlocal-dir ./models/Qwen3-TTS-12Hz-0.6B-CustomVoice-bf16\nembraceface-cli download mlx-community/Qwen3-TTS-12Hz-0.6B-Base-bf16 --local-\ndir ./models/Qwen3-TTS-12Hz-0.6B-Base-bf16\nembraceface-cli download mlx-community/Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit --\nlocal-dir ./models/Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit\n4. Voz Personalizada\nfrom pathlib import Path\nimportar arquivo de som como sf\nfrom mlx_audio.tts.utils import load_model\nmodelo = carregar_modelo(\"./modelos/Qwen3-TTS-12Hz-0.6B-CustomVoice-bf16\")\nresultados = lista(modelo.gerar_voz_personalizada(\n    Estou muito animado para te conhecer!\n    palestrante=\"Vivian\",\n    idioma=\"inglês\",\n    instruir=\"Muito feliz e animado.\",\n))\nse não houver resultados:\n    raise ValueError(\"Nenhum áudio gerado\")\nfinal = resultados[0]\ncaminho_saída = Path(__file__).parent / \"custom_voice.wav\"\nsf.write(str(output_path), final.audio, final.sample_rate)\nprint(f\"Áudio salvo em: {output_path}\")\n5. Clonagem de Voz\nfrom pathlib import Path\nimportar arquivo de som como sf\nfrom mlx_audio.tts.utils import load_model\nmodelo = carregar_modelo(\"./modelos/Qwen3-TTS-12Hz-0.6B-Base-bf16\")\nresultados = lista(modelo.gerar(\n    \"Uma demonstração unificada de conversão de texto em fala com três modos \npoderosos.\"\n    ref_audio=\"custom_voice.wav\",\n    Estou muito animado para te conhecer!\n))\nse não houver resultados:\n    raise ValueError(\"Nenhum áudio gerado\")\nfinal = resultados[0]\ncaminho_saída = Path(__file__).parent / \"voice_clone.wav\"\nsf.write(str(output_path), final.audio, final.sample_rate)\nprint(f\"Áudio salvo em: {output_path}\")\n6. Design de Voz\nfrom pathlib import Path\nimportar arquivo de som como sf\nfrom mlx_audio.tts.utils import load_model\nmodelo = carregar_modelo(\"./modelos/Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit\")\nresultados = lista(modelo.generate_voice_design(\n    \"Irmãozão, você voltou!\"\n    idioma=\"inglês\",\n    instruir=\"Uma voz feminina jovem e alegre, com tom agudo e enérgico.\"\n))\nse não houver resultados:\n    raise ValueError(\"Nenhum áudio gerado\")\nfinal = resultados[0]\ncaminho_saída = Path(__file__).parent / \"voice_design.wav\"\nsf.write(str(output_path), final.audio, final.sample_rate)\nprint(f\"Áudio salvo em: {output_path}\")\nResumo\nO Qwen3-TTS é um modelo TTS poderoso; se você precisa de síntese de voz, pode avaliar\nsuas capacidades. Além disso, o mlx-audio é outro projeto de código aberto notável. Baseado\nna estrutura MLX da Apple, ele permite que desenvolvedores executem facilmente diversos\nmodelos excelentes de TTS, STT e STS no Apple Silicon.",
+        "facts": {
+          "ids": [],
+          "timestamps": [],
+          "amounts": [],
+          "error_lines": [
+            "raise ValueError(\"Nenhum áudio gerado\")",
+            "raise ValueError(\"Nenhum áudio gerado\")",
+            "raise ValueError(\"Nenhum áudio gerado\")"
+          ],
+          "artifact_name": "A alternativa gratuita e de código aberto ao ElevenLabs finalmente chegou _ por Bytefer _ fevereiro de 2026 _ Medium.pdf"
+        },
+        "confidence": 0.85
+      }
+    ],
+    "contradictions": [],
+    "missing_information": []
+  },
+  "rule_evaluation": {
+    "missing_items": [
+      "actual_result_detail",
+      "affected_version_confirmation",
+      "environment",
+      "expected_result_detail",
+      "reproduction_steps"
+    ],
+    "contradictions": [],
+    "financial_impact_detected": false,
+    "requires_human_review": false,
+    "results": []
+  },
+  "retrieved": [
+    {
+      "evidence_id": "issue:summary",
+      "source": "issue.summary",
+      "content": "UPLOAD-0AD5F5 Upload: A alternativa gratuita e de código aberto ao ElevenLabs finalmente chegou _ por Bytefer _ fevereiro de 2026 _ Medium.pdf ",
+      "metadata": {
+        "category": "issue"
+      },
+      "sparse_score": 1.0,
+      "dense_score": 0.8,
+      "final_score": 7.7448
+    },
+    {
+      "evidence_id": "sha256:65d8b0ab52239694de6b438dc22d4870623878a21deefcef939fd88441d902d5",
+      "source": "attachment:C:\\Users\\mengl\\AppData\\Local\\Temp\\ragflow_upload_y619x0rz\\A alternativa gratuita e de código aberto ao ElevenLabs finalmente chegou _ por Bytefer _ fevereiro de 2026 _ Medium.pdf",
+      "content": "A alternativa gratuita e de código aberto ao\nElevenLabs finalmente chegou.\nUma alternativa gratuita e de código aberto ao\nElevenLabs finalmente chegou.\nO pacote definitivo de TTS: clonagem de voz profissional,\ndesign e controle emocional. Adquira, implemente e\nexpanda — sem custo algum.\n4 minutos de leitura\n3 de fevereiro de 2026\nPressione Enter ou clique para ver a imagem em tamanho real.\nFoto de Jumping Jax no Unsplash\nComo desenvolvedor de aplicações de IA, tenho experiência com muitos modelos de TTS de\ncódigo aberto excelentes. Esses modelos têm um desempenho excepcional em determinadas\nsituações, mas também apresentam limitações. Por exemplo, o modelo Kokoro possui boa\nvelocidade de inferência e qualidade de síntese, mas não suporta clonagem de voz. Isso\nrestringe seus casos de uso. Recentemente, esse problema foi finalmente resolvido pelo\nQwen3-TTS . O Qwen3-TTS oferece suporte completo a clonagem de voz, design de voz e\nsíntese de fala de alta qualidade. Está disponível nos tamanhos 0,6B e 1,7B e suporta 10\nidiomas principais, incluindo inglês, chinês, japonês, coreano, alemão, francês, russo,\nportuguês, espanhol e italiano.\nLista de modelos Qwen3-TTS\nArquitetura do Modelo\nPressione Enter ou clique para ver a imagem em tamanho real.\nArquitetura do modelo Qwen3-TTS\nModelo 0,6B\nPressione Enter ou clique para ver a imagem em tamanho real.\nModelo Qwen3 TTS 0.6B\nModelo 1.7B\nPressione Enter ou clique para ver a imagem em tamanho real.\nModelo Qwen3 TTS 1.7B\nDemonstração online\nAcesse https://huggingface.co/spaces/Qwen/Qwen3-TTS no seu navegador para experimentar\nsimultaneamente os recursos de Design de Voz, Clonagem de Voz e Voz Personalizada.\nPressione Enter ou clique para ver a imagem em tamanho real.\nDemonstração online do Qwen3 TTS\nAlém disso, você também pode usar o Vidpai , um estúdio local de criação de conteúdo com\nIA que desenvolvemos, para experimentar todas as funcionalidades do Qwen3-TTS.\nPressione Enter ou clique para ver a imagem em tamanho real.\nvidpai-qwen3-tts\nImplantação local\nA documentação oficial do Qwen3-TTS detalha como implantar o Qwen3-TTS no Windows,\nentão a seguir mostrarei como implantá-lo localmente no macOS usando o mlx-audio .\n1. Configure o ambiente virtual.\npython3 -m venv .venv\nfonte .venv/bin/activate\n2. Instale o mlx-audio\npip install mlx-audio\n3. Faça o download do modelo.\nVocê pode baixar o modelo de quantização correspondente com base na configuração do seu\ncomputador e nas suas necessidades reais.\nPressione Enter ou clique para ver a imagem em tamanho real.\nmlx qwen3 tts\nembraceface-cli download mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-bf16 --\nlocal-dir ./models/Qwen3-TTS-12Hz-0.6B-CustomVoice-bf16\nembraceface-cli download mlx-community/Qwen3-TTS-12Hz-0.6B-Base-bf16 --local-\ndir ./models/Qwen3-TTS-12Hz-0.6B-Base-bf16\nembraceface-cli download mlx-community/Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit --\nlocal-dir ./models/Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit\n4. Voz Personalizada\nfrom pathlib import Path\nimportar arquivo de som como sf\nfrom mlx_audio.tts.utils import load_model\nmodelo = carregar_modelo(\"./modelos/Qwen3-TTS-12Hz-0.6B-CustomVoice-bf16\")\nresultados = lista(modelo.gerar_voz_personalizada(\n    Estou muito animado para te conhecer!\n    palestrante=\"Vivian\",\n    idioma=\"inglês\",\n    instruir=\"Muito feliz e animado.\",\n))\nse não houver resultados:\n    raise ValueError(\"Nenhum áudio gerado\")\nfinal = resultados[0]\ncaminho_saída = Path(__file__).parent / \"custom_voice.wav\"\nsf.write(str(output_path), final.audio, final.sample_rate)\nprint(f\"Áudio salvo em: {output_path}\")\n5. Clonagem de Voz\nfrom pathlib import Path\nimportar arquivo de som como sf\nfrom mlx_audio.tts.utils import load_model\nmodelo = carregar_modelo(\"./modelos/Qwen3-TTS-12Hz-0.6B-Base-bf16\")\nresultados = lista(modelo.gerar(\n    \"Uma demonstração unificada de conversão de texto em fala com três modos \npoderosos.\"\n    ref_audio=\"custom_voice.wav\",\n    Estou muito animado para te conhecer!\n))\nse não houver resultados:\n    raise ValueError(\"Nenhum áudio gerado\")\nfinal = resultados[0]\ncaminho_saída = Path(__file__).parent / \"voice_clone.wav\"\nsf.write(str(output_path), final.audio, final.sample_rate)\nprint(f\"Áudio salvo em: {output_path}\")\n6. Design de Voz\nfrom pathlib import Path\nimportar arquivo de som como sf\nfrom mlx_audio.tts.utils import load_model\nmodelo = carregar_modelo(\"./modelos/Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit\")\nresultados = lista(modelo.generate_voice_design(\n    \"Irmãozão, você voltou!\"\n    idioma=\"inglês\",\n    instruir=\"Uma voz feminina jovem e alegre, com tom agudo e enérgico.\"\n))\nse não houver resultados:\n    raise ValueError(\"Nenhum áudio gerado\")\nfinal = resultados[0]\ncaminho_saída = Path(__file__).parent / \"voice_design.wav\"\nsf.write(str(output_path), final.audio, final.sample_rate)\nprint(f\"Áudio salvo em: {output_path}\")\nResumo\nO Qwen3-TTS é um modelo TTS poderoso; se você precisa de síntese de voz, pode avaliar\nsuas capacidades. Além disso, o mlx-audio é outro projeto de código aberto notável. Baseado\nna estrutura MLX da Apple, ele permite que desenvolvedores executem facilmente diversos\nmodelos excelentes de TTS, STT e STS no Apple Silicon.",
+      "metadata": {
+        "category": "artifact",
+        "type": "pdf"
+      },
+      "sparse_score": 0.7576,
+      "dense_score": 0.0583,
+      "final_score": 1.8133
+    },
+    {
+      "evidence_id": "issue:expected_actual",
+      "source": "issue.behavior",
+      "content": "Expected: \nActual: ",
+      "metadata": {
+        "category": "issue"
+      },
+      "sparse_score": 0.0,
+      "dense_score": 0.0,
+      "final_score": -10.8673
+    },
+    {
+      "evidence_id": "policy:contradictions",
+      "source": "policy:contradictions",
+      "content": "If one artifact shows failure and another shows success for the same flow, the issue must be escalated for review.",
+      "metadata": {
+        "category": "policy"
+      },
+      "sparse_score": 0.0,
+      "dense_score": 0.0,
+      "final_score": -11.0614
+    },
+    {
+      "evidence_id": "policy:bug-ready",
+      "source": "policy:bug-ready",
+      "content": "A bug should include expected behavior, actual behavior, reproduction steps, environment, and affected version before it is marked ready for development.",
+      "metadata": {
+        "category": "policy"
+      },
+      "sparse_score": 0.25,
+      "dense_score": 0.0435,
+      "final_score": -11.0886
+    },
+    {
+      "evidence_id": "policy:financial-review",
+      "source": "policy:financial-review",
+      "content": "Any issue with payment, refund, chargeback, or ledger mismatch must require human review unless deterministic checks fully reconcile the evidence.",
+      "metadata": {
+        "category": "policy"
+      },
+      "sparse_score": 0.0,
+      "dense_score": 0.0,
+      "final_score": -11.1006
+    }
+  ],
+  "distilled": {
+    "key_facts": [
+      "issue.summary: UPLOAD-0AD5F5 Upload: A alternativa gratuita e de código aberto ao ElevenLabs finalmente chegou _ por Bytefer _ fevereiro de 2026 _ Medium.pdf",
+      "attachment:C:\\Users\\mengl\\AppData\\Local\\Temp\\ragflow_upload_y619x0rz\\A alternativa gratuita e de código aberto ao ElevenLabs finalmente chegou _ por Bytefer _ fevereiro de 2026 _ Medium.pdf: A alternativa gratuita e de código aberto ao\nElevenLabs finalmente chegou.",
+      "issue.behavior: Expected: \nActual:",
+      "policy:contradictions: If one artifact shows failure and another shows success for the same flow, the issue must be escalated for review.",
+      "policy:bug-ready: A bug should include expected behavior, actual behavior, reproduction steps, environment, and affected version before it is marked ready for development."
+    ],
+    "preserved_quotes": [
+      "TTS-12",
+      "UPLOAD-0",
+      "ValueError"
+    ],
+    "evidence": [
+      {
+        "evidence_id": "issue:summary",
+        "source": "issue.summary",
+        "content": "UPLOAD-0AD5F5 Upload: A alternativa gratuita e de código aberto ao ElevenLabs finalmente chegou _ por Bytefer _ fevereiro de 2026 _ Medium.pdf ",
+        "metadata": {
+          "category": "issue"
+        },
+        "sparse_score": 1.0,
+        "dense_score": 0.8,
+        "final_score": 7.7448
+      },
+      {
+        "evidence_id": "sha256:65d8b0ab52239694de6b438dc22d4870623878a21deefcef939fd88441d902d5",
+        "source": "attachment:C:\\Users\\mengl\\AppData\\Local\\Temp\\ragflow_upload_y619x0rz\\A alternativa gratuita e de código aberto ao ElevenLabs finalmente chegou _ por Bytefer _ fevereiro de 2026 _ Medium.pdf",
+        "content": "A alternativa gratuita e de código aberto ao\nElevenLabs finalmente chegou.\nUma alternativa gratuita e de código aberto ao\nElevenLabs finalmente chegou.\nO pacote definitivo de TTS: clonagem de voz profissional,\ndesign e controle emocional. Adquira, implemente e\nexpanda — sem custo algum.\n4 minutos de leitura\n3 de fevereiro de 2026\nPressione Enter ou clique para ver a imagem em tamanho real.\nFoto de Jumping Jax no Unsplash\nComo desenvolvedor de aplicações de IA, tenho experiência com muitos modelos de TTS de\ncódigo aberto excelentes. Esses modelos têm um desempenho excepcional em determinadas\nsituações, mas também apresentam limitações. Por exemplo, o modelo Kokoro possui boa\nvelocidade de inferência e qualidade de síntese, mas não suporta clonagem de voz. Isso\nrestringe seus casos de uso. Recentemente, esse problema foi finalmente resolvido pelo\nQwen3-TTS . O Qwen3-TTS oferece suporte completo a clonagem de voz, design de voz e\nsíntese de fala de alta qualidade. Está disponível nos tamanhos 0,6B e 1,7B e suporta 10\nidiomas principais, incluindo inglês, chinês, japonês, coreano, alemão, francês, russo,\nportuguês, espanhol e italiano.\nLista de modelos Qwen3-TTS\nArquitetura do Modelo\nPressione Enter ou clique para ver a imagem em tamanho real.\nArquitetura do modelo Qwen3-TTS\nModelo 0,6B\nPressione Enter ou clique para ver a imagem em tamanho real.\nModelo Qwen3 TTS 0.6B\nModelo 1.7B\nPressione Enter ou clique para ver a imagem em tamanho real.\nModelo Qwen3 TTS 1.7B\nDemonstração online\nAcesse https://huggingface.co/spaces/Qwen/Qwen3-TTS no seu navegador para experimentar\nsimultaneamente os recursos de Design de Voz, Clonagem de Voz e Voz Personalizada.\nPressione Enter ou clique para ver a imagem em tamanho real.\nDemonstração online do Qwen3 TTS\nAlém disso, você também pode usar o Vidpai , um estúdio local de criação de conteúdo com\nIA que desenvolvemos, para experimentar todas as funcionalidades do Qwen3-TTS.\nPressione Enter ou clique para ver a imagem em tamanho real.\nvidpai-qwen3-tts\nImplantação local\nA documentação oficial do Qwen3-TTS detalha como implantar o Qwen3-TTS no Windows,\nentão a seguir mostrarei como implantá-lo localmente no macOS usando o mlx-audio .\n1. Configure o ambiente virtual.\npython3 -m venv .venv\nfonte .venv/bin/activate\n2. Instale o mlx-audio\npip install mlx-audio\n3. Faça o download do modelo.\nVocê pode baixar o modelo de quantização correspondente com base na configuração do seu\ncomputador e nas suas necessidades reais.\nPressione Enter ou clique para ver a imagem em tamanho real.\nmlx qwen3 tts\nembraceface-cli download mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-bf16 --\nlocal-dir ./models/Qwen3-TTS-12Hz-0.6B-CustomVoice-bf16\nembraceface-cli download mlx-community/Qwen3-TTS-12Hz-0.6B-Base-bf16 --local-\ndir ./models/Qwen3-TTS-12Hz-0.6B-Base-bf16\nembraceface-cli download mlx-community/Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit --\nlocal-dir ./models/Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit\n4. Voz Personalizada\nfrom pathlib import Path\nimportar arquivo de som como sf\nfrom mlx_audio.tts.utils import load_model\nmodelo = carregar_modelo(\"./modelos/Qwen3-TTS-12Hz-0.6B-CustomVoice-bf16\")\nresultados = lista(modelo.gerar_voz_personalizada(\n    Estou muito animado para te conhecer!\n    palestrante=\"Vivian\",\n    idioma=\"inglês\",\n    instruir=\"Muito feliz e animado.\",\n))\nse não houver resultados:\n    raise ValueError(\"Nenhum áudio gerado\")\nfinal = resultados[0]\ncaminho_saída = Path(__file__).parent / \"custom_voice.wav\"\nsf.write(str(output_path), final.audio, final.sample_rate)\nprint(f\"Áudio salvo em: {output_path}\")\n5. Clonagem de Voz\nfrom pathlib import Path\nimportar arquivo de som como sf\nfrom mlx_audio.tts.utils import load_model\nmodelo = carregar_modelo(\"./modelos/Qwen3-TTS-12Hz-0.6B-Base-bf16\")\nresultados = lista(modelo.gerar(\n    \"Uma demonstração unificada de conversão de texto em fala com três modos \npoderosos.\"\n    ref_audio=\"custom_voice.wav\",\n    Estou muito animado para te conhecer!\n))\nse não houver resultados:\n    raise ValueError(\"Nenhum áudio gerado\")\nfinal = resultados[0]\ncaminho_saída = Path(__file__).parent / \"voice_clone.wav\"\nsf.write(str(output_path), final.audio, final.sample_rate)\nprint(f\"Áudio salvo em: {output_path}\")\n6. Design de Voz\nfrom pathlib import Path\nimportar arquivo de som como sf\nfrom mlx_audio.tts.utils import load_model\nmodelo = carregar_modelo(\"./modelos/Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit\")\nresultados = lista(modelo.generate_voice_design(\n    \"Irmãozão, você voltou!\"\n    idioma=\"inglês\",\n    instruir=\"Uma voz feminina jovem e alegre, com tom agudo e enérgico.\"\n))\nse não houver resultados:\n    raise ValueError(\"Nenhum áudio gerado\")\nfinal = resultados[0]\ncaminho_saída = Path(__file__).parent / \"voice_design.wav\"\nsf.write(str(output_path), final.audio, final.sample_rate)\nprint(f\"Áudio salvo em: {output_path}\")\nResumo\nO Qwen3-TTS é um modelo TTS poderoso; se você precisa de síntese de voz, pode avaliar\nsuas capacidades. Além disso, o mlx-audio é outro projeto de código aberto notável. Baseado\nna estrutura MLX da Apple, ele permite que desenvolvedores executem facilmente diversos\nmodelos excelentes de TTS, STT e STS no Apple Silicon.",
+        "metadata": {
+          "category": "artifact",
+          "type": "pdf"
+        },
+        "sparse_score": 0.7576,
+        "dense_score": 0.0583,
+        "final_score": 1.8133
+      },
+      {
+        "evidence_id": "issue:expected_actual",
+        "source": "issue.behavior",
+        "content": "Expected: \nActual: ",
+        "metadata": {
+          "category": "issue"
+        },
+        "sparse_score": 0.0,
+        "dense_score": 0.0,
+        "final_score": -10.8673
+      },
+      {
+        "evidence_id": "policy:contradictions",
+        "source": "policy:contradictions",
+        "content": "If one artifact shows failure and another shows success for the same flow, the issue must be escalated for review.",
+        "metadata": {
+          "category": "policy"
+        },
+        "sparse_score": 0.0,
+        "dense_score": 0.0,
+        "final_score": -11.0614
+      },
+      {
+        "evidence_id": "policy:bug-ready",
+        "source": "policy:bug-ready",
+        "content": "A bug should include expected behavior, actual behavior, reproduction steps, environment, and affected version before it is marked ready for development.",
+        "metadata": {
+          "category": "policy"
+        },
+        "sparse_score": 0.25,
+        "dense_score": 0.0435,
+        "final_score": -11.0886
+      },
+      {
+        "evidence_id": "policy:financial-review",
+        "source": "policy:financial-review",
+        "content": "Any issue with payment, refund, chargeback, or ledger mismatch must require human review unless deterministic checks fully reconcile the evidence.",
+        "metadata": {
+          "category": "policy"
+        },
+        "sparse_score": 0.0,
+        "dense_score": 0.0,
+        "final_score": -11.1006
+      }
+    ]
+  },
+  "decision": {
+    "issue_key": "UPLOAD-0AD5F5",
+    "classification": "not_bug",
+    "is_bug": false,
+    "is_complete": false,
+    "ready_for_dev": false,
+    "missing_items": [
+      "actual_result_detail",
+      "affected_version_confirmation",
+      "environment",
+      "expected_result_detail",
+      "reproduction_steps"
+    ],
+    "evidence_used": [
+      "issue.summary",
+      "issue.description",
+      "issue.reproduction_steps",
+      "issue.expected_behavior",
+      "issue.actual_behavior",
+      "rule_evaluation.missing_items",
+      "attachment_facts"
+    ],
+    "contradictions": [
+      "The issue is designated as a 'Bug' type but lacks any descriptive content, such as a summary, description, or steps to reproduce, to substantiate this classification."
+    ],
+    "financial_impact_detected": false,
+    "confidence": 0.99,
+    "requires_human_review": false,
+    "provider": "gemini",
+    "model": "gemini-2.5-pro",
+    "rationale": "The Jira issue is classified as 'not_bug' because it completely lacks information describing a software defect. The summary is merely a filename, and the description, reproduction steps, expected behavior, and actual behavior fields are all empty. The content of the attached PDF is a blog article, not evidence of a bug. Due to the absence of these essential details, the issue is marked as incomplete and not ready for development. A contradiction exists as the issue is typed as a 'Bug' without any supporting evidence.",
+    "audit_path": null,
+    "generated_at": "2026-03-09T01:04:35.114499Z"
+  },
+  "runtime": {
+    "langgraph": true,
+    "settings": {
+      "enable_planner": false,
+      "enable_query_rewriter": false,
+      "enable_reflection_memory": false,
+      "enable_policy_loop": false,
+      "enable_temporal_graphrag": false,
+      "enable_human_interrupts": false,
+      "planner_mode": "step-plan",
+      "query_rewriter_mode": "metadata-aware",
+      "reflection_mode": "summary-log",
+      "policy_mode": "rule-gated",
+      "temporal_graphrag_mode": "versioned-graph",
+      "distiller_mode": "simple"
+    },
+    "agentic_state": {
+      "plan_queries": [
+        "UPLOAD-0AD5F5 Upload: A alternativa gratuita e de código aberto ao ElevenLabs finalmente chegou _ por Bytefer _ fevereiro de 2026 _ Medium.pdf raise ValueError(\"Nenhum áudio gerado\") raise ValueError(\"Nenhum áudio gerado\")"
+      ],
+      "query_index": 0,
+      "current_query": "UPLOAD-0AD5F5 Upload: A alternativa gratuita e de código aberto ao ElevenLabs finalmente chegou _ por Bytefer _ fevereiro de 2026 _ Medium.pdf raise ValueError(\"Nenhum áudio gerado\") raise ValueError(\"Nenhum áudio gerado\")",
+      "iteration_count": 1,
+      "reflection_notes": [],
+      "policy_action": "judge",
+      "human_review": null
+    },
+    "trace": [
+      {
+        "node": "normalize",
+        "started_at": "2026-03-09T01:04:12.600647+00:00",
+        "finished_at": "2026-03-09T01:04:12.600916+00:00",
+        "duration_ms": 0.26,
+        "details": {
+          "issue_key": "UPLOAD-0AD5F5"
+        }
+      },
+      {
+        "node": "rules",
+        "started_at": "2026-03-09T01:04:12.605116+00:00",
+        "finished_at": "2026-03-09T01:04:12.605689+00:00",
+        "duration_ms": 0.57,
+        "details": {
+          "missing_items": 5,
+          "contradictions": 0,
+          "requires_human_review": false
+        }
+      },
+      {
+        "node": "plan",
+        "started_at": "2026-03-09T01:04:12.608830+00:00",
+        "finished_at": "2026-03-09T01:04:12.609339+00:00",
+        "duration_ms": 0.51,
+        "details": {
+          "query_count": 1,
+          "mode": "step-plan"
+        }
+      },
+      {
+        "node": "rewrite",
+        "started_at": "2026-03-09T01:04:12.612377+00:00",
+        "finished_at": "2026-03-09T01:04:12.612727+00:00",
+        "duration_ms": 0.35,
+        "details": {
+          "query_index": 0,
+          "mode": "metadata-aware"
+        }
+      },
+      {
+        "node": "retrieve",
+        "started_at": "2026-03-09T01:04:12.616244+00:00",
+        "finished_at": "2026-03-09T01:04:13.344975+00:00",
+        "duration_ms": 728.75,
+        "details": {
+          "retrieved_now": 6,
+          "retrieved_total": 6,
+          "categories": [
+            "artifact",
+            "issue",
+            "policy"
+          ]
+        }
+      },
+      {
+        "node": "distill",
+        "started_at": "2026-03-09T01:04:13.346233+00:00",
+        "finished_at": "2026-03-09T01:04:13.349803+00:00",
+        "duration_ms": 3.57,
+        "details": {
+          "key_facts": 5,
+          "quotes": 3,
+          "mode": "simple"
+        }
+      },
+      {
+        "node": "reflect",
+        "started_at": "2026-03-09T01:04:13.350724+00:00",
+        "finished_at": "2026-03-09T01:04:13.350747+00:00",
+        "duration_ms": 0.01,
+        "details": {
+          "enabled": false
+        }
+      },
+      {
+        "node": "policy",
+        "started_at": "2026-03-09T01:04:13.351314+00:00",
+        "finished_at": "2026-03-09T01:04:13.351374+00:00",
+        "duration_ms": 0.06,
+        "details": {
+          "action": "judge",
+          "iteration": 1
+        }
+      },
+      {
+        "node": "judge",
+        "started_at": "2026-03-09T01:04:13.352383+00:00",
+        "finished_at": "2026-03-09T01:04:35.115617+00:00",
+        "duration_ms": 21763.24,
+        "details": {
+          "classification": "not_bug",
+          "confidence": 0.99,
+          "provider": "gemini"
+        }
+      }
+    ],
+    "trace_grades": {
+      "trace_completeness": 1.0,
+      "planner_quality_proxy": 1.0,
+      "retrieval_diversity_proxy": 0.75,
+      "loop_efficiency_proxy": 1.0
+    }
+  }
+}

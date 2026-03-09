@@ -10,8 +10,15 @@ type UpstreamResult = {
   headers: Headers;
   status: number;
   statusText: string;
-  text: string;
+  body: ArrayBuffer;
+  text?: string;
 };
+
+const textDecoder = new TextDecoder();
+
+function shouldInspectText(pathname: string): boolean {
+  return pathname === "/api/v1/prompts" || pathname === "/api/v1/prompts/execute" || pathname.startsWith("/api/v1/run-flow");
+}
 
 function shouldFallback(pathname: string, result: UpstreamResult): boolean {
   if (backendCandidates.length < 2 || result.base !== backendCandidates[0]) {
@@ -19,11 +26,11 @@ function shouldFallback(pathname: string, result: UpstreamResult): boolean {
   }
 
   if (pathname === "/api/v1/prompts") {
-    return result.text.trim() === "[]";
+    return (result.text ?? "").trim() === "[]";
   }
 
   if (pathname === "/api/v1/prompts/execute") {
-    return result.status >= 500 || result.text.includes("Prompt 'article_analysis' not found");
+    return result.status >= 500 || (result.text ?? "").includes("Prompt 'article_analysis' not found");
   }
 
   if (pathname.startsWith("/api/v1/run-flow")) {
@@ -32,7 +39,7 @@ function shouldFallback(pathname: string, result: UpstreamResult): boolean {
     }
 
     try {
-      const payload = JSON.parse(result.text) as Record<string, unknown>;
+      const payload = JSON.parse(result.text ?? "") as Record<string, unknown>;
       return !("flow_mode" in payload);
     } catch {
       return true;
@@ -54,38 +61,57 @@ async function proxy(request: NextRequest, { params }: { params: Promise<{ path:
     redirect: "manual",
   };
 
+  const requestBody = !["GET", "HEAD"].includes(request.method) ? Buffer.from(await request.arrayBuffer()) : undefined;
   if (!["GET", "HEAD"].includes(request.method)) {
-    init.body = await request.arrayBuffer();
+    init.body = requestBody;
   }
 
   const pathname = `/${path.join("/")}`;
+  const inspectText = shouldInspectText(pathname);
 
   const fetchUpstream = async (base: string): Promise<UpstreamResult> => {
     const target = new URL(`${base}${pathname}`);
     target.search = request.nextUrl.search;
     const upstream = await fetch(target, init);
+    const body = await upstream.arrayBuffer();
     return {
       base,
       headers: new Headers(upstream.headers),
       status: upstream.status,
       statusText: upstream.statusText,
-      text: await upstream.text(),
+      body,
+      text: inspectText ? textDecoder.decode(body) : undefined,
     };
   };
 
-  let upstreamResult = await fetchUpstream(backendCandidates[0]);
-  if (shouldFallback(pathname, upstreamResult)) {
-    for (const candidate of backendCandidates.slice(1)) {
-      try {
-        const fallbackResult = await fetchUpstream(candidate);
-        if (fallbackResult.status < 500) {
-          upstreamResult = fallbackResult;
-          break;
-        }
-      } catch {
-        // Keep the primary response when the fallback backend is unavailable.
+  let upstreamResult: UpstreamResult | null = null;
+  let lastError: unknown = null;
+
+  for (const [index, candidate] of backendCandidates.entries()) {
+    try {
+      const result = await fetchUpstream(candidate);
+      upstreamResult = result;
+
+      if (index === 0 && shouldFallback(pathname, result)) {
+        continue;
       }
+
+      break;
+    } catch (error) {
+      lastError = error;
     }
+  }
+
+  if (!upstreamResult) {
+    const message = lastError instanceof Error ? lastError.message : "Unable to reach backend";
+    return Response.json(
+      {
+        detail: "Failed to reach the validation backend.",
+        error: message,
+        backends: backendCandidates,
+      },
+      { status: 502 },
+    );
   }
 
   const responseHeaders = upstreamResult.headers;
@@ -93,7 +119,7 @@ async function proxy(request: NextRequest, { params }: { params: Promise<{ path:
   responseHeaders.delete("transfer-encoding");
   responseHeaders.delete("content-length");
 
-  return new Response(upstreamResult.text, {
+  return new Response(upstreamResult.body, {
     status: upstreamResult.status,
     statusText: upstreamResult.statusText,
     headers: responseHeaders,

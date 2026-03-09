@@ -1,0 +1,331 @@
+{
+  "issue": {
+    "issue_key": "PAY-0001",
+    "summary": "teste",
+    "description": "",
+    "comments": [],
+    "acceptance_criteria": [],
+    "reproduction_steps": [],
+    "expected_behavior": "",
+    "actual_behavior": "",
+    "priority": null,
+    "issue_type": "Bug",
+    "status": null,
+    "project": null,
+    "component": null,
+    "service": null,
+    "environment": null,
+    "affected_version": null,
+    "labels": [],
+    "issue_links": [],
+    "attachments": [],
+    "changelog": [],
+    "collected_at": "2026-03-09T00:14:08.813126Z"
+  },
+  "attachment_facts": {
+    "issue_key": "PAY-0001",
+    "artifacts": [],
+    "contradictions": [],
+    "missing_information": []
+  },
+  "rule_evaluation": {
+    "missing_items": [
+      "actual_result_detail",
+      "affected_version_confirmation",
+      "environment",
+      "expected_result_detail",
+      "reproduction_steps"
+    ],
+    "contradictions": [],
+    "financial_impact_detected": false,
+    "requires_human_review": false,
+    "results": []
+  },
+  "retrieved": [
+    {
+      "evidence_id": "issue:summary",
+      "source": "issue.summary",
+      "content": "PAY-0001 teste ",
+      "metadata": {
+        "category": "issue"
+      },
+      "sparse_score": 1.0,
+      "dense_score": 1.0,
+      "final_score": 1.24
+    },
+    {
+      "evidence_id": "policy:bug-ready",
+      "source": "policy:bug-ready",
+      "content": "A bug should include expected behavior, actual behavior, reproduction steps, environment, and affected version before it is marked ready for development.",
+      "metadata": {
+        "category": "policy"
+      },
+      "sparse_score": 0.25,
+      "dense_score": 0.0435,
+      "final_score": 0.1674
+    },
+    {
+      "evidence_id": "issue:expected_actual",
+      "source": "issue.behavior",
+      "content": "Expected: \nActual: ",
+      "metadata": {
+        "category": "issue"
+      },
+      "sparse_score": 0.0,
+      "dense_score": 0.0,
+      "final_score": 0.0
+    },
+    {
+      "evidence_id": "policy:financial-review",
+      "source": "policy:financial-review",
+      "content": "Any issue with payment, refund, chargeback, or ledger mismatch must require human review unless deterministic checks fully reconcile the evidence.",
+      "metadata": {
+        "category": "policy"
+      },
+      "sparse_score": 0.0,
+      "dense_score": 0.0,
+      "final_score": 0.0
+    },
+    {
+      "evidence_id": "policy:contradictions",
+      "source": "policy:contradictions",
+      "content": "If one artifact shows failure and another shows success for the same flow, the issue must be escalated for review.",
+      "metadata": {
+        "category": "policy"
+      },
+      "sparse_score": 0.0,
+      "dense_score": 0.0,
+      "final_score": 0.0
+    }
+  ],
+  "distilled": {
+    "key_facts": [
+      "issue.summary: PAY-0001 teste",
+      "policy:bug-ready: A bug should include expected behavior, actual behavior, reproduction steps, environment, and affected version before it is marked ready for development.",
+      "issue.behavior: Expected: \nActual:",
+      "policy:financial-review: Any issue with payment, refund, chargeback, or ledger mismatch must require human review unless deterministic checks fully reconcile the evidence.",
+      "policy:contradictions: If one artifact shows failure and another shows success for the same flow, the issue must be escalated for review."
+    ],
+    "preserved_quotes": [
+      "PAY-0001"
+    ],
+    "evidence": [
+      {
+        "evidence_id": "issue:summary",
+        "source": "issue.summary",
+        "content": "PAY-0001 teste ",
+        "metadata": {
+          "category": "issue"
+        },
+        "sparse_score": 1.0,
+        "dense_score": 1.0,
+        "final_score": 1.24
+      },
+      {
+        "evidence_id": "policy:bug-ready",
+        "source": "policy:bug-ready",
+        "content": "A bug should include expected behavior, actual behavior, reproduction steps, environment, and affected version before it is marked ready for development.",
+        "metadata": {
+          "category": "policy"
+        },
+        "sparse_score": 0.25,
+        "dense_score": 0.0435,
+        "final_score": 0.1674
+      },
+      {
+        "evidence_id": "issue:expected_actual",
+        "source": "issue.behavior",
+        "content": "Expected: \nActual: ",
+        "metadata": {
+          "category": "issue"
+        },
+        "sparse_score": 0.0,
+        "dense_score": 0.0,
+        "final_score": 0.0
+      },
+      {
+        "evidence_id": "policy:financial-review",
+        "source": "policy:financial-review",
+        "content": "Any issue with payment, refund, chargeback, or ledger mismatch must require human review unless deterministic checks fully reconcile the evidence.",
+        "metadata": {
+          "category": "policy"
+        },
+        "sparse_score": 0.0,
+        "dense_score": 0.0,
+        "final_score": 0.0
+      },
+      {
+        "evidence_id": "policy:contradictions",
+        "source": "policy:contradictions",
+        "content": "If one artifact shows failure and another shows success for the same flow, the issue must be escalated for review.",
+        "metadata": {
+          "category": "policy"
+        },
+        "sparse_score": 0.0,
+        "dense_score": 0.0,
+        "final_score": 0.0
+      }
+    ]
+  },
+  "decision": {
+    "issue_key": "PAY-0001",
+    "classification": "bug",
+    "is_bug": true,
+    "is_complete": false,
+    "ready_for_dev": false,
+    "missing_items": [
+      "actual_result_detail",
+      "affected_version_confirmation",
+      "environment",
+      "expected_result_detail",
+      "reproduction_steps"
+    ],
+    "evidence_used": [
+      "issue.summary",
+      "policy:bug-ready",
+      "issue.behavior",
+      "policy:financial-review",
+      "policy:contradictions"
+    ],
+    "contradictions": [],
+    "financial_impact_detected": false,
+    "confidence": 0.5700000000000001,
+    "requires_human_review": false,
+    "provider": "mock",
+    "model": "mock-judge-v1",
+    "rationale": "Missing required fields: actual_result_detail, affected_version_confirmation, environment, expected_result_detail, reproduction_steps",
+    "audit_path": null,
+    "generated_at": "2026-03-09T00:14:08.951510Z"
+  },
+  "runtime": {
+    "langgraph": true,
+    "settings": {
+      "enable_planner": false,
+      "enable_query_rewriter": false,
+      "enable_reflection_memory": false,
+      "enable_policy_loop": false,
+      "enable_temporal_graphrag": false,
+      "enable_human_interrupts": false,
+      "planner_mode": "tool-aware",
+      "query_rewriter_mode": "metadata-aware",
+      "reflection_mode": "evidence-ledger",
+      "policy_mode": "rule-gated",
+      "temporal_graphrag_mode": "versioned-graph",
+      "distiller_mode": "simple"
+    },
+    "agentic_state": {
+      "plan_queries": [
+        "PAY-0001 teste"
+      ],
+      "query_index": 0,
+      "current_query": "PAY-0001 teste",
+      "iteration_count": 1,
+      "reflection_notes": [],
+      "policy_action": "judge",
+      "human_review": null
+    },
+    "trace": [
+      {
+        "node": "normalize",
+        "started_at": "2026-03-09T00:14:08.918425+00:00",
+        "finished_at": "2026-03-09T00:14:08.918651+00:00",
+        "duration_ms": 0.22,
+        "details": {
+          "issue_key": "PAY-0001"
+        }
+      },
+      {
+        "node": "rules",
+        "started_at": "2026-03-09T00:14:08.928058+00:00",
+        "finished_at": "2026-03-09T00:14:08.928460+00:00",
+        "duration_ms": 0.4,
+        "details": {
+          "missing_items": 5,
+          "contradictions": 0,
+          "requires_human_review": false
+        }
+      },
+      {
+        "node": "plan",
+        "started_at": "2026-03-09T00:14:08.931920+00:00",
+        "finished_at": "2026-03-09T00:14:08.931999+00:00",
+        "duration_ms": 0.07,
+        "details": {
+          "query_count": 1,
+          "mode": "tool-aware"
+        }
+      },
+      {
+        "node": "rewrite",
+        "started_at": "2026-03-09T00:14:08.933311+00:00",
+        "finished_at": "2026-03-09T00:14:08.933366+00:00",
+        "duration_ms": 0.05,
+        "details": {
+          "query_index": 0,
+          "mode": "metadata-aware"
+        }
+      },
+      {
+        "node": "retrieve",
+        "started_at": "2026-03-09T00:14:08.936949+00:00",
+        "finished_at": "2026-03-09T00:14:08.938025+00:00",
+        "duration_ms": 1.09,
+        "details": {
+          "retrieved_now": 5,
+          "retrieved_total": 5,
+          "categories": [
+            "issue",
+            "policy"
+          ]
+        }
+      },
+      {
+        "node": "distill",
+        "started_at": "2026-03-09T00:14:08.940549+00:00",
+        "finished_at": "2026-03-09T00:14:08.941549+00:00",
+        "duration_ms": 0.96,
+        "details": {
+          "key_facts": 5,
+          "quotes": 1,
+          "mode": "simple"
+        }
+      },
+      {
+        "node": "reflect",
+        "started_at": "2026-03-09T00:14:08.945186+00:00",
+        "finished_at": "2026-03-09T00:14:08.945215+00:00",
+        "duration_ms": 0.02,
+        "details": {
+          "enabled": false
+        }
+      },
+      {
+        "node": "policy",
+        "started_at": "2026-03-09T00:14:08.946865+00:00",
+        "finished_at": "2026-03-09T00:14:08.946935+00:00",
+        "duration_ms": 0.07,
+        "details": {
+          "action": "judge",
+          "iteration": 1
+        }
+      },
+      {
+        "node": "judge",
+        "started_at": "2026-03-09T00:14:08.950923+00:00",
+        "finished_at": "2026-03-09T00:14:08.951551+00:00",
+        "duration_ms": 0.63,
+        "details": {
+          "classification": "bug",
+          "confidence": 0.5700000000000001,
+          "provider": "mock"
+        }
+      }
+    ],
+    "trace_grades": {
+      "trace_completeness": 1.0,
+      "planner_quality_proxy": 1.0,
+      "retrieval_diversity_proxy": 0.5,
+      "loop_efficiency_proxy": 1.0
+    }
+  }
+}

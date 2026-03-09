@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from collections.abc import Iterable
 
 from jira_issue_rag.core.config import Settings
 from jira_issue_rag.services.rerank import Reranker
@@ -67,15 +68,9 @@ class HybridRetriever:
         query_text_override: str | None = None,
     ) -> list[RetrievedEvidence]:
         query = (query_text_override or self.build_query(issue, attachment_facts, rules)).strip()
-        query_tokens = self._tokenize(query)
+        query_variants = self._build_query_variants(query, issue, rules)
         documents = self._build_documents(issue, attachment_facts)
-        # Qdrant: cascade (quantized two-pass) or regular hybrid search
-        if self.qdrant and self.settings and self.settings.enable_cascade_retrieval:  # type: ignore[attr-defined]
-            external_results = self.qdrant.cascade_search(query, issue, limit=top_k)
-        elif self.qdrant:
-            external_results = self.qdrant.search(query, issue, limit=top_k)
-        else:
-            external_results = []
+        external_results = self._search_external(query_variants, issue, top_k)
         # Neo4j GraphRAG neighbourhood results
         graph_results: list[RetrievedEvidence] = []
         if self.neo4j and self.neo4j.is_available():
@@ -85,9 +80,17 @@ class HybridRetriever:
         ranked: list[RetrievedEvidence] = []
         for evidence_id, source, content, metadata in documents:
             doc_tokens = self._tokenize(content)
-            sparse_score = self._sparse_score(query_tokens, doc_tokens)
-            dense_score = self._dense_score(query_tokens, doc_tokens)
-            final_score = 0.6 * sparse_score + 0.4 * dense_score
+            variant_scores = []
+            for variant in query_variants:
+                variant_tokens = self._tokenize(variant)
+                sparse_score = self._sparse_score(variant_tokens, doc_tokens)
+                dense_score = self._dense_score(variant_tokens, doc_tokens)
+                variant_scores.append((sparse_score, dense_score, 0.6 * sparse_score + 0.4 * dense_score))
+            sparse_score = max((score[0] for score in variant_scores), default=0.0)
+            dense_score = max((score[1] for score in variant_scores), default=0.0)
+            final_score = max((score[2] for score in variant_scores), default=0.0)
+            if len([score for score in variant_scores if score[2] > 0.12]) > 1:
+                final_score += 0.04
             if issue.issue_key in content:
                 final_score += 0.20
             if rules.financial_impact_detected and metadata.get("category") in {"artifact", "policy"}:
@@ -106,9 +109,6 @@ class HybridRetriever:
 
         for external in external_results:
             reranked = external.model_copy()
-            doc_tokens = self._tokenize(reranked.content)
-            reranked.dense_score = round(self._dense_score(query_tokens, doc_tokens), 4)
-            reranked.final_score = round(max(reranked.final_score, 0.65 * reranked.sparse_score + 0.35 * reranked.dense_score), 4)
             ranked.append(reranked)
 
         for graph_ev in graph_results:
@@ -118,9 +118,9 @@ class HybridRetriever:
             ranked.append(temporal_ev)
 
         if self.reranker is None:
-            return sorted(ranked, key=lambda item: item.final_score, reverse=True)[:top_k]
+            return self._select_diverse_top_k(sorted(ranked, key=lambda item: item.final_score, reverse=True), top_k)
         reranked = self.reranker.rerank(query, ranked)
-        return reranked[:top_k]
+        return self._select_diverse_top_k(reranked, top_k)
 
     def distill(self, retrieved_evidence: list[RetrievedEvidence], rules: RuleEvaluation) -> DistilledContext:
         key_facts: list[str] = []
@@ -175,6 +175,104 @@ class HybridRetriever:
         for evidence_id, content in POLICY_SNIPPETS:
             documents.append((evidence_id, evidence_id, content, {"category": "policy"}))
         return documents
+
+    def _search_external(
+        self,
+        query_variants: list[str],
+        issue: IssueCanonical,
+        top_k: int,
+    ) -> list[RetrievedEvidence]:
+        if not self.qdrant:
+            return []
+
+        fused: dict[str, RetrievedEvidence] = {}
+        reciprocal_scores: dict[str, float] = {}
+        for variant in query_variants:
+            if self.settings and self.settings.enable_cascade_retrieval:  # type: ignore[attr-defined]
+                results = self.qdrant.cascade_search(variant, issue, limit=top_k)
+            else:
+                results = self.qdrant.search(variant, issue, limit=top_k)
+            for rank, item in enumerate(results, start=1):
+                previous = fused.get(item.evidence_id)
+                reciprocal_scores[item.evidence_id] = reciprocal_scores.get(item.evidence_id, 0.0) + (1.0 / (rank + 50))
+                if previous is None or item.final_score > previous.final_score:
+                    fused[item.evidence_id] = item.model_copy(deep=True)
+
+        ordered: list[RetrievedEvidence] = []
+        for evidence_id, item in fused.items():
+            tuned = item.model_copy(deep=True)
+            tuned.final_score = round(max(tuned.final_score, reciprocal_scores.get(evidence_id, 0.0)), 4)
+            ordered.append(tuned)
+        return sorted(ordered, key=lambda item: item.final_score, reverse=True)[: max(top_k * 2, top_k)]
+
+    def _build_query_variants(
+        self,
+        query: str,
+        issue: IssueCanonical,
+        rules: RuleEvaluation,
+    ) -> list[str]:
+        variants = [query]
+        if self.settings and self.settings.enable_query_fusion:
+            metadata_variant = " ".join(
+                token
+                for token in (
+                    issue.issue_key,
+                    issue.component,
+                    issue.service,
+                    issue.environment,
+                    issue.affected_version,
+                    *issue.labels[:3],
+                )
+                if token
+            ).strip()
+            if metadata_variant:
+                variants.append(metadata_variant)
+            if rules.contradictions:
+                variants.append(f"{issue.issue_key} {' '.join(rules.contradictions[:2])}")
+            if rules.missing_items:
+                variants.append(f"{issue.issue_key} {' '.join(rules.missing_items[:3])}")
+
+        unique_variants: list[str] = []
+        seen: set[str] = set()
+        limit = max(1, self.settings.retrieval_query_variants_limit) if self.settings else 3
+        for variant in variants:
+            normalized = " ".join(variant.split())
+            if not normalized:
+                continue
+            lowered = normalized.lower()
+            if lowered in seen:
+                continue
+            seen.add(lowered)
+            unique_variants.append(normalized)
+            if len(unique_variants) >= limit:
+                break
+        return unique_variants or [query]
+
+    @staticmethod
+    def _select_diverse_top_k(items: Iterable[RetrievedEvidence], top_k: int) -> list[RetrievedEvidence]:
+        items = list(items)
+        selected: list[RetrievedEvidence] = []
+        used_sources: set[str] = set()
+        used_categories: set[str] = set()
+        for item in items:
+            category = str(item.metadata.get("category", "unknown"))
+            duplicate_source = item.source in used_sources
+            duplicate_category = category in used_categories
+            if len(selected) < top_k and (not duplicate_source or not duplicate_category):
+                selected.append(item)
+                used_sources.add(item.source)
+                used_categories.add(category)
+                continue
+            if len(selected) >= top_k:
+                break
+        if len(selected) < top_k:
+            for item in items:
+                if item in selected:
+                    continue
+                selected.append(item)
+                if len(selected) >= top_k:
+                    break
+        return selected[:top_k]
 
     @staticmethod
     def _build_temporal_results(issue: IssueCanonical) -> list[RetrievedEvidence]:

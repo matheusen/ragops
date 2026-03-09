@@ -35,8 +35,12 @@ class Settings(BaseSettings):
     enable_query_rewriter: bool = Field(default=False, alias="ENABLE_QUERY_REWRITER")
     enable_reflection_memory: bool = Field(default=False, alias="ENABLE_REFLECTION_MEMORY")
     enable_policy_loop: bool = Field(default=False, alias="ENABLE_POLICY_LOOP")
+    enable_human_interrupts: bool = Field(default=False, alias="ENABLE_HUMAN_INTERRUPTS")
+    enable_query_fusion: bool = Field(default=True, alias="ENABLE_QUERY_FUSION")
+    enable_trace_grading: bool = Field(default=True, alias="ENABLE_TRACE_GRADING")
     second_opinion_confidence_threshold: float = Field(default=0.65, alias="SECOND_OPINION_CONFIDENCE_THRESHOLD")
     max_planning_iterations: int = Field(default=4, alias="MAX_PLANNING_ITERATIONS")
+    retrieval_query_variants_limit: int = Field(default=3, alias="RETRIEVAL_QUERY_VARIANTS_LIMIT")
 
     primary_model: str = Field(default="mock-judge-v1", alias="PRIMARY_MODEL")
     openai_model: str = Field(default="gpt-5-mini", alias="OPENAI_MODEL")
@@ -93,11 +97,14 @@ class Settings(BaseSettings):
     # Provider used for the compression LLM in refrag mode — defaults to the primary provider.
     # Set to a cheaper/faster model (e.g. "openai" with gpt-5-mini) to keep latency low.
     distiller_provider: str = Field(default="", alias="DISTILLER_PROVIDER")
+    enable_docling_pdf_parser: bool = Field(default=False, alias="ENABLE_DOCLING_PDF_PARSER")
+    enable_tesseract_pdf_ocr: bool = Field(default=True, alias="ENABLE_TESSERACT_PDF_OCR")
 
     # DSPy optimization lab (item 11)
     dspy_lab_dir: Path = Field(default=PROJECT_ROOT / "data/dspy_lab", alias="DSPY_LAB_DIR")
 
     audit_dir: Path = Field(default=PROJECT_ROOT / "data/audit", alias="AUDIT_DIR")
+    checkpoint_dir: Path = Field(default=PROJECT_ROOT / "data/checkpoints", alias="CHECKPOINT_DIR")
     eval_reports_dir: Path = Field(default=PROJECT_ROOT / "data/eval_reports", alias="EVAL_REPORTS_DIR")
     golden_dataset_path: Path = Field(default=PROJECT_ROOT / "examples/golden_dataset.json", alias="GOLDEN_DATASET_PATH")
     prompts_dir: Path = Field(default=PROJECT_ROOT / "prompts", alias="PROMPTS_DIR")
@@ -148,6 +155,7 @@ def get_settings() -> Settings:
     settings = Settings()
     settings.enforce_runtime_policy()
     settings.audit_dir.mkdir(parents=True, exist_ok=True)
+    settings.checkpoint_dir.mkdir(parents=True, exist_ok=True)
     settings.staging_dir.mkdir(parents=True, exist_ok=True)
     settings.eval_reports_dir.mkdir(parents=True, exist_ok=True)
     settings.prompts_dir.mkdir(parents=True, exist_ok=True)

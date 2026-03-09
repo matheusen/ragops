@@ -69,6 +69,8 @@ Por padrao o projeto sobe em modo confidencial: `CONFIDENTIALITY_MODE=true`. Nes
 
 Se a exigencia for estrita, mantenha `DEFAULT_PROVIDER=mock` e deixe os tres flags acima como `false`.
 
+Para uploads de PDF no Windows, o caminho mais estavel e manter `ENABLE_DOCLING_PDF_PARSER=false` e deixar o backend usar `pypdf` primeiro, com OCR Tesseract como fallback. Isso evita alguns crashes do stack `Docling`/`RapidOCR` que aparecem no dashboard como `socket hang up` ou `ECONNRESET`.
+
 ## Rodar API
 
 Execute a partir da raiz do repositório com o venv ativo:
@@ -76,7 +78,25 @@ Execute a partir da raiz do repositório com o venv ativo:
 ```powershell
 .\.venv\Scripts\Activate.ps1
 python -m uvicorn jira_issue_rag.main:app --reload --host 0.0.0.0 --port 8000
+C:\Users\mengl\Documents\GitHub\ragops\.venv\Scripts\python.exe -m uvicorn jira_issue_rag.main:app --reload --host 0.0.0.0 --port 8000
 
+```Check status with docker compose ps
+Pull an Ollama model with docker exec -it ragops-ollama ollama pull llama3.1:8b
+Open Qdrant at http://localhost:6333/dashboard and Neo4j at http://localhost:7474
+
+curl.exe -i -sS -X POST "http://localhost:8000/api/v1/validate/upload" `
+  -F "issue_key=PAY-1421" `
+  -F "summary=upload test" `
+  -F "description=test" `
+  -F "issue_type=Bug" `
+  -F "provider=mock" `
+  -F "files=@examples/input/PAY-1421/payment_logs.txt"
+
+
+Se o PowerShell ainda estiver a usar outro Python instalado na máquina, rode directamente com o interpreter da venv:
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn jira_issue_rag.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 A API sobe em `http://localhost:8000`. Documentacao interativa disponivel em:

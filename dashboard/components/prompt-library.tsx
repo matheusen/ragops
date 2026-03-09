@@ -81,12 +81,12 @@ export function PromptLibrary({ prompts }: { prompts: PromptTemplate[] }) {
           <div className="pl__view-toggle">
             <button
               type="button"
-              className={`pl__view-btn ${viewMode === "canvas" ? "pl__view-btn--active" : ""}`}
+              className="pl__view-btn pl__view-btn--active"
               onClick={() => setViewMode("canvas")}
             >⊞ Canvas</button>
             <button
               type="button"
-              className={`pl__view-btn ${viewMode === "list" ? "pl__view-btn--active" : ""}`}
+              className="pl__view-btn"
               onClick={() => setViewMode("list")}
             >☰ Lista</button>
           </div>
@@ -123,12 +123,12 @@ export function PromptLibrary({ prompts }: { prompts: PromptTemplate[] }) {
         <div className="pl__view-toggle">
           <button
             type="button"
-            className={`pl__view-btn ${viewMode === "canvas" ? "pl__view-btn--active" : ""}`}
+            className="pl__view-btn"
             onClick={() => setViewMode("canvas")}
           >⊞ Canvas</button>
           <button
             type="button"
-            className={`pl__view-btn ${viewMode === "list" ? "pl__view-btn--active" : ""}`}
+            className="pl__view-btn pl__view-btn--active"
             onClick={() => setViewMode("list")}
           >☰ Lista</button>
         </div>

@@ -1,0 +1,338 @@
+{
+  "issue": {
+    "issue_key": "PAY-6100",
+    "summary": "Ledger mismatch on export",
+    "description": "wrong amount on csv",
+    "comments": [],
+    "acceptance_criteria": [],
+    "reproduction_steps": [],
+    "expected_behavior": "",
+    "actual_behavior": "",
+    "priority": null,
+    "issue_type": "Bug",
+    "status": null,
+    "project": null,
+    "component": null,
+    "service": null,
+    "environment": null,
+    "affected_version": null,
+    "labels": [],
+    "issue_links": [],
+    "attachments": [],
+    "changelog": [],
+    "collected_at": "2026-03-08T23:51:46.780620Z"
+  },
+  "attachment_facts": {
+    "issue_key": "PAY-6100",
+    "artifacts": [],
+    "contradictions": [],
+    "missing_information": []
+  },
+  "rule_evaluation": {
+    "missing_items": [
+      "actual_result_detail",
+      "affected_version_confirmation",
+      "environment",
+      "expected_result_detail",
+      "reproduction_steps"
+    ],
+    "contradictions": [],
+    "financial_impact_detected": true,
+    "requires_human_review": true,
+    "results": [
+      {
+        "rule_name": "financial_impact_detected",
+        "severity": "critical",
+        "message": "Issue contains financial language or monetary evidence",
+        "metadata": {}
+      }
+    ]
+  },
+  "retrieved": [
+    {
+      "evidence_id": "issue:summary",
+      "source": "issue.summary",
+      "content": "PAY-6100 Ledger mismatch on export wrong amount on csv",
+      "metadata": {
+        "category": "issue"
+      },
+      "sparse_score": 1.0,
+      "dense_score": 0.625,
+      "final_score": 1.09
+    },
+    {
+      "evidence_id": "policy:financial-review",
+      "source": "policy:financial-review",
+      "content": "Any issue with payment, refund, chargeback, or ledger mismatch must require human review unless deterministic checks fully reconcile the evidence.",
+      "metadata": {
+        "category": "policy"
+      },
+      "sparse_score": 0.4,
+      "dense_score": 0.087,
+      "final_score": 0.3748
+    },
+    {
+      "evidence_id": "policy:bug-ready",
+      "source": "policy:bug-ready",
+      "content": "A bug should include expected behavior, actual behavior, reproduction steps, environment, and affected version before it is marked ready for development.",
+      "metadata": {
+        "category": "policy"
+      },
+      "sparse_score": 0.25,
+      "dense_score": 0.0435,
+      "final_score": 0.2674
+    },
+    {
+      "evidence_id": "policy:contradictions",
+      "source": "policy:contradictions",
+      "content": "If one artifact shows failure and another shows success for the same flow, the issue must be escalated for review.",
+      "metadata": {
+        "category": "policy"
+      },
+      "sparse_score": 0.0,
+      "dense_score": 0.0,
+      "final_score": 0.1
+    },
+    {
+      "evidence_id": "issue:expected_actual",
+      "source": "issue.behavior",
+      "content": "Expected: \nActual: ",
+      "metadata": {
+        "category": "issue"
+      },
+      "sparse_score": 0.0,
+      "dense_score": 0.0,
+      "final_score": 0.0
+    }
+  ],
+  "distilled": {
+    "key_facts": [
+      "issue.summary: PAY-6100 Ledger mismatch on export wrong amount on csv",
+      "policy:financial-review: Any issue with payment, refund, chargeback, or ledger mismatch must require human review unless deterministic checks fully reconcile the evidence.",
+      "policy:bug-ready: A bug should include expected behavior, actual behavior, reproduction steps, environment, and affected version before it is marked ready for development.",
+      "policy:contradictions: If one artifact shows failure and another shows success for the same flow, the issue must be escalated for review.",
+      "issue.behavior: Expected: \nActual:"
+    ],
+    "preserved_quotes": [
+      "PAY-6100"
+    ],
+    "evidence": [
+      {
+        "evidence_id": "issue:summary",
+        "source": "issue.summary",
+        "content": "PAY-6100 Ledger mismatch on export wrong amount on csv",
+        "metadata": {
+          "category": "issue"
+        },
+        "sparse_score": 1.0,
+        "dense_score": 0.625,
+        "final_score": 1.09
+      },
+      {
+        "evidence_id": "policy:financial-review",
+        "source": "policy:financial-review",
+        "content": "Any issue with payment, refund, chargeback, or ledger mismatch must require human review unless deterministic checks fully reconcile the evidence.",
+        "metadata": {
+          "category": "policy"
+        },
+        "sparse_score": 0.4,
+        "dense_score": 0.087,
+        "final_score": 0.3748
+      },
+      {
+        "evidence_id": "policy:bug-ready",
+        "source": "policy:bug-ready",
+        "content": "A bug should include expected behavior, actual behavior, reproduction steps, environment, and affected version before it is marked ready for development.",
+        "metadata": {
+          "category": "policy"
+        },
+        "sparse_score": 0.25,
+        "dense_score": 0.0435,
+        "final_score": 0.2674
+      },
+      {
+        "evidence_id": "policy:contradictions",
+        "source": "policy:contradictions",
+        "content": "If one artifact shows failure and another shows success for the same flow, the issue must be escalated for review.",
+        "metadata": {
+          "category": "policy"
+        },
+        "sparse_score": 0.0,
+        "dense_score": 0.0,
+        "final_score": 0.1
+      },
+      {
+        "evidence_id": "issue:expected_actual",
+        "source": "issue.behavior",
+        "content": "Expected: \nActual: ",
+        "metadata": {
+          "category": "issue"
+        },
+        "sparse_score": 0.0,
+        "dense_score": 0.0,
+        "final_score": 0.0
+      }
+    ]
+  },
+  "decision": {
+    "issue_key": "PAY-6100",
+    "classification": "bug",
+    "is_bug": true,
+    "is_complete": false,
+    "ready_for_dev": false,
+    "missing_items": [
+      "actual_result_detail",
+      "affected_version_confirmation",
+      "environment",
+      "expected_result_detail",
+      "reproduction_steps"
+    ],
+    "evidence_used": [
+      "issue.summary",
+      "policy:financial-review",
+      "policy:bug-ready",
+      "policy:contradictions",
+      "issue.behavior"
+    ],
+    "contradictions": [],
+    "financial_impact_detected": true,
+    "confidence": 0.5700000000000001,
+    "requires_human_review": true,
+    "provider": "mock",
+    "model": "mock-judge-v1",
+    "rationale": "Missing required fields: actual_result_detail, affected_version_confirmation, environment, expected_result_detail, reproduction_steps",
+    "audit_path": null,
+    "generated_at": "2026-03-08T23:51:46.924200Z"
+  },
+  "runtime": {
+    "langgraph": true,
+    "settings": {
+      "enable_planner": false,
+      "enable_query_rewriter": false,
+      "enable_reflection_memory": false,
+      "enable_policy_loop": false,
+      "enable_temporal_graphrag": false,
+      "enable_human_interrupts": false,
+      "planner_mode": "step-plan",
+      "query_rewriter_mode": "metadata-aware",
+      "reflection_mode": "summary-log",
+      "policy_mode": "rule-gated",
+      "temporal_graphrag_mode": "versioned-graph",
+      "distiller_mode": "simple"
+    },
+    "agentic_state": {
+      "plan_queries": [
+        "PAY-6100 Ledger mismatch on export"
+      ],
+      "query_index": 0,
+      "current_query": "PAY-6100 Ledger mismatch on export",
+      "iteration_count": 1,
+      "reflection_notes": [],
+      "policy_action": "judge",
+      "human_review": null
+    },
+    "trace": [
+      {
+        "node": "normalize",
+        "started_at": "2026-03-08T23:51:46.790721+00:00",
+        "finished_at": "2026-03-08T23:51:46.790933+00:00",
+        "duration_ms": 0.21,
+        "details": {
+          "issue_key": "PAY-6100"
+        }
+      },
+      {
+        "node": "rules",
+        "started_at": "2026-03-08T23:51:46.912287+00:00",
+        "finished_at": "2026-03-08T23:51:46.913302+00:00",
+        "duration_ms": 1.01,
+        "details": {
+          "missing_items": 5,
+          "contradictions": 0,
+          "requires_human_review": true
+        }
+      },
+      {
+        "node": "plan",
+        "started_at": "2026-03-08T23:51:46.915276+00:00",
+        "finished_at": "2026-03-08T23:51:46.915299+00:00",
+        "duration_ms": 0.02,
+        "details": {
+          "query_count": 1,
+          "mode": "step-plan"
+        }
+      },
+      {
+        "node": "rewrite",
+        "started_at": "2026-03-08T23:51:46.916569+00:00",
+        "finished_at": "2026-03-08T23:51:46.916592+00:00",
+        "duration_ms": 0.01,
+        "details": {
+          "query_index": 0,
+          "mode": "metadata-aware"
+        }
+      },
+      {
+        "node": "retrieve",
+        "started_at": "2026-03-08T23:51:46.917777+00:00",
+        "finished_at": "2026-03-08T23:51:46.918956+00:00",
+        "duration_ms": 1.18,
+        "details": {
+          "retrieved_now": 5,
+          "retrieved_total": 5,
+          "categories": [
+            "issue",
+            "policy"
+          ]
+        }
+      },
+      {
+        "node": "distill",
+        "started_at": "2026-03-08T23:51:46.920518+00:00",
+        "finished_at": "2026-03-08T23:51:46.920894+00:00",
+        "duration_ms": 0.38,
+        "details": {
+          "key_facts": 5,
+          "quotes": 1,
+          "mode": "simple"
+        }
+      },
+      {
+        "node": "reflect",
+        "started_at": "2026-03-08T23:51:46.921883+00:00",
+        "finished_at": "2026-03-08T23:51:46.921892+00:00",
+        "duration_ms": 0.01,
+        "details": {
+          "enabled": false
+        }
+      },
+      {
+        "node": "policy",
+        "started_at": "2026-03-08T23:51:46.923070+00:00",
+        "finished_at": "2026-03-08T23:51:46.923083+00:00",
+        "duration_ms": 0.01,
+        "details": {
+          "action": "judge",
+          "iteration": 1
+        }
+      },
+      {
+        "node": "judge",
+        "started_at": "2026-03-08T23:51:46.924111+00:00",
+        "finished_at": "2026-03-08T23:51:46.924214+00:00",
+        "duration_ms": 0.1,
+        "details": {
+          "classification": "bug",
+          "confidence": 0.5700000000000001,
+          "provider": "mock"
+        }
+      }
+    ],
+    "trace_grades": {
+      "trace_completeness": 1.0,
+      "planner_quality_proxy": 1.0,
+      "retrieval_diversity_proxy": 0.5,
+      "loop_efficiency_proxy": 1.0
+    }
+  }
+}

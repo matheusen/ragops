@@ -1,0 +1,383 @@
+{
+  "issue": {
+    "issue_key": "PAY-6101",
+    "summary": "Refund mismatch after rollout",
+    "description": "customer charged twice after v6.0.0",
+    "comments": [],
+    "acceptance_criteria": [],
+    "reproduction_steps": [],
+    "expected_behavior": "",
+    "actual_behavior": "",
+    "priority": null,
+    "issue_type": "Bug",
+    "status": null,
+    "project": null,
+    "component": null,
+    "service": null,
+    "environment": null,
+    "affected_version": null,
+    "labels": [],
+    "issue_links": [],
+    "attachments": [],
+    "changelog": [],
+    "collected_at": "2026-03-08T23:51:47.004523Z"
+  },
+  "attachment_facts": {
+    "issue_key": "PAY-6101",
+    "artifacts": [],
+    "contradictions": [],
+    "missing_information": []
+  },
+  "rule_evaluation": {
+    "missing_items": [
+      "actual_result_detail",
+      "affected_version_confirmation",
+      "environment",
+      "expected_result_detail",
+      "reproduction_steps"
+    ],
+    "contradictions": [],
+    "financial_impact_detected": true,
+    "requires_human_review": true,
+    "results": [
+      {
+        "rule_name": "financial_impact_detected",
+        "severity": "critical",
+        "message": "Issue contains financial language or monetary evidence",
+        "metadata": {}
+      }
+    ]
+  },
+  "retrieved": [
+    {
+      "evidence_id": "issue:summary",
+      "source": "issue.summary",
+      "content": "PAY-6101 Refund mismatch after rollout customer charged twice after v6.0.0",
+      "metadata": {
+        "category": "issue"
+      },
+      "sparse_score": 1.0,
+      "dense_score": 0.4167,
+      "final_score": 0.8844
+    },
+    {
+      "evidence_id": "temporal:PAY-6101:current-state",
+      "source": "temporal:PAY-6101:current-state",
+      "content": "Current timeline-aware issue state: issue=PAY-6101, collected_at=2026-03-08T23:51:47.004523+00:00.",
+      "metadata": {
+        "category": "temporal",
+        "backend": "temporal",
+        "issue_key": "PAY-6101",
+        "temporal_kind": "current_state"
+      },
+      "sparse_score": 0.62,
+      "dense_score": 0.0,
+      "final_score": 0.62
+    },
+    {
+      "evidence_id": "policy:financial-review",
+      "source": "policy:financial-review",
+      "content": "Any issue with payment, refund, chargeback, or ledger mismatch must require human review unless deterministic checks fully reconcile the evidence.",
+      "metadata": {
+        "category": "policy"
+      },
+      "sparse_score": 0.25,
+      "dense_score": 0.0769,
+      "final_score": 0.2808
+    },
+    {
+      "evidence_id": "policy:bug-ready",
+      "source": "policy:bug-ready",
+      "content": "A bug should include expected behavior, actual behavior, reproduction steps, environment, and affected version before it is marked ready for development.",
+      "metadata": {
+        "category": "policy"
+      },
+      "sparse_score": 0.25,
+      "dense_score": 0.0435,
+      "final_score": 0.2674
+    },
+    {
+      "evidence_id": "policy:contradictions",
+      "source": "policy:contradictions",
+      "content": "If one artifact shows failure and another shows success for the same flow, the issue must be escalated for review.",
+      "metadata": {
+        "category": "policy"
+      },
+      "sparse_score": 0.0,
+      "dense_score": 0.0,
+      "final_score": 0.1
+    },
+    {
+      "evidence_id": "issue:expected_actual",
+      "source": "issue.behavior",
+      "content": "Expected: \nActual: ",
+      "metadata": {
+        "category": "issue"
+      },
+      "sparse_score": 0.0,
+      "dense_score": 0.0,
+      "final_score": 0.0
+    }
+  ],
+  "distilled": {
+    "key_facts": [
+      "issue.summary: PAY-6101 Refund mismatch after rollout customer charged twice after v6.0.0",
+      "temporal:PAY-6101:current-state: Current timeline-aware issue state: issue=PAY-6101, collected_at=2026-03-08T23:51:47.004523+00:00.",
+      "policy:financial-review: Any issue with payment, refund, chargeback, or ledger mismatch must require human review unless deterministic checks fully reconcile the evidence.",
+      "policy:bug-ready: A bug should include expected behavior, actual behavior, reproduction steps, environment, and affected version before it is marked ready for development.",
+      "policy:contradictions: If one artifact shows failure and another shows success for the same flow, the issue must be escalated for review.",
+      "reflection[1] query=PAY-6101 Refund mismatch after rollout actual_result_detail affected_version_confirmation environment sources=issue.summary, temporal:PAY-6101:current-state facts=issue.summary: PAY-6101 Refund mismatch after rollout customer charged twice after v6.0.0 | temporal:PAY-6101:current-state: Current timeline-aware issue state: issue=PAY-6101, collected_at=2026-03-08T23:51:47.004523+00:",
+      "human_review action=judge note=Human confirmed enough evidence."
+    ],
+    "preserved_quotes": [
+      "2026-03-08T23:51:47",
+      "PAY-6101",
+      "v6.0.0"
+    ],
+    "evidence": [
+      {
+        "evidence_id": "issue:summary",
+        "source": "issue.summary",
+        "content": "PAY-6101 Refund mismatch after rollout customer charged twice after v6.0.0",
+        "metadata": {
+          "category": "issue"
+        },
+        "sparse_score": 1.0,
+        "dense_score": 0.4167,
+        "final_score": 0.8844
+      },
+      {
+        "evidence_id": "temporal:PAY-6101:current-state",
+        "source": "temporal:PAY-6101:current-state",
+        "content": "Current timeline-aware issue state: issue=PAY-6101, collected_at=2026-03-08T23:51:47.004523+00:00.",
+        "metadata": {
+          "category": "temporal",
+          "backend": "temporal",
+          "issue_key": "PAY-6101",
+          "temporal_kind": "current_state"
+        },
+        "sparse_score": 0.62,
+        "dense_score": 0.0,
+        "final_score": 0.62
+      },
+      {
+        "evidence_id": "policy:financial-review",
+        "source": "policy:financial-review",
+        "content": "Any issue with payment, refund, chargeback, or ledger mismatch must require human review unless deterministic checks fully reconcile the evidence.",
+        "metadata": {
+          "category": "policy"
+        },
+        "sparse_score": 0.25,
+        "dense_score": 0.0769,
+        "final_score": 0.2808
+      },
+      {
+        "evidence_id": "policy:bug-ready",
+        "source": "policy:bug-ready",
+        "content": "A bug should include expected behavior, actual behavior, reproduction steps, environment, and affected version before it is marked ready for development.",
+        "metadata": {
+          "category": "policy"
+        },
+        "sparse_score": 0.25,
+        "dense_score": 0.0435,
+        "final_score": 0.2674
+      },
+      {
+        "evidence_id": "policy:contradictions",
+        "source": "policy:contradictions",
+        "content": "If one artifact shows failure and another shows success for the same flow, the issue must be escalated for review.",
+        "metadata": {
+          "category": "policy"
+        },
+        "sparse_score": 0.0,
+        "dense_score": 0.0,
+        "final_score": 0.1
+      },
+      {
+        "evidence_id": "issue:expected_actual",
+        "source": "issue.behavior",
+        "content": "Expected: \nActual: ",
+        "metadata": {
+          "category": "issue"
+        },
+        "sparse_score": 0.0,
+        "dense_score": 0.0,
+        "final_score": 0.0
+      }
+    ]
+  },
+  "decision": {
+    "issue_key": "PAY-6101",
+    "classification": "bug",
+    "is_bug": true,
+    "is_complete": false,
+    "ready_for_dev": false,
+    "missing_items": [
+      "actual_result_detail",
+      "affected_version_confirmation",
+      "environment",
+      "expected_result_detail",
+      "reproduction_steps"
+    ],
+    "evidence_used": [
+      "issue.summary",
+      "temporal:PAY-6101:current-state",
+      "policy:financial-review",
+      "policy:bug-ready",
+      "policy:contradictions"
+    ],
+    "contradictions": [],
+    "financial_impact_detected": true,
+    "confidence": 0.5700000000000001,
+    "requires_human_review": true,
+    "provider": "mock",
+    "model": "mock-judge-v1",
+    "rationale": "Missing required fields: actual_result_detail, affected_version_confirmation, environment, expected_result_detail, reproduction_steps",
+    "audit_path": null,
+    "generated_at": "2026-03-08T23:51:47.059723Z"
+  },
+  "runtime": {
+    "langgraph": true,
+    "settings": {
+      "enable_planner": true,
+      "enable_query_rewriter": true,
+      "enable_reflection_memory": true,
+      "enable_policy_loop": true,
+      "enable_temporal_graphrag": true,
+      "enable_human_interrupts": true,
+      "planner_mode": "step-plan",
+      "query_rewriter_mode": "metadata-aware",
+      "reflection_mode": "summary-log",
+      "policy_mode": "rule-gated",
+      "temporal_graphrag_mode": "versioned-graph",
+      "distiller_mode": "simple"
+    },
+    "agentic_state": {
+      "plan_queries": [
+        "PAY-6101 Refund mismatch after rollout",
+        "PAY-6101 missing information actual_result_detail affected_version_confirmation environment expected_result_detail"
+      ],
+      "query_index": 0,
+      "current_query": "PAY-6101 Refund mismatch after rollout actual_result_detail affected_version_confirmation environment",
+      "iteration_count": 1,
+      "reflection_notes": [
+        "reflection[1] query=PAY-6101 Refund mismatch after rollout actual_result_detail affected_version_confirmation environment sources=issue.summary, temporal:PAY-6101:current-state facts=issue.summary: PAY-6101 Refund mismatch after rollout customer charged twice after v6.0.0 | temporal:PAY-6101:current-state: Current timeline-aware issue state: issue=PAY-6101, collected_at=2026-03-08T23:51:47.004523+00:"
+      ],
+      "policy_action": "judge",
+      "human_review": {
+        "action": "judge",
+        "note": "Human confirmed enough evidence.",
+        "raw": {
+          "action": "judge",
+          "note": "Human confirmed enough evidence."
+        }
+      }
+    },
+    "trace": [
+      {
+        "node": "normalize",
+        "started_at": "2026-03-08T23:51:47.007638+00:00",
+        "finished_at": "2026-03-08T23:51:47.007683+00:00",
+        "duration_ms": 0.04,
+        "details": {
+          "issue_key": "PAY-6101"
+        }
+      },
+      {
+        "node": "rules",
+        "started_at": "2026-03-08T23:51:47.009341+00:00",
+        "finished_at": "2026-03-08T23:51:47.009422+00:00",
+        "duration_ms": 0.08,
+        "details": {
+          "missing_items": 5,
+          "contradictions": 0,
+          "requires_human_review": true
+        }
+      },
+      {
+        "node": "plan",
+        "started_at": "2026-03-08T23:51:47.010407+00:00",
+        "finished_at": "2026-03-08T23:51:47.010446+00:00",
+        "duration_ms": 0.03,
+        "details": {
+          "query_count": 2,
+          "mode": "step-plan"
+        }
+      },
+      {
+        "node": "rewrite",
+        "started_at": "2026-03-08T23:51:47.011899+00:00",
+        "finished_at": "2026-03-08T23:51:47.011927+00:00",
+        "duration_ms": 0.03,
+        "details": {
+          "query_index": 0,
+          "mode": "metadata-aware"
+        }
+      },
+      {
+        "node": "retrieve",
+        "started_at": "2026-03-08T23:51:47.012884+00:00",
+        "finished_at": "2026-03-08T23:51:47.013385+00:00",
+        "duration_ms": 0.5,
+        "details": {
+          "retrieved_now": 6,
+          "retrieved_total": 6,
+          "categories": [
+            "issue",
+            "policy",
+            "temporal"
+          ]
+        }
+      },
+      {
+        "node": "distill",
+        "started_at": "2026-03-08T23:51:47.014893+00:00",
+        "finished_at": "2026-03-08T23:51:47.015157+00:00",
+        "duration_ms": 0.26,
+        "details": {
+          "key_facts": 5,
+          "quotes": 3,
+          "mode": "simple"
+        }
+      },
+      {
+        "node": "reflect",
+        "started_at": "2026-03-08T23:51:47.016244+00:00",
+        "finished_at": "2026-03-08T23:51:47.016408+00:00",
+        "duration_ms": 0.16,
+        "details": {
+          "enabled": true,
+          "notes_total": 1
+        }
+      },
+      {
+        "node": "policy",
+        "started_at": "2026-03-08T23:51:47.056440+00:00",
+        "finished_at": "2026-03-08T23:51:47.056673+00:00",
+        "duration_ms": 0.23,
+        "details": {
+          "action": "judge",
+          "human_review": true,
+          "iteration": 1
+        }
+      },
+      {
+        "node": "judge",
+        "started_at": "2026-03-08T23:51:47.059624+00:00",
+        "finished_at": "2026-03-08T23:51:47.059737+00:00",
+        "duration_ms": 0.11,
+        "details": {
+          "classification": "bug",
+          "confidence": 0.5700000000000001,
+          "provider": "mock"
+        }
+      }
+    ],
+    "trace_grades": {
+      "trace_completeness": 1.0,
+      "planner_quality_proxy": 0.6667,
+      "retrieval_diversity_proxy": 0.75,
+      "loop_efficiency_proxy": 1.0
+    }
+  }
+}

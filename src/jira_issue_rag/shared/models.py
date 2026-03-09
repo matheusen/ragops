@@ -219,6 +219,10 @@ class EvaluationExampleResult(BaseModel):
     evidence_recall_proxy: float = 0.0
     faithfulness_proxy: float = 0.0
     contradiction_alignment: float = 0.0
+    planner_quality_proxy: float = 0.0
+    retrieval_diversity_proxy: float = 0.0
+    loop_efficiency_proxy: float = 0.0
+    trace_completeness: float = 0.0
 
 
 class EvaluationResponse(BaseModel):
@@ -293,6 +297,7 @@ class FolderValidationRequest(BaseModel):
     issue: IssueCanonical
     folder_path: str
     provider: str | None = None
+    prompt_name: str | None = None
 
     @model_validator(mode="after")
     def normalize_folder_path(self) -> "FolderValidationRequest":
@@ -336,13 +341,8 @@ class FlowNodeState(BaseModel):
     """Minimal snapshot of one canvas node sent from the dashboard."""
 
     id: str
-    """Node id as defined in NODE_CATALOG (e.g. 'provider', 'reranker')."""
-
     active: bool = True
-    """Whether the node is toggled on (optional nodes can be disabled)."""
-
     selected_variant: str | None = None
-    """Label of the chosen variant, e.g. 'GPT-4o', 'Hybrid BM25+Dense'."""
 
 
 class FlowArticleRunRequest(BaseModel):
@@ -358,21 +358,14 @@ class FlowArticleRunRequest(BaseModel):
 
 
 class FlowRunRequest(BaseModel):
-    """Run one of the supported canvas flow modes using the current node configuration."""
-
     nodes: list[FlowNodeState] = Field(
         description="Ordered list of active/inactive canvas nodes with their variant selections."
     )
     validation: ValidationRequest | None = None
-    """Issue-validation payload. Required when flow_mode resolves to issue-validation."""
-
     article: FlowArticleRunRequest | None = None
-    """Article-analysis payload. Required when flow_mode resolves to article-analysis."""
 
 
 class FlowDescribeRequest(BaseModel):
-    """Describe what a canvas configuration would do without running it."""
-
     nodes: list[FlowNodeState]
 
 
@@ -386,7 +379,7 @@ class FlowDescribeResponse(BaseModel):
     retrieval: dict[str, bool]
     agentic: dict[str, bool]
     reranker: bool
-    distiller: str  # "simple" | "refrag"
+    distiller: str
     planner_mode: str
     query_rewriter_mode: str
     reflection_mode: str
@@ -415,10 +408,28 @@ class FlowRunResponse(BaseModel):
     flow_mode: str
     decision: DecisionResult | None = None
     prompt_execution: PromptExecutionResponse | None = None
-    article_search: list[ArticleSearchResult] = Field(default_factory=list)
+    article_search: list["ArticleSearchResult"] = Field(default_factory=list)
     related_articles: list[dict[str, Any]] = Field(default_factory=list)
     dspy_optimization: FlowDSPyOptimizationResult | None = None
     warnings: list[str] = Field(default_factory=list)
+
+
+class GraphInterruptInfo(BaseModel):
+    interrupt_id: str
+    value: dict[str, Any] = Field(default_factory=dict)
+
+
+class ValidationExecutionResponse(BaseModel):
+    thread_id: str
+    interrupted: bool = False
+    interrupts: list[GraphInterruptInfo] = Field(default_factory=list)
+    decision: DecisionResult | None = None
+    runtime: dict[str, Any] = Field(default_factory=dict)
+
+
+class ValidationResumeRequest(BaseModel):
+    thread_id: str
+    resume: dict[str, Any] = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
