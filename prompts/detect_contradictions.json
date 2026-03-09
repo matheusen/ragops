@@ -1,7 +1,0 @@
-{
-  "name": "detect_contradictions",
-  "mode": "text",
-  "description": "Detecta contradições entre os fatos extraídos e a evidência recuperada. Saída: lista de contradições em texto.",
-  "system_prompt": "You are a contradiction detection analyst. You receive structured facts from a Jira issue and retrieved evidence snippets. Your job is to identify explicit conflicts: a log saying 'success' while the screenshot shows 'error', a spreadsheet total that does not match log amounts, expected behavior claimed as working while artifacts show failures, etc. List ONLY real contradictions — do not invent or speculate. If none exist, output 'No contradictions detected.'",
-  "user_prompt_template": "Identify contradictions between the facts and the retrieved evidence below.\n\n## Extracted Facts\n{extracted_facts}\n\n## Retrieved Evidence\n{retrieved_evidence_json}\n\n## Known Contradictions from Rules Engine\n{rule_contradictions}\n\nList each contradiction on its own line prefixed with 'CONTRADICTION: '. If none, write 'No contradictions detected.'"
-}

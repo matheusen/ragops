@@ -29,6 +29,37 @@ class MockProvider(LLMProvider):
 
         is_complete = not rules.missing_items
         ready_for_dev = is_bug and is_complete and not rules.requires_human_review
+        ready_for_dev_criteria_met: list[str] = []
+        ready_for_dev_blockers: list[str] = []
+
+        if issue.expected_behavior.strip():
+            ready_for_dev_criteria_met.append("expected_behavior")
+        else:
+            ready_for_dev_blockers.append("Descrever comportamento esperado.")
+        if issue.actual_behavior.strip() or has_failure:
+            ready_for_dev_criteria_met.append("actual_behavior")
+        else:
+            ready_for_dev_blockers.append("Descrever comportamento atual observado.")
+        if issue.reproduction_steps:
+            ready_for_dev_criteria_met.append("reproduction_steps")
+        else:
+            ready_for_dev_blockers.append("Adicionar passos de reproducao.")
+        if issue.environment:
+            ready_for_dev_criteria_met.append("environment")
+        else:
+            ready_for_dev_blockers.append("Informar ambiente afetado.")
+        if issue.affected_version:
+            ready_for_dev_criteria_met.append("affected_version")
+        else:
+            ready_for_dev_blockers.append("Informar versao afetada.")
+        if evidence:
+            ready_for_dev_criteria_met.append("supporting_evidence")
+        else:
+            ready_for_dev_blockers.append("Anexar evidencias objetivas.")
+        if rules.contradictions:
+            ready_for_dev_blockers.append("Resolver contradicoes antes de encaminhar para dev.")
+        if rules.requires_human_review:
+            ready_for_dev_blockers.append("Revisao humana obrigatoria antes do handoff.")
 
         confidence = 0.52
         confidence += min(len(evidence), 5) * 0.05
@@ -57,12 +88,19 @@ class MockProvider(LLMProvider):
             is_bug=is_bug,
             is_complete=is_complete,
             ready_for_dev=ready_for_dev,
+            ready_for_dev_criteria_met=ready_for_dev_criteria_met,
+            ready_for_dev_blockers=ready_for_dev_blockers,
             missing_items=rules.missing_items,
             evidence_used=[item.source for item in evidence[:5]],
             contradictions=rules.contradictions,
             financial_impact_detected=rules.financial_impact_detected,
             confidence=confidence,
             requires_human_review=rules.requires_human_review,
+            next_action=(
+                "Encaminhar para desenvolvimento."
+                if ready_for_dev
+                else ("Complementar a issue e revalidar." if ready_for_dev_blockers else "Revisar a decisao manualmente.")
+            ),
             provider=self.provider_name,
             model=self.model_name,
             rationale="; ".join(rationale_parts),

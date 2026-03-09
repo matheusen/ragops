@@ -347,6 +347,25 @@ docker compose up -d
 
 Isso sobe: Qdrant, Neo4j, MongoDB e Ollama. O MonkeyOCR fica em perfil separado por exigir GPU.
 
+Importante: o MonkeyOCR ja esta definido no `docker-compose.yml`. Ele nao entra no `up -d` padrao porque depende de:
+
+- GPU NVIDIA
+- build local a partir do clone `C:\Users\mengl\Documents\Github\MonkeyOCR`
+
+Fluxo minimo para usar MonkeyOCR pelo compose:
+
+```powershell
+# 1. Clonar o repositorio do MonkeyOCR ao lado do repo ragflow
+cd C:\Users\mengl\Documents\Github
+git clone https://github.com/Yuliang-Liu/MonkeyOCR
+
+# 2. Subir o container do MonkeyOCR
+docker compose --profile gpu up monkeyocr --build -d
+
+# 3. Verificar logs
+docker compose --profile gpu logs -f monkeyocr
+```
+
 ### Servicos individuais
 
 ```powershell
@@ -359,11 +378,11 @@ docker compose up neo4j -d
 # Apenas MongoDB (dashboard)
 docker compose up mongodb -d
 
-# Apenas Ollama (LLM local)
+# Apenas Ollama (LLM local com GPU NVIDIA)
 docker compose up ollama -d
 
-# MonkeyOCR (requer GPU NVIDIA)
-docker compose --profile gpu up monkeyocr -d
+# MonkeyOCR (requer GPU NVIDIA e `C:\Users\mengl\Documents\Github\MonkeyOCR`)
+docker compose --profile gpu up monkeyocr --build -d
 ```
 
 ### Parar e limpar
@@ -499,8 +518,9 @@ Nao ha imagem pre-compilada no Docker Hub — o container e construido a partir 
 **Passo 1 — clonar o repositorio MonkeyOCR (apenas uma vez):**
 
 ```powershell
-# Na raiz do repositorio ragops
-git clone https://github.com/Yuliang-Liu/MonkeyOCR monkeyocr-src
+# Ao lado do repositorio ragflow
+cd C:\Users\mengl\Documents\Github
+git clone https://github.com/Yuliang-Liu/MonkeyOCR
 ```
 
 **Passo 2 — compilar e subir:**
@@ -514,12 +534,31 @@ O container usa o modelo `MonkeyOCR-pro-1.2B` (~4 GB VRAM). Para maior precisao 
 
 ### Subir manualmente (sem Docker)
 
-```bash
+```powershell
 git clone https://github.com/Yuliang-Liu/MonkeyOCR
 cd MonkeyOCR
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 pip install -e .
 python tools/download_model.py -n MonkeyOCR-pro-1.2B
-uvicorn api.main:app --host 0.0.0.0 --port 8001
+python -m uvicorn api.main:app --host 0.0.0.0 --port 8001
+```
+
+
+Se o clone ja existir em outro lugar, basta entrar na pasta e subir a API:
+
+```powershell
+cd C:\Users\mengl\Documents\Github\MonkeyOCR
+.\.venv\Scripts\python.exe -m uvicorn api.main:app --host 0.0.0.0 --port 8001
+# Swagger UI: http://localhost:8001/docs
+```
+
+Atalho pelo repo principal:
+
+```powershell
+.\scripts\start-monkeyocr.ps1
+# ou em background:
+.\scripts\start-monkeyocr.ps1 -Background
 ```
 
 ### Configuracao no `.env`
@@ -551,6 +590,9 @@ docker compose up ollama -d
 # API: http://localhost:11434
 ```
 
+O serviço `ollama` no `docker-compose.yml` agora reserva `1` GPU NVIDIA para inferência local.
+Pré-requisito: Docker Desktop/Engine com suporte a containers NVIDIA.
+
 ### Baixar modelos
 
 ```powershell
@@ -569,6 +611,7 @@ docker exec -it ragops-ollama ollama list
 DEFAULT_PROVIDER=ollama
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=llama3.1:8b
+OLLAMA_TIMEOUT_SECONDS=600
 
 # Ollama e local → pode liberar sem risco
 CONFIDENTIALITY_MODE=false

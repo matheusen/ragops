@@ -61,6 +61,16 @@ class PersistentFileSaver(BaseCheckpointSaver[str]):
         self.blobs: dict[tuple[str, str, str, str | int | float], tuple[str, bytes]] = {}
         self._load()
 
+    def with_allowlist(self, allowlist: set[tuple[str, str]]) -> "PersistentFileSaver":
+        """Keep compatibility with LangGraph serde variants that expose allowlists."""
+        serde = getattr(self, "serde", None)
+        configure = getattr(serde, "with_allowlist", None)
+        if callable(configure):
+            configured = configure(allowlist)
+            if configured is not None:
+                self.serde = configured
+        return self
+
     def _load(self) -> None:
         if not self.path.exists():
             return
@@ -100,6 +110,22 @@ class PersistentFileSaver(BaseCheckpointSaver[str]):
                 channel_values[channel] = self.serde.loads_typed(typed_value)
         return channel_values
 
+    def _hydrate_checkpoint(
+        self,
+        checkpoint_value: Checkpoint,
+        *,
+        thread_id: str,
+        checkpoint_ns: str,
+    ) -> Checkpoint:
+        hydrated = dict(checkpoint_value)
+        hydrated.setdefault("pending_sends", [])
+        hydrated["channel_values"] = self._load_blobs(
+            thread_id,
+            checkpoint_ns,
+            hydrated.get("channel_versions", {}),
+        )
+        return hydrated
+
     def get_tuple(self, config: dict[str, Any]) -> CheckpointTuple | None:
         thread_id: str = config["configurable"]["thread_id"]
         checkpoint_ns: str = config["configurable"].get("checkpoint_ns", "")
@@ -126,14 +152,11 @@ class PersistentFileSaver(BaseCheckpointSaver[str]):
                         "checkpoint_id": checkpoint_id,
                     }
                 },
-                checkpoint={
-                    **checkpoint_value,
-                    "channel_values": self._load_blobs(
-                        thread_id,
-                        checkpoint_ns,
-                        checkpoint_value["channel_versions"],
-                    ),
-                },
+                checkpoint=self._hydrate_checkpoint(
+                    checkpoint_value,
+                    thread_id=thread_id,
+                    checkpoint_ns=checkpoint_ns,
+                ),
                 metadata=self.serde.loads_typed(metadata),
                 parent_config=(
                     {
@@ -196,14 +219,11 @@ class PersistentFileSaver(BaseCheckpointSaver[str]):
                                     "checkpoint_id": checkpoint_id,
                                 }
                             },
-                            checkpoint={
-                                **checkpoint_value,
-                                "channel_values": self._load_blobs(
-                                    thread_id,
-                                    checkpoint_ns,
-                                    checkpoint_value["channel_versions"],
-                                ),
-                            },
+                            checkpoint=self._hydrate_checkpoint(
+                                checkpoint_value,
+                                thread_id=thread_id,
+                                checkpoint_ns=checkpoint_ns,
+                            ),
                             metadata=metadata,
                             parent_config=(
                                 {

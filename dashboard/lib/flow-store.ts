@@ -109,6 +109,66 @@ export async function saveFlow(
   }
 }
 
+export async function updateFlow(
+  id: string,
+  name: string,
+  nodes: SavedFlowDoc["nodes"],
+  edges: SavedFlowDoc["edges"],
+): Promise<{ ok: boolean; id: string }> {
+  if (!isMongoConfigured()) {
+    try {
+      const flows = await readLocalFlows();
+      const index = flows.findIndex((flow) => flow.id === id);
+      if (index === -1) {
+        return { ok: false, id: "" };
+      }
+      flows[index] = {
+        ...flows[index],
+        name,
+        nodes,
+        edges,
+      };
+      await writeLocalFlows(flows);
+      return { ok: true, id };
+    } catch (err) {
+      console.error("[flow-store] updateFlow(local):", err);
+      return { ok: false, id: "" };
+    }
+  }
+
+  try {
+    const c = await col();
+    const result = await c.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { name, nodes, edges } },
+    );
+    if (!result.matchedCount) {
+      return { ok: false, id: "" };
+    }
+    return { ok: true, id };
+  } catch (err) {
+    try {
+      const flows = await readLocalFlows();
+      const index = flows.findIndex((flow) => flow.id === id);
+      if (index === -1) {
+        return { ok: false, id: "" };
+      }
+      flows[index] = {
+        ...flows[index],
+        name,
+        nodes,
+        edges,
+      };
+      await writeLocalFlows(flows);
+      return { ok: true, id };
+    } catch (localErr) {
+      console.error("[flow-store] updateFlow:", err);
+      console.error("[flow-store] updateFlow(local-fallback):", localErr);
+      return { ok: false, id: "" };
+    }
+  }
+}
+
 export async function getFlows(): Promise<
   Array<{ id: string; name: string; createdAt: string; nodes: SavedFlowDoc["nodes"]; edges: SavedFlowDoc["edges"] }>
 > {

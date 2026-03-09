@@ -1,0 +1,395 @@
+{
+  "issue": {
+    "issue_key": "UPLOAD-AD2770",
+    "summary": "Upload: Codon_ Python que roda 100 vezes mais rápido sem alterar seu código _ por Sumit Pandey _ Rumo ao Aprendizado Profundo.pdf",
+    "description": "",
+    "comments": [],
+    "acceptance_criteria": [],
+    "reproduction_steps": [],
+    "expected_behavior": "",
+    "actual_behavior": "",
+    "priority": null,
+    "issue_type": "Bug",
+    "status": null,
+    "project": null,
+    "component": null,
+    "service": null,
+    "environment": null,
+    "affected_version": null,
+    "labels": [],
+    "issue_links": [],
+    "attachments": [],
+    "changelog": [],
+    "collected_at": "2026-03-09T16:33:48.836528Z"
+  },
+  "attachment_facts": {
+    "issue_key": "UPLOAD-AD2770",
+    "artifacts": [
+      {
+        "artifact_id": "sha256:24da7985a57685b45e3d082f345f62e80ca2934d8b7ccaf7a26d616b60c686e0",
+        "artifact_type": "pdf",
+        "source_path": "C:\\Users\\mengl\\AppData\\Local\\Temp\\ragflow_upload_9fky_0so\\Codon_ Python que roda 100 vezes mais rápido sem alterar seu código _ por Sumit Pandey _ Rumo ao Aprendizado Profundo.pdf",
+        "extracted_text": "Codon: Python que roda 100 vezes mais\nrápido sem alterar seu código\nCodon: Python que roda 100 vezes mais rápido sem\nalterar seu código\nAprenda como o Codon alcança um aumento de\nvelocidade de 100x no Python através da compilação AOT.\nMultithreading nativo, kernels de GPU, sobrecarga zero.\n8 minutos de leitura\n21 de dezembro de 2025\nComo alguém que passou horas incontáveis     esperando que tarefas de treinamento de\naprendizado de máquina terminassem, observando operações do NumPy se arrastarem por\nconjuntos de dados massivos de imagens médicas e otimizando código Python que se recusa\na ser mais rápido que uma tartaruga sonolenta, eu já tive minha cota de momentos do tipo\n\"Python é muito lento\" . Todos nós já falamos por isso, não é? Você escreve um código\nPython bonito e elegante, e então a realidade bate à porta: seu script leva 18 segundos para\ncalcular algo que deveria ser instantâneo.\nApresentamos o Codon , e não, este não é mais uma \"alternativa ao Python\" que te obriga\na aprender mais uma linguagem de programação. Este é o Python, mas reinventado para a era\nmoderna. Pense nele como o primo atlético do Python que foi para a academia e voltou\nbombado.\nSe não conseguir ler o artigo seguinte, clique aqui.\nO paradoxo do Python com o que todos convivemos.\nEis a questão sobre o Python: nós o amamos, odiamos, e não conseguimos viver sem ele. É\numa linguagem que impulsiona a maior parte do desenvolvimento de IA/ML, ciência de dados\ne, cada vez mais, todo o ecossistema tecnológico. Sua sintaxe é limpa, as bibliotecas são\nabundantes e a comunidade é enorme.\nMas sejamos honestos: Python é lento . Tipo, muito lento mesmo.\nDurante meu doutorado em IA médica na Universidade de Copenhague, frequentemente me\nvia executando modelos de previsão de sobrevivência, o que me permitia literalmente tomar\num café (ou três) enquanto esperava a conclusão das etapas de pré-processamento. Ó\ngargalo? O bom e velho Python sendo... bem, Python.\nUma solução habitual? Recorrendo a C/C++ para as declarações críticas em termos de\ndesempenho, escreva alguns wrappers em Cython ou torcer para que suas transações em\nNumPy sejam vetorizadas ou suficientes. É o compromisso de que todos aprendam a aceitar:\nvocê ganha facilidade de uso do Python, mas paga o preço do desempenho.\nO que exatamente é um códon?\nCodon é um compilador Python de alto desempenho que traduz seu código Python em\ncódigo de máquina nativa: sem sobrecarga de tempo de execução, sem interpretador, sem GIL\n(Global Interpreter Lock) atrapalhando seus sonhos de multithreading.\nOs números são realmente impressionantes:\nAumento de velocidade de 10 a 100 vezes em relação ao Python puro (às vezes mais).\nDesempenho equivalente a C/C++\nMultithreading nativo verdadeiro (sim, você leu certo)\nSuporte integrado para programação de GPU.\nUma implementação nativa do NumPy totalmente compilada.\nPressione Enter ou clique para ver a imagem em tamanho real.\nComo funciona o CODON (imagem retirada da página do GitHub)\nDeixe-me mostrar-lhe o que isso significa na prática.\nO Teste de Realidade de Fibonacci\nEis um exemplo simples que captura perfeitamente a diferença de velocidade. A clássica\nfunção recursiva de Fibonacci: o \"olá, mundo\" das comparações de desempenho:\nfrom  time  import  time \ndef  fib ( n ):\n     return  n  if  n < 2  else  fib ( n - 1 ) + fib ( n - 2 ) \nt0 = time () \nans = fib ( 40 ) \nt1 = time () \nprint ( f'Fib (40) calculado = {ans} em {t1 - t0} segundos.' )\nExecutando isso através do Python padrão:\nFib calculado ( 40 ) = 102334155 em 17,98 segundos .\nExecutando o mesmo código através do Codon:\nFib calculado ( 40 ) = 102334155 em 0,28 segundos .\nIsso representa um aumento de velocidade de 65 vezes sem alterar uma única linha de\ncódigo. Pense nisso.\nComo funciona essa feitiçaria?\nDiferentemente da natureza interpretada do Python, o Codon usa compilação antecipada\n(AOT) . Ele analisa todo o seu programa, realiza otimizações agressivas e o compila para\ncódigo de máquina nativo por meio do LLVM (a mesma infraestrutura de compilador usada\npor linguagens como Rust e Swift).\nA magia acontece em várias etapas:\n1. Inferência estática de tipos : o Codon descobre os tipos automaticamente (você não\nprecisa de dicas de tipo, embora elas ajudem).\n2. Otimizações de alto nível : Compreende padrões específicos do Python e otimiza de\nacordo.\n3. Backend LLVM : Converte para código de máquina altamente otimizado.\n4. Sobrecarga de tempo de execução zero : Sem interpretador, sem bytecode, apenas\nexecução nativa pura.\nO resultado? Você escreve em Python, mas o programa roda como se fosse C++.\nA Revolução Multithread\nLembra quando mencionei o GIL? O Global Interpreter Lock do Python é o notório gargalo\nque impede a verdadeira execução paralela. Você pode criar várias threads, mas elas\nexecutarão em turnos, não em paralelo de fato.\nO códon não possui uma GIL .\nVeja só isso — contagem paralela de números primos com multithreading de verdade:\nfrom sys import argv\ndef is_prime(n):\n    factors = 0\n    for i in range(2, n):\n        if n % i == 0:\n            factors += 1\n    return factors == 0\nlimit = int(argv[1])\ntotal = 0\n@par(schedule='dynamic', chunk_size=100, num_threads=16)\nfor i in range(2, limit):\n    if is_prime(i):\n        total += 1\nprint(total)\nThe @par decorator automatically parallelizes the loop using OpenMP. Notice how Codon is\nsmart enough to handle the total += 1 as an atomic reduction, preventing race conditions\nautomatically.\nFor someone working with large-scale medical imaging datasets, this is a game-changer.\nPreprocessing thousands of images? Parallelize it. Running Monte Carlo simulations? Parallelize\nit. The code looks like Python, but runs like a multi-threaded C++ application.\nGPU Programming Without the Pain\nHere’s where things get really exciting. Codon lets you write GPU kernels in Python syntax:\nimport gpu\nMAX    = 1000\nN      = 4096\npixels = [0 for _ in range(N * N)]\ndef scale(x, a, b):\n    return a + (x/N)*(b - a)\n@gpu.kernel\ndef mandelbrot(pixels):\n    idx = (gpu.block.x * gpu.block.dim.x) + gpu.thread.x\n    i, j = divmod(idx, N)\n    c = complex(scale(j, -2.00, 0.47), scale(i, -1.12, 1.12))\n    z = 0j\n    iteration = 0\n    while abs(z) <= 2 and iteration < MAX:\n        z = z**2 + c\n        iteration += 1\n    pixels[idx] = int(255 * iteration/MAX)\nmandelbrot(pixels, grid=(N*N)//1024, block=1024)\nThis is GPU programming in Python. No CUDA boilerplate, no wrestling with memory\nmanagement, no switching to a different language. Just Python with some GPU-specific\ndecorators.\nNumPy, But Faster\nOne of Codon’s standout features is its native NumPy implementation. It’s not just a\nwrapper around C libraries: it’s NumPy reimplemented in Codon itself, which opens up massive\noptimization opportunities.\nHere’s a Monte Carlo estimation of π:\nimport time\nimport numpy as np\nrng = np.random.default_rng(seed=0)\nx = rng.random(500_000_000)\ny = rng.random(500_000_000)\nt0 = time.time()\npi = ((x-1)**2 + (y-1)**2 < 1).sum() * (4 / len(x))\nt1 = time.time()\nprint(f'Computed pi~={pi:.4f} in {t1 - t0:.2f} sec')\nPython + NumPy: 2.25 seconds\nCodon + NumPy: 0.43 seconds\nThat’s a 5x speedup on already-optimized NumPy code. The compiler can inline operations,\nfuse array operations, and eliminate unnecessary memory allocations: optimizations that aren’t\npossible with traditional NumPy.\nFor ML practitioners working with large tensors and matrix operations, this could dramatically\nreduce experiment iteration time.\nThe Python Ecosystem Still Works\nOne concern I had initially: what about all those Python packages we rely on? scikit-learn,\npandas, matplotlib, PyTorch?\nCodon handles this elegantly with Python interoperability:\nfrom python import matplotlib.pyplot as plt\ndata = [x**2 for x in range(10)]\nplt.plot(data)\nplt.show()\nYou can import and use any Python package. The performance-critical parts run through\nCodon’s compiler, while the rest interfaces with the regular Python ecosystem. Best of both\nworlds.\nThe Honest Trade-offs\nNow, let’s address the elephant in the room: Codon is not a drop-in replacement for CPython.\nThere are some Python features that don’t play well with static compilation:\nDynamic type changes at runtime (the price of static compilation)\nSome of Python’s most dynamic metaprogramming features\nComplete behavioral parity with CPython in all edge cases\nBut here’s my take after exploring it: for most data science, ML, and computational workloads,\nthese limitations don’t matter. You’re not using Python’s dynamic features to change variable\ntypes at runtime in your NumPy pipeline or your model training loop. You’re writing relatively\nstatic, performance-critical code that’s currently bottlenecked by Python’s interpreter.\nThat’s exactly where Codon shines.\nReal-World Impact: My Use Case\nLet me give you a concrete example from my own work. During my PhD, I developed survival\nprediction models for medical imaging data. A typical preprocessing pipeline involved:\n1. Loading DICOM images (thousands of them)\n2. Normalizing pixel intensities\n3. Extracting features from regions of interest\n4. Computing statistical measures across patient cohorts\nIn pure Python with NumPy, this could take hours for a large dataset. Even with vectorization,\nI/O and computational bottlenecks persisted.\nWith Codon, I could:\nCompile the preprocessing pipeline to native code\nParallelize image processing across CPU cores\nEliminate interpreter overhead on tight loops\nOptimize end-to-end without dropping to C++\nThe potential time savings are substantial. What took 3 hours could potentially run in 10–20\nminutes. That’s not just convenient: it fundamentally changes how fast you can iterate on\nresearch ideas.\nGetting Started Is Trivial\nInstallation is dead simple:\n/bin/bash -c \"$(curl -fsSL https://exaloop.io/install.sh)\"\nThen you can:\nRun code: codon run file.py\nCompile with optimizations: codon run -release file.py\nBuild executables: codon build -release file.py\nGenerate LLVM IR: codon build -release -llvm file.py\nThe learning curve is minimal because it’s just Python (mostly). You write code the way you\nalways have, and Codon makes it fast.\nThe Bigger Picture\nCodon represents something important: a rejection of the false dichotomy between “easy to\nwrite” and “fast to run.” For decades, we’ve accepted that high-level languages trade\nperformance for productivity. Python gave us incredible productivity, and we lived with the\nperformance hit.\nBut what if we don’t have to compromise?\nProjects like Codon, Mojo, and others are pushing the boundaries of what’s possible. They’re\nasking: why can’t we have both? Why can’t we write in a high-level, expressive language and\nget native performance?\nFor AI/ML practitioners, data scientists, and computational researchers, this shift could be\ntransformative. Imagine:\nTraining models 10x faster on the same hardware\nRunning data pipelines that currently take hours in minutes\nPrototyping and production being the same code\nNot having to rewrite critical paths in C++ or Rust\nShould You Use Codon Today?\nHere’s my honest assessment:\nTry Codon if:\nYou have performance-critical Python code (numerical computing, simulations, data\nprocessing)\nYou’re comfortable with a subset of Python’s features\nYou want true multithreading or GPU capabilities\nYou’re building tools where compile-time overhead is acceptable\nContinue usando CPython se:\nVocê precisa de máxima compatibilidade com o ecossistema Python.\nSeu código depende muito de recursos dinâmicos do Python.\nO desempenho não é sua principal preocupação.\nVocê está trabalhando em prototipagem rápida com muitas dependências.\nPara o meu caso de uso: pesquisa em aprendizado de máquina e IA na área da saúde, o\nCodon é extremamente atraente. Os ganhos de desempenho nos kernels computacionais são\ndifíceis de ignorar, e a capacidade de paralelizar sem entrar em conflito com o GIL é enorme.\nO futuro está compilado\nEnquanto escrevo isto, o Codon tem 16,3 mil estrelas no GitHub e uma comunidade ativa. O\nprojeto possui licença Apache 2.0, é apoiado por instituições renomadas (NSF, NIH, MIT) e\nestá em constante aprimoramento.\nÉ perfeito? Não. Vai substituir o CPython completamente? Provavelmente não. Mas representa\numa direção promissora para o Python de alto desempenho? Sem dúvida.\nPara quem já desejou que o Python fosse mais rápido, mas temia a ideia de reescrever o\ncódigo em C++, o Codon merece sua atenção. Não é apenas mais um compilador: é uma\nreinvenção do que o Python pode ser quando o desempenho não é uma mera formalidade.\nExperimente. Escreva um pouco de código. Cronometre. Acho que você vai se surpreender.\nE talvez, só talvez, você pare de aceitar o imposto de desempenho com o qual todos nós\naprendemos a conviver.",
+        "facts": {
+          "ids": [
+            "102334155"
+          ],
+          "timestamps": [],
+          "amounts": [
+            17.98,
+            0.28,
+            -200.0,
+            47.0,
+            -112.0,
+            112.0,
+            225.0,
+            43.0
+          ],
+          "error_lines": [],
+          "artifact_name": "Codon_ Python que roda 100 vezes mais rápido sem alterar seu código _ por Sumit Pandey _ Rumo ao Aprendizado Profundo.pdf"
+        },
+        "confidence": 0.85
+      }
+    ],
+    "contradictions": [],
+    "missing_information": []
+  },
+  "rule_evaluation": {
+    "missing_items": [
+      "actual_result_detail",
+      "affected_version_confirmation",
+      "environment",
+      "expected_result_detail",
+      "reproduction_steps"
+    ],
+    "contradictions": [],
+    "financial_impact_detected": true,
+    "requires_human_review": true,
+    "results": [
+      {
+        "rule_name": "financial_impact_detected",
+        "severity": "critical",
+        "message": "Issue contains financial language or monetary evidence",
+        "metadata": {}
+      }
+    ]
+  },
+  "retrieved": [
+    {
+      "evidence_id": "issue:summary",
+      "source": "issue.summary",
+      "content": "UPLOAD-AD2770 Upload: Codon_ Python que roda 100 vezes mais rápido sem alterar seu código _ por Sumit Pandey _ Rumo ao Aprendizado Profundo.pdf ",
+      "metadata": {
+        "category": "issue"
+      },
+      "sparse_score": 1.0,
+      "dense_score": 0.96,
+      "final_score": 8.9228
+    },
+    {
+      "evidence_id": "sha256:24da7985a57685b45e3d082f345f62e80ca2934d8b7ccaf7a26d616b60c686e0",
+      "source": "attachment:C:\\Users\\mengl\\AppData\\Local\\Temp\\ragflow_upload_9fky_0so\\Codon_ Python que roda 100 vezes mais rápido sem alterar seu código _ por Sumit Pandey _ Rumo ao Aprendizado Profundo.pdf",
+      "content": "Codon: Python que roda 100 vezes mais\nrápido sem alterar seu código\nCodon: Python que roda 100 vezes mais rápido sem\nalterar seu código\nAprenda como o Codon alcança um aumento de\nvelocidade de 100x no Python através da compilação AOT.\nMultithreading nativo, kernels de GPU, sobrecarga zero.\n8 minutos de leitura\n21 de dezembro de 2025\nComo alguém que passou horas incontáveis     esperando que tarefas de treinamento de\naprendizado de máquina terminassem, observando operações do NumPy se arrastarem por\nconjuntos de dados massivos de imagens médicas e otimizando código Python que se recusa\na ser mais rápido que uma tartaruga sonolenta, eu já tive minha cota de momentos do tipo\n\"Python é muito lento\" . Todos nós já falamos por isso, não é? Você escreve um código\nPython bonito e elegante, e então a realidade bate à porta: seu script leva 18 segundos para\ncalcular algo que deveria ser instantâneo.\nApresentamos o Codon , e não, este não é mais uma \"alternativa ao Python\" que te obriga\na aprender mais uma linguagem de programação. Este é o Python, mas reinventado para a era\nmoderna. Pense nele como o primo atlético do Python que foi para a academia e voltou\nbombado.\nSe não conseguir ler o artigo seguinte, clique aqui.\nO paradoxo do Python com o que todos convivemos.\nEis a questão sobre o Python: nós o amamos, odiamos, e não conseguimos viver sem ele. É\numa linguagem que impulsiona a maior parte do desenvolvimento de IA/ML, ciência de dados\ne, cada vez mais, todo o ecossistema tecnológico. Sua sintaxe é limpa, as bibliotecas são\nabundantes e a comunidade é enorme.\nMas sejamos honestos: Python é lento . Tipo, muito lento mesmo.\nDurante meu doutorado em IA médica na Universidade de Copenhague, frequentemente me\nvia executando modelos de previsão de sobrevivência, o que me permitia literalmente tomar\num café (ou três) enquanto esperava a conclusão das etapas de pré-processamento. Ó\ngargalo? O bom e velho Python sendo... bem, Python.\nUma solução habitual? Recorrendo a C/C++ para as declarações críticas em termos de\ndesempenho, escreva alguns wrappers em Cython ou torcer para que suas transações em\nNumPy sejam vetorizadas ou suficientes. É o compromisso de que todos aprendam a aceitar:\nvocê ganha facilidade de uso do Python, mas paga o preço do desempenho.\nO que exatamente é um códon?\nCodon é um compilador Python de alto desempenho que traduz seu código Python em\ncódigo de máquina nativa: sem sobrecarga de tempo de execução, sem interpretador, sem GIL\n(Global Interpreter Lock) atrapalhando seus sonhos de multithreading.\nOs números são realmente impressionantes:\nAumento de velocidade de 10 a 100 vezes em relação ao Python puro (às vezes mais).\nDesempenho equivalente a C/C++\nMultithreading nativo verdadeiro (sim, você leu certo)\nSuporte integrado para programação de GPU.\nUma implementação nativa do NumPy totalmente compilada.\nPressione Enter ou clique para ver a imagem em tamanho real.\nComo funciona o CODON (imagem retirada da página do GitHub)\nDeixe-me mostrar-lhe o que isso significa na prática.\nO Teste de Realidade de Fibonacci\nEis um exemplo simples que captura perfeitamente a diferença de velocidade. A clássica\nfunção recursiva de Fibonacci: o \"olá, mundo\" das comparações de desempenho:\nfrom  time  import  time \ndef  fib ( n ):\n     return  n  if  n < 2  else  fib ( n - 1 ) + fib ( n - 2 ) \nt0 = time () \nans = fib ( 40 ) \nt1 = time () \nprint ( f'Fib (40) calculado = {ans} em {t1 - t0} segundos.' )\nExecutando isso através do Python padrão:\nFib calculado ( 40 ) = 102334155 em 17,98 segundos .\nExecutando o mesmo código através do Codon:\nFib calculado ( 40 ) = 102334155 em 0,28 segundos .\nIsso representa um aumento de velocidade de 65 vezes sem alterar uma única linha de\ncódigo. Pense nisso.\nComo funciona essa feitiçaria?\nDiferentemente da natureza interpretada do Python, o Codon usa compilação antecipada\n(AOT) . Ele analisa todo o seu programa, realiza otimizações agressivas e o compila para\ncódigo de máquina nativo por meio do LLVM (a mesma infraestrutura de compilador usada\npor linguagens como Rust e Swift).\nA magia acontece em várias etapas:\n1. Inferência estática de tipos : o Codon descobre os tipos automaticamente (você não\nprecisa de dicas de tipo, embora elas ajudem).\n2. Otimizações de alto nível : Compreende padrões específicos do Python e otimiza de\nacordo.\n3. Backend LLVM : Converte para código de máquina altamente otimizado.\n4. Sobrecarga de tempo de execução zero : Sem interpretador, sem bytecode, apenas\nexecução nativa pura.\nO resultado? Você escreve em Python, mas o programa roda como se fosse C++.\nA Revolução Multithread\nLembra quando mencionei o GIL? O Global Interpreter Lock do Python é o notório gargalo\nque impede a verdadeira execução paralela. Você pode criar várias threads, mas elas\nexecutarão em turnos, não em paralelo de fato.\nO códon não possui uma GIL .\nVeja só isso — contagem paralela de números primos com multithreading de verdade:\nfrom sys import argv\ndef is_prime(n):\n    factors = 0\n    for i in range(2, n):\n        if n % i == 0:\n            factors += 1\n    return factors == 0\nlimit = int(argv[1])\ntotal = 0\n@par(schedule='dynamic', chunk_size=100, num_threads=16)\nfor i in range(2, limit):\n    if is_prime(i):\n        total += 1\nprint(total)\nThe @par decorator automatically parallelizes the loop using OpenMP. Notice how Codon is\nsmart enough to handle the total += 1 as an atomic reduction, preventing race conditions\nautomatically.\nFor someone working with large-scale medical imaging datasets, this is a game-changer.\nPreprocessing thousands of images? Parallelize it. Running Monte Carlo simulations? Parallelize\nit. The code looks like Python, but runs like a multi-threaded C++ application.\nGPU Programming Without the Pain\nHere’s where things get really exciting. Codon lets you write GPU kernels in Python syntax:\nimport gpu\nMAX    = 1000\nN      = 4096\npixels = [0 for _ in range(N * N)]\ndef scale(x, a, b):\n    return a + (x/N)*(b - a)\n@gpu.kernel\ndef mandelbrot(pixels):\n    idx = (gpu.block.x * gpu.block.dim.x) + gpu.thread.x\n    i, j = divmod(idx, N)\n    c = complex(scale(j, -2.00, 0.47), scale(i, -1.12, 1.12))\n    z = 0j\n    iteration = 0\n    while abs(z) <= 2 and iteration < MAX:\n        z = z**2 + c\n        iteration += 1\n    pixels[idx] = int(255 * iteration/MAX)\nmandelbrot(pixels, grid=(N*N)//1024, block=1024)\nThis is GPU programming in Python. No CUDA boilerplate, no wrestling with memory\nmanagement, no switching to a different language. Just Python with some GPU-specific\ndecorators.\nNumPy, But Faster\nOne of Codon’s standout features is its native NumPy implementation. It’s not just a\nwrapper around C libraries: it’s NumPy reimplemented in Codon itself, which opens up massive\noptimization opportunities.\nHere’s a Monte Carlo estimation of π:\nimport time\nimport numpy as np\nrng = np.random.default_rng(seed=0)\nx = rng.random(500_000_000)\ny = rng.random(500_000_000)\nt0 = time.time()\npi = ((x-1)**2 + (y-1)**2 < 1).sum() * (4 / len(x))\nt1 = time.time()\nprint(f'Computed pi~={pi:.4f} in {t1 - t0:.2f} sec')\nPython + NumPy: 2.25 seconds\nCodon + NumPy: 0.43 seconds\nThat’s a 5x speedup on already-optimized NumPy code. The compiler can inline operations,\nfuse array operations, and eliminate unnecessary memory allocations: optimizations that aren’t\npossible with traditional NumPy.\nFor ML practitioners working with large tensors and matrix operations, this could dramatically\nreduce experiment iteration time.\nThe Python Ecosystem Still Works\nOne concern I had initially: what about all those Python packages we rely on? scikit-learn,\npandas, matplotlib, PyTorch?\nCodon handles this elegantly with Python interoperability:\nfrom python import matplotlib.pyplot as plt\ndata = [x**2 for x in range(10)]\nplt.plot(data)\nplt.show()\nYou can import and use any Python package. The performance-critical parts run through\nCodon’s compiler, while the rest interfaces with the regular Python ecosystem. Best of both\nworlds.\nThe Honest Trade-offs\nNow, let’s address the elephant in the room: Codon is not a drop-in replacement for CPython.\nThere are some Python features that don’t play well with static compilation:\nDynamic type changes at runtime (the price of static compilation)\nSome of Python’s most dynamic metaprogramming features\nComplete behavioral parity with CPython in all edge cases\nBut here’s my take after exploring it: for most data science, ML, and computational workloads,\nthese limitations don’t matter. You’re not using Python’s dynamic features to change variable\ntypes at runtime in your NumPy pipeline or your model training loop. You’re writing relatively\nstatic, performance-critical code that’s currently bottlenecked by Python’s interpreter.\nThat’s exactly where Codon shines.\nReal-World Impact: My Use Case\nLet me give you a concrete example from my own work. During my PhD, I developed survival\nprediction models for medical imaging data. A typical preprocessing pipeline involved:\n1. Loading DICOM images (thousands of them)\n2. Normalizing pixel intensities\n3. Extracting features from regions of interest\n4. Computing statistical measures across patient cohorts\nIn pure Python with NumPy, this could take hours for a large dataset. Even with vectorization,\nI/O and computational bottlenecks persisted.\nWith Codon, I could:\nCompile the preprocessing pipeline to native code\nParallelize image processing across CPU cores\nEliminate interpreter overhead on tight loops\nOptimize end-to-end without dropping to C++\nThe potential time savings are substantial. What took 3 hours could potentially run in 10–20\nminutes. That’s not just convenient: it fundamentally changes how fast you can iterate on\nresearch ideas.\nGetting Started Is Trivial\nInstallation is dead simple:\n/bin/bash -c \"$(curl -fsSL https://exaloop.io/install.sh)\"\nThen you can:\nRun code: codon run file.py\nCompile with optimizations: codon run -release file.py\nBuild executables: codon build -release file.py\nGenerate LLVM IR: codon build -release -llvm file.py\nThe learning curve is minimal because it’s just Python (mostly). You write code the way you\nalways have, and Codon makes it fast.\nThe Bigger Picture\nCodon represents something important: a rejection of the false dichotomy between “easy to\nwrite” and “fast to run.” For decades, we’ve accepted that high-level languages trade\nperformance for productivity. Python gave us incredible productivity, and we lived with the\nperformance hit.\nBut what if we don’t have to compromise?\nProjects like Codon, Mojo, and others are pushing the boundaries of what’s possible. They’re\nasking: why can’t we have both? Why can’t we write in a high-level, expressive language and\nget native performance?\nFor AI/ML practitioners, data scientists, and computational researchers, this shift could be\ntransformative. Imagine:\nTraining models 10x faster on the same hardware\nRunning data pipelines that currently take hours in minutes\nPrototyping and production being the same code\nNot having to rewrite critical paths in C++ or Rust\nShould You Use Codon Today?\nHere’s my honest assessment:\nTry Codon if:\nYou have performance-critical Python code (numerical computing, simulations, data\nprocessing)\nYou’re comfortable with a subset of Python’s features\nYou want true multithreading or GPU capabilities\nYou’re building tools where compile-time overhead is acceptable\nContinue usando CPython se:\nVocê precisa de máxima compatibilidade com o ecossistema Python.\nSeu código depende muito de recursos dinâmicos do Python.\nO desempenho não é sua principal preocupação.\nVocê está trabalhando em prototipagem rápida com muitas dependências.\nPara o meu caso de uso: pesquisa em aprendizado de máquina e IA na área da saúde, o\nCodon é extremamente atraente. Os ganhos de desempenho nos kernels computacionais são\ndifíceis de ignorar, e a capacidade de paralelizar sem entrar em conflito com o GIL é enorme.\nO futuro está compilado\nEnquanto escrevo isto, o Codon tem 16,3 mil estrelas no GitHub e uma comunidade ativa. O\nprojeto possui licença Apache 2.0, é apoiado por instituições renomadas (NSF, NIH, MIT) e\nestá em constante aprimoramento.\nÉ perfeito? Não. Vai substituir o CPython completamente? Provavelmente não. Mas representa\numa direção promissora para o Python de alto desempenho? Sem dúvida.\nPara quem já desejou que o Python fosse mais rápido, mas temia a ideia de reescrever o\ncódigo em C++, o Codon merece sua atenção. Não é apenas mais um compilador: é uma\nreinvenção do que o Python pode ser quando o desempenho não é uma mera formalidade.\nExperimente. Escreva um pouco de código. Cronometre. Acho que você vai se surpreender.\nE talvez, só talvez, você pare de aceitar o imposto de desempenho com o qual todos nós\naprendemos a conviver.",
+      "metadata": {
+        "category": "artifact",
+        "type": "pdf"
+      },
+      "sparse_score": 0.6923,
+      "dense_score": 0.0185,
+      "final_score": 4.7519
+    },
+    {
+      "evidence_id": "issue:expected_actual",
+      "source": "issue.behavior",
+      "content": "Expected: \nActual: ",
+      "metadata": {
+        "category": "issue"
+      },
+      "sparse_score": 0.0,
+      "dense_score": 0.0,
+      "final_score": -10.868
+    },
+    {
+      "evidence_id": "policy:contradictions",
+      "source": "policy:contradictions",
+      "content": "If one artifact shows failure and another shows success for the same flow, the issue must be escalated for review.",
+      "metadata": {
+        "category": "policy"
+      },
+      "sparse_score": 0.0,
+      "dense_score": 0.0,
+      "final_score": -11.2646
+    },
+    {
+      "evidence_id": "policy:financial-review",
+      "source": "policy:financial-review",
+      "content": "Any issue with payment, refund, chargeback, or ledger mismatch must require human review unless deterministic checks fully reconcile the evidence.",
+      "metadata": {
+        "category": "policy"
+      },
+      "sparse_score": 0.0,
+      "dense_score": 0.0,
+      "final_score": -11.2974
+    },
+    {
+      "evidence_id": "policy:bug-ready",
+      "source": "policy:bug-ready",
+      "content": "A bug should include expected behavior, actual behavior, reproduction steps, environment, and affected version before it is marked ready for development.",
+      "metadata": {
+        "category": "policy"
+      },
+      "sparse_score": 0.25,
+      "dense_score": 0.0435,
+      "final_score": -11.3421
+    }
+  ],
+  "distilled": {
+    "key_facts": [
+      "issue.summary: UPLOAD-AD2770 Upload: Codon_ Python que roda 100 vezes mais rápido sem alterar seu código _ por Sumit Pandey _ Rumo ao Aprendizado Profundo.pdf",
+      "attachment:C:\\Users\\mengl\\AppData\\Local\\Temp\\ragflow_upload_9fky_0so\\Codon_ Python que roda 100 vezes mais rápido sem alterar seu código _ por Sumit Pandey _ Rumo ao Aprendizado Profundo.pdf: Codon: Python que roda 100 vezes mais\nrápido sem alterar seu código\nCodon: Python que roda 100 vezes mais rápido sem\nalterar seu código\nAprenda como o Codon alcança um aumento de\nvelocidade de 100x no Python através da c",
+      "issue.behavior: Expected: \nActual:",
+      "policy:contradictions: If one artifact shows failure and another shows success for the same flow, the issue must be escalated for review.",
+      "policy:financial-review: Any issue with payment, refund, chargeback, or ledger mismatch must require human review unless deterministic checks fully reconcile the evidence."
+    ],
+    "preserved_quotes": [
+      "0,28",
+      "0.43",
+      "0.47",
+      "1.12",
+      "17,98",
+      "2.00",
+      "2.25"
+    ],
+    "evidence": [
+      {
+        "evidence_id": "issue:summary",
+        "source": "issue.summary",
+        "content": "UPLOAD-AD2770 Upload: Codon_ Python que roda 100 vezes mais rápido sem alterar seu código _ por Sumit Pandey _ Rumo ao Aprendizado Profundo.pdf ",
+        "metadata": {
+          "category": "issue"
+        },
+        "sparse_score": 1.0,
+        "dense_score": 0.96,
+        "final_score": 8.9228
+      },
+      {
+        "evidence_id": "sha256:24da7985a57685b45e3d082f345f62e80ca2934d8b7ccaf7a26d616b60c686e0",
+        "source": "attachment:C:\\Users\\mengl\\AppData\\Local\\Temp\\ragflow_upload_9fky_0so\\Codon_ Python que roda 100 vezes mais rápido sem alterar seu código _ por Sumit Pandey _ Rumo ao Aprendizado Profundo.pdf",
+        "content": "Codon: Python que roda 100 vezes mais\nrápido sem alterar seu código\nCodon: Python que roda 100 vezes mais rápido sem\nalterar seu código\nAprenda como o Codon alcança um aumento de\nvelocidade de 100x no Python através da compilação AOT.\nMultithreading nativo, kernels de GPU, sobrecarga zero.\n8 minutos de leitura\n21 de dezembro de 2025\nComo alguém que passou horas incontáveis     esperando que tarefas de treinamento de\naprendizado de máquina terminassem, observando operações do NumPy se arrastarem por\nconjuntos de dados massivos de imagens médicas e otimizando código Python que se recusa\na ser mais rápido que uma tartaruga sonolenta, eu já tive minha cota de momentos do tipo\n\"Python é muito lento\" . Todos nós já falamos por isso, não é? Você escreve um código\nPython bonito e elegante, e então a realidade bate à porta: seu script leva 18 segundos para\ncalcular algo que deveria ser instantâneo.\nApresentamos o Codon , e não, este não é mais uma \"alternativa ao Python\" que te obriga\na aprender mais uma linguagem de programação. Este é o Python, mas reinventado para a era\nmoderna. Pense nele como o primo atlético do Python que foi para a academia e voltou\nbombado.\nSe não conseguir ler o artigo seguinte, clique aqui.\nO paradoxo do Python com o que todos convivemos.\nEis a questão sobre o Python: nós o amamos, odiamos, e não conseguimos viver sem ele. É\numa linguagem que impulsiona a maior parte do desenvolvimento de IA/ML, ciência de dados\ne, cada vez mais, todo o ecossistema tecnológico. Sua sintaxe é limpa, as bibliotecas são\nabundantes e a comunidade é enorme.\nMas sejamos honestos: Python é lento . Tipo, muito lento mesmo.\nDurante meu doutorado em IA médica na Universidade de Copenhague, frequentemente me\nvia executando modelos de previsão de sobrevivência, o que me permitia literalmente tomar\num café (ou três) enquanto esperava a conclusão das etapas de pré-processamento. Ó\ngargalo? O bom e velho Python sendo... bem, Python.\nUma solução habitual? Recorrendo a C/C++ para as declarações críticas em termos de\ndesempenho, escreva alguns wrappers em Cython ou torcer para que suas transações em\nNumPy sejam vetorizadas ou suficientes. É o compromisso de que todos aprendam a aceitar:\nvocê ganha facilidade de uso do Python, mas paga o preço do desempenho.\nO que exatamente é um códon?\nCodon é um compilador Python de alto desempenho que traduz seu código Python em\ncódigo de máquina nativa: sem sobrecarga de tempo de execução, sem interpretador, sem GIL\n(Global Interpreter Lock) atrapalhando seus sonhos de multithreading.\nOs números são realmente impressionantes:\nAumento de velocidade de 10 a 100 vezes em relação ao Python puro (às vezes mais).\nDesempenho equivalente a C/C++\nMultithreading nativo verdadeiro (sim, você leu certo)\nSuporte integrado para programação de GPU.\nUma implementação nativa do NumPy totalmente compilada.\nPressione Enter ou clique para ver a imagem em tamanho real.\nComo funciona o CODON (imagem retirada da página do GitHub)\nDeixe-me mostrar-lhe o que isso significa na prática.\nO Teste de Realidade de Fibonacci\nEis um exemplo simples que captura perfeitamente a diferença de velocidade. A clássica\nfunção recursiva de Fibonacci: o \"olá, mundo\" das comparações de desempenho:\nfrom  time  import  time \ndef  fib ( n ):\n     return  n  if  n < 2  else  fib ( n - 1 ) + fib ( n - 2 ) \nt0 = time () \nans = fib ( 40 ) \nt1 = time () \nprint ( f'Fib (40) calculado = {ans} em {t1 - t0} segundos.' )\nExecutando isso através do Python padrão:\nFib calculado ( 40 ) = 102334155 em 17,98 segundos .\nExecutando o mesmo código através do Codon:\nFib calculado ( 40 ) = 102334155 em 0,28 segundos .\nIsso representa um aumento de velocidade de 65 vezes sem alterar uma única linha de\ncódigo. Pense nisso.\nComo funciona essa feitiçaria?\nDiferentemente da natureza interpretada do Python, o Codon usa compilação antecipada\n(AOT) . Ele analisa todo o seu programa, realiza otimizações agressivas e o compila para\ncódigo de máquina nativo por meio do LLVM (a mesma infraestrutura de compilador usada\npor linguagens como Rust e Swift).\nA magia acontece em várias etapas:\n1. Inferência estática de tipos : o Codon descobre os tipos automaticamente (você não\nprecisa de dicas de tipo, embora elas ajudem).\n2. Otimizações de alto nível : Compreende padrões específicos do Python e otimiza de\nacordo.\n3. Backend LLVM : Converte para código de máquina altamente otimizado.\n4. Sobrecarga de tempo de execução zero : Sem interpretador, sem bytecode, apenas\nexecução nativa pura.\nO resultado? Você escreve em Python, mas o programa roda como se fosse C++.\nA Revolução Multithread\nLembra quando mencionei o GIL? O Global Interpreter Lock do Python é o notório gargalo\nque impede a verdadeira execução paralela. Você pode criar várias threads, mas elas\nexecutarão em turnos, não em paralelo de fato.\nO códon não possui uma GIL .\nVeja só isso — contagem paralela de números primos com multithreading de verdade:\nfrom sys import argv\ndef is_prime(n):\n    factors = 0\n    for i in range(2, n):\n        if n % i == 0:\n            factors += 1\n    return factors == 0\nlimit = int(argv[1])\ntotal = 0\n@par(schedule='dynamic', chunk_size=100, num_threads=16)\nfor i in range(2, limit):\n    if is_prime(i):\n        total += 1\nprint(total)\nThe @par decorator automatically parallelizes the loop using OpenMP. Notice how Codon is\nsmart enough to handle the total += 1 as an atomic reduction, preventing race conditions\nautomatically.\nFor someone working with large-scale medical imaging datasets, this is a game-changer.\nPreprocessing thousands of images? Parallelize it. Running Monte Carlo simulations? Parallelize\nit. The code looks like Python, but runs like a multi-threaded C++ application.\nGPU Programming Without the Pain\nHere’s where things get really exciting. Codon lets you write GPU kernels in Python syntax:\nimport gpu\nMAX    = 1000\nN      = 4096\npixels = [0 for _ in range(N * N)]\ndef scale(x, a, b):\n    return a + (x/N)*(b - a)\n@gpu.kernel\ndef mandelbrot(pixels):\n    idx = (gpu.block.x * gpu.block.dim.x) + gpu.thread.x\n    i, j = divmod(idx, N)\n    c = complex(scale(j, -2.00, 0.47), scale(i, -1.12, 1.12))\n    z = 0j\n    iteration = 0\n    while abs(z) <= 2 and iteration < MAX:\n        z = z**2 + c\n        iteration += 1\n    pixels[idx] = int(255 * iteration/MAX)\nmandelbrot(pixels, grid=(N*N)//1024, block=1024)\nThis is GPU programming in Python. No CUDA boilerplate, no wrestling with memory\nmanagement, no switching to a different language. Just Python with some GPU-specific\ndecorators.\nNumPy, But Faster\nOne of Codon’s standout features is its native NumPy implementation. It’s not just a\nwrapper around C libraries: it’s NumPy reimplemented in Codon itself, which opens up massive\noptimization opportunities.\nHere’s a Monte Carlo estimation of π:\nimport time\nimport numpy as np\nrng = np.random.default_rng(seed=0)\nx = rng.random(500_000_000)\ny = rng.random(500_000_000)\nt0 = time.time()\npi = ((x-1)**2 + (y-1)**2 < 1).sum() * (4 / len(x))\nt1 = time.time()\nprint(f'Computed pi~={pi:.4f} in {t1 - t0:.2f} sec')\nPython + NumPy: 2.25 seconds\nCodon + NumPy: 0.43 seconds\nThat’s a 5x speedup on already-optimized NumPy code. The compiler can inline operations,\nfuse array operations, and eliminate unnecessary memory allocations: optimizations that aren’t\npossible with traditional NumPy.\nFor ML practitioners working with large tensors and matrix operations, this could dramatically\nreduce experiment iteration time.\nThe Python Ecosystem Still Works\nOne concern I had initially: what about all those Python packages we rely on? scikit-learn,\npandas, matplotlib, PyTorch?\nCodon handles this elegantly with Python interoperability:\nfrom python import matplotlib.pyplot as plt\ndata = [x**2 for x in range(10)]\nplt.plot(data)\nplt.show()\nYou can import and use any Python package. The performance-critical parts run through\nCodon’s compiler, while the rest interfaces with the regular Python ecosystem. Best of both\nworlds.\nThe Honest Trade-offs\nNow, let’s address the elephant in the room: Codon is not a drop-in replacement for CPython.\nThere are some Python features that don’t play well with static compilation:\nDynamic type changes at runtime (the price of static compilation)\nSome of Python’s most dynamic metaprogramming features\nComplete behavioral parity with CPython in all edge cases\nBut here’s my take after exploring it: for most data science, ML, and computational workloads,\nthese limitations don’t matter. You’re not using Python’s dynamic features to change variable\ntypes at runtime in your NumPy pipeline or your model training loop. You’re writing relatively\nstatic, performance-critical code that’s currently bottlenecked by Python’s interpreter.\nThat’s exactly where Codon shines.\nReal-World Impact: My Use Case\nLet me give you a concrete example from my own work. During my PhD, I developed survival\nprediction models for medical imaging data. A typical preprocessing pipeline involved:\n1. Loading DICOM images (thousands of them)\n2. Normalizing pixel intensities\n3. Extracting features from regions of interest\n4. Computing statistical measures across patient cohorts\nIn pure Python with NumPy, this could take hours for a large dataset. Even with vectorization,\nI/O and computational bottlenecks persisted.\nWith Codon, I could:\nCompile the preprocessing pipeline to native code\nParallelize image processing across CPU cores\nEliminate interpreter overhead on tight loops\nOptimize end-to-end without dropping to C++\nThe potential time savings are substantial. What took 3 hours could potentially run in 10–20\nminutes. That’s not just convenient: it fundamentally changes how fast you can iterate on\nresearch ideas.\nGetting Started Is Trivial\nInstallation is dead simple:\n/bin/bash -c \"$(curl -fsSL https://exaloop.io/install.sh)\"\nThen you can:\nRun code: codon run file.py\nCompile with optimizations: codon run -release file.py\nBuild executables: codon build -release file.py\nGenerate LLVM IR: codon build -release -llvm file.py\nThe learning curve is minimal because it’s just Python (mostly). You write code the way you\nalways have, and Codon makes it fast.\nThe Bigger Picture\nCodon represents something important: a rejection of the false dichotomy between “easy to\nwrite” and “fast to run.” For decades, we’ve accepted that high-level languages trade\nperformance for productivity. Python gave us incredible productivity, and we lived with the\nperformance hit.\nBut what if we don’t have to compromise?\nProjects like Codon, Mojo, and others are pushing the boundaries of what’s possible. They’re\nasking: why can’t we have both? Why can’t we write in a high-level, expressive language and\nget native performance?\nFor AI/ML practitioners, data scientists, and computational researchers, this shift could be\ntransformative. Imagine:\nTraining models 10x faster on the same hardware\nRunning data pipelines that currently take hours in minutes\nPrototyping and production being the same code\nNot having to rewrite critical paths in C++ or Rust\nShould You Use Codon Today?\nHere’s my honest assessment:\nTry Codon if:\nYou have performance-critical Python code (numerical computing, simulations, data\nprocessing)\nYou’re comfortable with a subset of Python’s features\nYou want true multithreading or GPU capabilities\nYou’re building tools where compile-time overhead is acceptable\nContinue usando CPython se:\nVocê precisa de máxima compatibilidade com o ecossistema Python.\nSeu código depende muito de recursos dinâmicos do Python.\nO desempenho não é sua principal preocupação.\nVocê está trabalhando em prototipagem rápida com muitas dependências.\nPara o meu caso de uso: pesquisa em aprendizado de máquina e IA na área da saúde, o\nCodon é extremamente atraente. Os ganhos de desempenho nos kernels computacionais são\ndifíceis de ignorar, e a capacidade de paralelizar sem entrar em conflito com o GIL é enorme.\nO futuro está compilado\nEnquanto escrevo isto, o Codon tem 16,3 mil estrelas no GitHub e uma comunidade ativa. O\nprojeto possui licença Apache 2.0, é apoiado por instituições renomadas (NSF, NIH, MIT) e\nestá em constante aprimoramento.\nÉ perfeito? Não. Vai substituir o CPython completamente? Provavelmente não. Mas representa\numa direção promissora para o Python de alto desempenho? Sem dúvida.\nPara quem já desejou que o Python fosse mais rápido, mas temia a ideia de reescrever o\ncódigo em C++, o Codon merece sua atenção. Não é apenas mais um compilador: é uma\nreinvenção do que o Python pode ser quando o desempenho não é uma mera formalidade.\nExperimente. Escreva um pouco de código. Cronometre. Acho que você vai se surpreender.\nE talvez, só talvez, você pare de aceitar o imposto de desempenho com o qual todos nós\naprendemos a conviver.",
+        "metadata": {
+          "category": "artifact",
+          "type": "pdf"
+        },
+        "sparse_score": 0.6923,
+        "dense_score": 0.0185,
+        "final_score": 4.7519
+      },
+      {
+        "evidence_id": "issue:expected_actual",
+        "source": "issue.behavior",
+        "content": "Expected: \nActual: ",
+        "metadata": {
+          "category": "issue"
+        },
+        "sparse_score": 0.0,
+        "dense_score": 0.0,
+        "final_score": -10.868
+      },
+      {
+        "evidence_id": "policy:contradictions",
+        "source": "policy:contradictions",
+        "content": "If one artifact shows failure and another shows success for the same flow, the issue must be escalated for review.",
+        "metadata": {
+          "category": "policy"
+        },
+        "sparse_score": 0.0,
+        "dense_score": 0.0,
+        "final_score": -11.2646
+      },
+      {
+        "evidence_id": "policy:financial-review",
+        "source": "policy:financial-review",
+        "content": "Any issue with payment, refund, chargeback, or ledger mismatch must require human review unless deterministic checks fully reconcile the evidence.",
+        "metadata": {
+          "category": "policy"
+        },
+        "sparse_score": 0.0,
+        "dense_score": 0.0,
+        "final_score": -11.2974
+      },
+      {
+        "evidence_id": "policy:bug-ready",
+        "source": "policy:bug-ready",
+        "content": "A bug should include expected behavior, actual behavior, reproduction steps, environment, and affected version before it is marked ready for development.",
+        "metadata": {
+          "category": "policy"
+        },
+        "sparse_score": 0.25,
+        "dense_score": 0.0435,
+        "final_score": -11.3421
+      }
+    ]
+  },
+  "decision": {
+    "issue_key": "UPLOAD-AD2770",
+    "classification": "bug",
+    "is_bug": true,
+    "is_complete": false,
+    "ready_for_dev": false,
+    "missing_items": [
+      "actual_result_detail",
+      "affected_version_confirmation",
+      "environment",
+      "expected_result_detail",
+      "reproduction_steps"
+    ],
+    "evidence_used": [
+      "issue.summary",
+      "attachment:C:\\Users\\mengl\\AppData\\Local\\Temp\\ragflow_upload_9fky_0so\\Codon_ Python que roda 100 vezes mais rápido sem alterar seu código _ por Sumit Pandey _ Rumo ao Aprendizado Profundo.pdf",
+      "issue.behavior",
+      "policy:contradictions",
+      "policy:financial-review"
+    ],
+    "contradictions": [],
+    "financial_impact_detected": true,
+    "confidence": 0.6100000000000001,
+    "requires_human_review": true,
+    "provider": "mock",
+    "model": "mock-judge-v1",
+    "rationale": "Missing required fields: actual_result_detail, affected_version_confirmation, environment, expected_result_detail, reproduction_steps",
+    "audit_path": null,
+    "generated_at": "2026-03-09T16:33:49.777461Z"
+  },
+  "runtime": {
+    "langgraph": true,
+    "settings": {
+      "enable_planner": false,
+      "enable_query_rewriter": false,
+      "enable_reflection_memory": false,
+      "enable_policy_loop": false,
+      "enable_temporal_graphrag": false,
+      "enable_human_interrupts": false,
+      "planner_mode": "step-plan",
+      "query_rewriter_mode": "metadata-aware",
+      "reflection_mode": "summary-log",
+      "policy_mode": "rule-gated",
+      "temporal_graphrag_mode": "versioned-graph",
+      "distiller_mode": "simple"
+    },
+    "agentic_state": {
+      "plan_queries": [
+        "UPLOAD-AD2770 Upload: Codon_ Python que roda 100 vezes mais rápido sem alterar seu código _ por Sumit Pandey _ Rumo ao Aprendizado Profundo.pdf 102334155"
+      ],
+      "query_index": 0,
+      "current_query": "UPLOAD-AD2770 Upload: Codon_ Python que roda 100 vezes mais rápido sem alterar seu código _ por Sumit Pandey _ Rumo ao Aprendizado Profundo.pdf 102334155",
+      "iteration_count": 1,
+      "reflection_notes": [],
+      "policy_action": "judge",
+      "human_review": null
+    },
+    "trace": [
+      {
+        "node": "normalize",
+        "started_at": "2026-03-09T16:33:49.283260+00:00",
+        "finished_at": "2026-03-09T16:33:49.283260+00:00",
+        "duration_ms": 0.19,
+        "details": {
+          "issue_key": "UPLOAD-AD2770"
+        }
+      },
+      {
+        "node": "rules",
+        "started_at": "2026-03-09T16:33:49.287271+00:00",
+        "finished_at": "2026-03-09T16:33:49.287271+00:00",
+        "duration_ms": 0.27,
+        "details": {
+          "missing_items": 5,
+          "contradictions": 0,
+          "requires_human_review": true
+        }
+      },
+      {
+        "node": "plan",
+        "started_at": "2026-03-09T16:33:49.290527+00:00",
+        "finished_at": "2026-03-09T16:33:49.290527+00:00",
+        "duration_ms": 0.03,
+        "details": {
+          "query_count": 1,
+          "mode": "step-plan"
+        }
+      },
+      {
+        "node": "rewrite",
+        "started_at": "2026-03-09T16:33:49.292657+00:00",
+        "finished_at": "2026-03-09T16:33:49.292657+00:00",
+        "duration_ms": 0.05,
+        "details": {
+          "query_index": 0,
+          "mode": "metadata-aware"
+        }
+      },
+      {
+        "node": "retrieve",
+        "started_at": "2026-03-09T16:33:49.296681+00:00",
+        "finished_at": "2026-03-09T16:33:49.772121+00:00",
+        "duration_ms": 475.49,
+        "details": {
+          "retrieved_now": 6,
+          "retrieved_total": 6,
+          "categories": [
+            "artifact",
+            "issue",
+            "policy"
+          ]
+        }
+      },
+      {
+        "node": "distill",
+        "started_at": "2026-03-09T16:33:49.772730+00:00",
+        "finished_at": "2026-03-09T16:33:49.775896+00:00",
+        "duration_ms": 2.93,
+        "details": {
+          "key_facts": 5,
+          "quotes": 7,
+          "mode": "simple"
+        }
+      },
+      {
+        "node": "reflect",
+        "started_at": "2026-03-09T16:33:49.775896+00:00",
+        "finished_at": "2026-03-09T16:33:49.775896+00:00",
+        "duration_ms": 0.0,
+        "details": {
+          "enabled": false
+        }
+      },
+      {
+        "node": "policy",
+        "started_at": "2026-03-09T16:33:49.776410+00:00",
+        "finished_at": "2026-03-09T16:33:49.776410+00:00",
+        "duration_ms": 0.01,
+        "details": {
+          "action": "judge",
+          "iteration": 1
+        }
+      },
+      {
+        "node": "judge",
+        "started_at": "2026-03-09T16:33:49.776928+00:00",
+        "finished_at": "2026-03-09T16:33:49.777461+00:00",
+        "duration_ms": 0.62,
+        "details": {
+          "classification": "bug",
+          "confidence": 0.6100000000000001,
+          "provider": "mock"
+        }
+      }
+    ],
+    "trace_grades": {
+      "trace_completeness": 1.0,
+      "planner_quality_proxy": 1.0,
+      "retrieval_diversity_proxy": 0.75,
+      "loop_efficiency_proxy": 1.0
+    }
+  }
+}

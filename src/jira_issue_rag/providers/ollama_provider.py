@@ -39,11 +39,12 @@ import httpx
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fixed
 
 from jira_issue_rag.providers.base import LLMProvider
-from jira_issue_rag.providers.decision_contract import normalize_decision_data
+from jira_issue_rag.providers.decision_contract import decision_output_contract_text, normalize_decision_data
 from jira_issue_rag.shared.models import DecisionResult, JudgeInput
 
 _DEFAULT_BASE_URL = "http://localhost:11434"
 _DEFAULT_MODEL = "llama3.1:8b"
+_DEFAULT_TIMEOUT_SECONDS = 600
 
 # How long to keep the model loaded between calls.
 # 5 minutes covers multi-step modular judge + second opinion in one session.
@@ -63,9 +64,11 @@ class OllamaProvider(LLMProvider):
         self,
         base_url: str = _DEFAULT_BASE_URL,
         model_name: str = _DEFAULT_MODEL,
+        timeout_seconds: int = _DEFAULT_TIMEOUT_SECONDS,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model_name = model_name
+        self.timeout_seconds = max(int(timeout_seconds), 30)
 
     def is_available(self) -> bool:
         """
@@ -86,7 +89,8 @@ class OllamaProvider(LLMProvider):
             system_prompt=(
                 "You are validating whether a Jira issue is a real bug, "
                 "whether it is complete, and whether it is ready for development. "
-                "Return only valid JSON with no markdown fences."
+                "Build an explicit readiness checklist, list blockers, and give a short next action. "
+                + decision_output_contract_text()
             ),
             user_prompt=judge_input.model_dump_json(indent=2),
             response_format="json",
@@ -103,8 +107,12 @@ class OllamaProvider(LLMProvider):
         user_prompt: str,
         response_format: str = "text",
     ) -> str:
+        resolved_model = self._resolve_model_name()
+        if resolved_model != self.model_name:
+            self.model_name = resolved_model
+
         payload: dict = {
-            "model": self.model_name,
+            "model": resolved_model,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -118,16 +126,68 @@ class OllamaProvider(LLMProvider):
             # Ollama's native JSON mode — forces well-formed output, avoids markdown fences.
             payload["format"] = "json"
 
-        with httpx.Client(timeout=180.0) as client:
-            response = client.post(
-                f"{self.base_url}/v1/chat/completions",
-                headers={"Content-Type": "application/json"},
-                json=payload,
-            )
-            response.raise_for_status()
-            data = response.json()
+        timeout = httpx.Timeout(connect=10.0, read=float(self.timeout_seconds), write=60.0, pool=10.0)
+        try:
+            with httpx.Client(timeout=timeout) as client:
+                response = client.post(
+                    f"{self.base_url}/v1/chat/completions",
+                    headers={"Content-Type": "application/json"},
+                    json=payload,
+                )
+                if response.status_code >= 400:
+                    self._raise_for_status(response, requested_model=resolved_model)
+                data = response.json()
+        except httpx.ReadTimeout as exc:
+            raise RuntimeError(
+                f"Ollama timed out after {self.timeout_seconds}s while running model '{resolved_model}'. "
+                "Local models can take longer on first load or with long article prompts. "
+                "Increase OLLAMA_TIMEOUT_SECONDS or try a smaller model."
+            ) from exc
 
         return self._extract_content(data)
+
+    def _resolve_model_name(self) -> str:
+        available = self.list_local_models()
+        if not available:
+            return self.model_name
+
+        requested = self.model_name.strip()
+        lowered = requested.lower()
+        exact = next((model for model in available if model.lower() == lowered), None)
+        if exact:
+            return exact
+
+        family = requested.split(":", 1)[0].strip().lower()
+        family_matches = [model for model in available if model.lower().startswith(f"{family}:")]
+        if not family_matches:
+            return requested
+
+        latest = next((model for model in family_matches if model.lower() == f"{family}:latest"), None)
+        return latest or family_matches[0]
+
+    def _raise_for_status(self, response: httpx.Response, *, requested_model: str) -> None:
+        try:
+            data = response.json()
+        except Exception:
+            response.raise_for_status()
+            return
+
+        message = ""
+        if isinstance(data, dict):
+            if isinstance(data.get("error"), dict):
+                message = str(data["error"].get("message", ""))
+            elif data.get("error"):
+                message = str(data.get("error", ""))
+
+        if response.status_code == 404 and "not found" in message.lower() and "model" in message.lower():
+            available = self.list_local_models()
+            available_label = ", ".join(available) if available else "nenhum modelo local encontrado"
+            raise RuntimeError(
+                f"Ollama model '{requested_model}' nao esta disponivel em {self.base_url}. "
+                f"Modelos locais: {available_label}."
+            )
+
+        response.raise_for_status()
 
     @staticmethod
     def _extract_content(data: dict) -> str:

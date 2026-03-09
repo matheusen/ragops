@@ -12,9 +12,10 @@ const CLS_META: Record<string, { label: string; mod: string; icon: string; secti
   bug:          { label: "Bug",        mod: "ris__badge--bug",  icon: "🐛", section: "Bugs Confirmados"   },
   not_bug:      { label: "Não é bug",  mod: "ris__badge--ok",   icon: "✅", section: "Falsos Positivos"   },
   needs_review: { label: "Revisão",    mod: "ris__badge--warn", icon: "⚠️", section: "Precisam de Revisão" },
+  article_analysis: { label: "Artigo", mod: "ris__badge--info", icon: "📰", section: "Análises de Artigo" },
 };
 
-const SECTION_ORDER = ["Bugs Confirmados", "Precisam de Revisão", "Falsos Positivos"];
+const SECTION_ORDER = ["Análises de Artigo", "Bugs Confirmados", "Precisam de Revisão", "Falsos Positivos"];
 
 function fmt(iso: string) {
   if (!iso) return "–";

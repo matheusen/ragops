@@ -166,6 +166,7 @@ class DistillerService:
         """Return the distiller LLM provider, or None when mode is simple/unavailable."""
         from jira_issue_rag.providers.gemini_provider import GeminiProvider
         from jira_issue_rag.providers.mock_provider import MockProvider
+        from jira_issue_rag.providers.ollm_provider import OLLMProvider
         from jira_issue_rag.providers.ollama_provider import OllamaProvider
         from jira_issue_rag.providers.openai_provider import OpenAIProvider
 
@@ -185,6 +186,16 @@ class DistillerService:
             p = OllamaProvider(
                 base_url=self.settings.ollama_base_url,
                 model_name=self.settings.ollama_model,
+            )
+        elif name == "ollm":
+            p = OLLMProvider(
+                model_name=self.settings.ollm_model,
+                device=self.settings.ollm_device,
+                models_dir=self.settings.ollm_models_dir,
+                cache_dir=self.settings.ollm_cache_dir,
+                force_download=self.settings.ollm_force_download,
+                offload_layers=self.settings.ollm_offload_layers,
+                max_new_tokens=self.settings.ollm_max_new_tokens,
             )
         else:
             p = MockProvider(self.settings.primary_model)

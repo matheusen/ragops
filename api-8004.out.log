@@ -1,0 +1,4 @@
+INFO:     127.0.0.1:55438 - "GET /api/v1/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55445 - "POST /api/v1/validate/issue HTTP/1.1" 200 OK
+INFO:     ::ffff:127.0.0.1:0 - "POST /api/v1/validate/issue HTTP/1.1" 200 OK
+INFO:     ::1:0 - "POST /api/v1/validate/upload HTTP/1.1" 200 OK

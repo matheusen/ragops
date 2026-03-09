@@ -60,7 +60,7 @@ export interface SettingsGroup {
 }
 
 export interface ActiveProviderConfig {
-  /** e.g. "openai" | "gemini" | "ollama" | "mock" */
+  /** e.g. "openai" | "gemini" | "ollama" | "ollm" | "mock" */
   provider: string;
   /** Active model name for the selected provider */
   model: string;
@@ -186,6 +186,7 @@ async function readActiveConfig(): Promise<ActiveProviderConfig> {
     openai: merged["OPENAI_MODEL"] ?? "gpt-4o",
     gemini: merged["GEMINI_MODEL"] ?? "gemini-2.5-flash",
     ollama: merged["OLLAMA_MODEL"] ?? "llama3",
+    ollm: merged["OLLM_MODEL"] ?? "llama3-1B-chat",
     mock: "(mock — no real LLM)",
   };
 
@@ -515,6 +516,19 @@ async function readSettingsGroups(): Promise<SettingsGroup[]> {
         setting(merged, "OLLAMA_BASE_URL"),
         setting(merged, "OLLAMA_MODEL"),
         setting(merged, "AUTO_IMPROVEMENT_THRESHOLD"),
+      ],
+    },
+    {
+      title: "oLLM (in-process)",
+      description: "Provider local no próprio processo Python, com offload para RAM/SSD e cache de KV em disco para contextos longos.",
+      items: [
+        setting(merged, "OLLM_MODEL"),
+        setting(merged, "OLLM_DEVICE"),
+        setting(merged, "OLLM_MODELS_DIR"),
+        setting(merged, "OLLM_CACHE_DIR"),
+        setting(merged, "OLLM_FORCE_DOWNLOAD"),
+        setting(merged, "OLLM_OFFLOAD_LAYERS"),
+        setting(merged, "OLLM_MAX_NEW_TOKENS"),
       ],
     },
   ];

@@ -6,7 +6,7 @@ import httpx
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fixed
 
 from jira_issue_rag.providers.base import LLMProvider
-from jira_issue_rag.providers.decision_contract import normalize_decision_data
+from jira_issue_rag.providers.decision_contract import decision_output_contract_text, normalize_decision_data
 from jira_issue_rag.shared.models import DecisionResult, JudgeInput
 
 
@@ -33,7 +33,9 @@ class OpenAIProvider(LLMProvider):
         output_text = self.run_prompt(
             system_prompt=(
                 "You are validating whether a Jira issue is a real bug, whether it is complete, "
-                "and whether it is ready for development. Return only valid JSON."
+                "and whether it is ready for development. "
+                "Build an explicit readiness checklist, list blockers, and give a short next action. "
+                + decision_output_contract_text()
             ),
             user_prompt=judge_input.model_dump_json(indent=2),
             response_format="json",

@@ -16,10 +16,14 @@ service file.
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
+from datetime import datetime, timezone
 from typing import Any
 
 from jira_issue_rag.core.config import Settings
 from jira_issue_rag.providers.mock_provider import MockProvider
+from jira_issue_rag.services.audit import AuditStore
 from jira_issue_rag.services.article_store import ArticleStore
 from jira_issue_rag.services.decision import ProviderRouter
 from jira_issue_rag.services.neo4j_store import Neo4jGraphStore
@@ -40,9 +44,19 @@ from jira_issue_rag.shared.models import (
 # ---------------------------------------------------------------------------
 
 _PROVIDER_VARIANTS: dict[str, dict[str, Any]] = {
+    "gpt4o": {
+        "default_provider": "openai",
+        "openai_model": "gpt-4o",
+        "allow_third_party_llm": True,
+    },
     "gpt-4o": {
         "default_provider": "openai",
         "openai_model": "gpt-4o",
+        "allow_third_party_llm": True,
+    },
+    "gpt4o-mini": {
+        "default_provider": "openai",
+        "openai_model": "gpt-4o-mini",
         "allow_third_party_llm": True,
     },
     "gpt-4o mini": {
@@ -50,14 +64,29 @@ _PROVIDER_VARIANTS: dict[str, dict[str, Any]] = {
         "openai_model": "gpt-4o-mini",
         "allow_third_party_llm": True,
     },
+    "gpt41": {
+        "default_provider": "openai",
+        "openai_model": "gpt-4.1",
+        "allow_third_party_llm": True,
+    },
     "gpt-4.1": {
         "default_provider": "openai",
         "openai_model": "gpt-4.1",
         "allow_third_party_llm": True,
     },
+    "gemini-flash": {
+        "default_provider": "gemini",
+        "gemini_model": "gemini-2.5-flash",
+        "allow_third_party_llm": True,
+    },
     "gemini 2.5 flash": {
         "default_provider": "gemini",
         "gemini_model": "gemini-2.5-flash",
+        "allow_third_party_llm": True,
+    },
+    "gemini-pro": {
+        "default_provider": "gemini",
+        "gemini_model": "gemini-2.5-pro",
         "allow_third_party_llm": True,
     },
     "gemini 2.5 pro": {
@@ -73,6 +102,18 @@ _PROVIDER_VARIANTS: dict[str, dict[str, Any]] = {
         "default_provider": "ollama",
         "allow_third_party_llm": False,
     },
+    "ollm": {
+        "default_provider": "ollm",
+        "allow_third_party_llm": False,
+    },
+    "ollm in-process": {
+        "default_provider": "ollm",
+        "allow_third_party_llm": False,
+    },
+    "ollm local offload": {
+        "default_provider": "ollm",
+        "allow_third_party_llm": False,
+    },
     "mock": {
         "default_provider": "mock",
         "allow_third_party_llm": False,
@@ -84,8 +125,18 @@ _PROVIDER_VARIANTS: dict[str, dict[str, Any]] = {
 }
 
 _EMBEDDING_VARIANTS: dict[str, dict[str, Any]] = {
+    "openai-ada": {
+        "openai_embedding_model": "text-embedding-ada-002",
+        "embedding_dimension": 1536,
+        "allow_third_party_embeddings": True,
+    },
     "openai ada-002": {
         "openai_embedding_model": "text-embedding-ada-002",
+        "embedding_dimension": 1536,
+        "allow_third_party_embeddings": True,
+    },
+    "openai-3s": {
+        "openai_embedding_model": "text-embedding-3-small",
         "embedding_dimension": 1536,
         "allow_third_party_embeddings": True,
     },
@@ -111,6 +162,11 @@ _EMBEDDING_VARIANTS: dict[str, dict[str, Any]] = {
 }
 
 _RETRIEVER_VARIANTS: dict[str, dict[str, Any]] = {
+    "hybrid": {
+        "enable_external_retrieval": True,
+        "enable_cascade_retrieval": False,
+        "enable_graphrag": False,
+    },
     "hybrid bm25+dense": {
         "enable_external_retrieval": True,
         "enable_cascade_retrieval": False,
@@ -121,15 +177,30 @@ _RETRIEVER_VARIANTS: dict[str, dict[str, Any]] = {
         "enable_cascade_retrieval": False,
         "enable_graphrag": False,
     },
+    "qdrant": {
+        "enable_external_retrieval": True,
+        "enable_cascade_retrieval": False,
+        "enable_graphrag": False,
+    },
     "qdrant only": {
         "enable_external_retrieval": True,
         "enable_cascade_retrieval": False,
         "enable_graphrag": False,
     },
+    "neo4j": {
+        "enable_external_retrieval": True,
+        "enable_graphrag": True,
+        "enable_cascade_retrieval": False,
+    },
     "neo4j graphrag": {
         "enable_external_retrieval": True,
         "enable_graphrag": True,
         "enable_cascade_retrieval": False,
+    },
+    "memory": {
+        "enable_external_retrieval": False,
+        "enable_cascade_retrieval": False,
+        "enable_graphrag": False,
     },
     "in-memory": {
         "enable_external_retrieval": False,
@@ -150,6 +221,9 @@ _DISTILLER_VARIANTS: dict[str, dict[str, Any]] = {
 }
 
 _PLANNER_VARIANTS: dict[str, dict[str, Any]] = {
+    "step-plan": {
+        "planner_mode": "step-plan",
+    },
     "step plan": {
         "planner_mode": "step-plan",
     },
@@ -168,8 +242,14 @@ _QUERY_REWRITER_VARIANTS: dict[str, dict[str, Any]] = {
 }
 
 _REFLECTION_VARIANTS: dict[str, dict[str, Any]] = {
+    "summary-log": {
+        "reflection_mode": "summary-log",
+    },
     "summary log": {
         "reflection_mode": "summary-log",
+    },
+    "evidence-ledger": {
+        "reflection_mode": "evidence-ledger",
     },
     "evidence ledger": {
         "reflection_mode": "evidence-ledger",
@@ -180,14 +260,23 @@ _POLICY_VARIANTS: dict[str, dict[str, Any]] = {
     "rule-gated": {
         "policy_mode": "rule-gated",
     },
+    "policy-agent": {
+        "policy_mode": "policy-agent",
+    },
     "policy agent": {
         "policy_mode": "policy-agent",
     },
 }
 
 _TEMPORAL_GRAPH_VARIANTS: dict[str, dict[str, Any]] = {
+    "fact-graph": {
+        "temporal_graphrag_mode": "fact-graph",
+    },
     "fact graph": {
         "temporal_graphrag_mode": "fact-graph",
+    },
+    "versioned-graph": {
+        "temporal_graphrag_mode": "versioned-graph",
     },
     "versioned graph": {
         "temporal_graphrag_mode": "versioned-graph",
@@ -304,6 +393,7 @@ def settings_from_flow(nodes: list[FlowNodeState], base: Settings | None = None)
             overrides.update(patches)
 
     # ── optional modules — active flag drives the boolean toggle ──────────
+    _toggle(overrides, by_id, node_id="monkeyocr", flag="enable_monkeyocr_pdf_parser")
     _toggle(overrides, by_id, node_id="reranker", flag="enable_reranker")
     _toggle(overrides, by_id, node_id="neo4j", flag="enable_graphrag")
 
@@ -392,6 +482,16 @@ def run_flow(
                 metadata=article_request.metadata,
             )
         )
+        write_article_analysis_audit(
+            settings=settings,
+            article_request=article_request,
+            prompt_result=prompt_result,
+            article_search=article_search,
+            related_articles=related_articles,
+            query_text=query_text,
+            warnings=_dedupe_warnings(warnings),
+            runtime_summary=runtime_summary,
+        )
         return FlowRunResponse(
             flow_mode=flow_mode,
             prompt_execution=prompt_result,
@@ -448,11 +548,21 @@ def _run_dspy_optimization(
         result.skipped_reason = (
             "DSPy + GEPA currently targets the issue-validation golden dataset and is skipped for article-analysis."
         )
+        result.history_file = _write_dspy_history(
+            settings=settings,
+            result=result,
+            flow_mode=flow_mode,
+        )
         return result
 
     if not settings.golden_dataset_path.exists():
         result.skipped_reason = (
             f"DSPy + GEPA skipped because the golden dataset was not found at '{settings.golden_dataset_path}'."
+        )
+        result.history_file = _write_dspy_history(
+            settings=settings,
+            result=result,
+            flow_mode=flow_mode,
         )
         return result
 
@@ -460,12 +570,22 @@ def _run_dspy_optimization(
         result.skipped_reason = (
             f"DSPy + GEPA requires openai, gemini or ollama, but the current runtime provider is '{effective_provider}'."
         )
+        result.history_file = _write_dspy_history(
+            settings=settings,
+            result=result,
+            flow_mode=flow_mode,
+        )
         return result
 
     try:
         from jira_issue_rag.services.dspy_optimizer import DSPyOptimizationLab
     except Exception as exc:
         result.skipped_reason = f"DSPy + GEPA is not available in this environment: {exc}"
+        result.history_file = _write_dspy_history(
+            settings=settings,
+            result=result,
+            flow_mode=flow_mode,
+        )
         return result
 
     try:
@@ -478,11 +598,21 @@ def _run_dspy_optimization(
         exported = lab.export_to_prompts(opt_result["program"], output_dir=settings.prompts_dir)
     except Exception as exc:
         result.skipped_reason = f"DSPy + GEPA failed at runtime: {exc}"
+        result.history_file = _write_dspy_history(
+            settings=settings,
+            result=result,
+            flow_mode=flow_mode,
+        )
         return result
 
     result.triggered = True
     result.dev_score = opt_result.get("dev_score")
     result.exported_files = exported
+    result.history_file = _write_dspy_history(
+        settings=settings,
+        result=result,
+        flow_mode=flow_mode,
+    )
     return result
 
 
@@ -495,6 +625,166 @@ def _dedupe_warnings(warnings: list[str]) -> list[str]:
         seen.add(warning)
         unique.append(warning)
     return unique
+
+
+def _write_dspy_history(
+    *,
+    settings: Settings,
+    result: FlowDSPyOptimizationResult,
+    flow_mode: str,
+) -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    optimizer = (result.optimizer or "gepa").lower().replace(" ", "-")
+    provider = (result.provider or "unknown").lower().replace(" ", "-")
+    target_dir = settings.dspy_lab_dir / "runs"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    path = target_dir / f"{timestamp}__{optimizer}__{provider}.json"
+    payload = {
+        "timestamp": timestamp,
+        "flow_mode": flow_mode,
+        "optimizer": result.optimizer,
+        "provider": result.provider,
+        "triggered": result.triggered,
+        "skipped_reason": result.skipped_reason,
+        "dev_score": result.dev_score,
+        "exported_files": result.exported_files,
+    }
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    return str(path)
+
+
+def write_article_analysis_audit(
+    *,
+    settings: Settings,
+    article_request: Any,
+    prompt_result: Any,
+    article_search: list[Any],
+    related_articles: list[dict[str, Any]],
+    query_text: str,
+    warnings: list[str],
+    runtime_summary: dict[str, Any] | None = None,
+) -> str:
+    source = str(
+        article_request.metadata.get("source")
+        or article_request.metadata.get("source_path")
+        or article_request.metadata.get("file_name")
+        or ""
+    )
+    source_seed = source or article_request.title or article_request.content[:120]
+    digest = hashlib.sha1(source_seed.encode("utf-8")).hexdigest()[:6].upper()
+    issue_key = f"ARTICLE-{digest}"
+    artifact_id = f"article:{hashlib.sha1((article_request.title + source + article_request.content[:500]).encode('utf-8')).hexdigest()}"
+    artifact_kind = "pdf" if source.lower().endswith(".pdf") else "text"
+    runtime_payload = dict(runtime_summary or {})
+    runtime_payload.update(
+        {
+            "flow_mode": str(runtime_payload.get("flow_mode") or "article-analysis"),
+            "provider": prompt_result.provider,
+            "llm_model": prompt_result.model,
+            "model": prompt_result.model,
+            "prompt_name": prompt_result.prompt_name,
+            "query_text": query_text,
+            "search_hits": len(article_search),
+            "warnings": _dedupe_warnings([*warnings, *runtime_payload.get("warnings", [])] if isinstance(runtime_payload.get("warnings"), list) else warnings),
+        }
+    )
+
+    audit_path = AuditStore(settings.audit_dir).write(
+        issue_key=issue_key,
+        payload={
+            "run_kind": "article-analysis",
+            "issue": {
+                "issue_key": issue_key,
+                "summary": article_request.title,
+                "description": article_request.content[:4000],
+                "comments": [],
+                "acceptance_criteria": [],
+                "reproduction_steps": [],
+                "expected_behavior": "",
+                "actual_behavior": "",
+                "priority": None,
+                "issue_type": "Article",
+                "status": None,
+                "project": None,
+                "component": None,
+                "service": None,
+                "environment": None,
+                "affected_version": None,
+                "labels": ["article-analysis"],
+                "issue_links": [],
+                "attachments": [],
+                "changelog": [],
+                "collected_at": datetime.now(timezone.utc).isoformat(),
+            },
+            "attachment_facts": {
+                "issue_key": issue_key,
+                "artifacts": [
+                    {
+                        "artifact_id": artifact_id,
+                        "artifact_type": artifact_kind,
+                        "source_path": source or article_request.title,
+                        "extracted_text": article_request.content,
+                        "facts": {
+                            "article_title": article_request.title,
+                            "primary_theme": str(article_request.metadata.get("theme") or ""),
+                            "secondary_themes": article_request.metadata.get("tags", []),
+                        },
+                        "confidence": 1.0,
+                    }
+                ],
+                "contradictions": [],
+                "missing_information": [],
+            },
+            "rule_evaluation": {
+                "missing_items": [],
+                "contradictions": [],
+                "financial_impact_detected": False,
+                "requires_human_review": False,
+                "results": [],
+            },
+            "retrieved": [item.model_dump(mode="json") for item in article_search],
+            "distilled": {
+                "key_facts": [],
+                "preserved_quotes": [],
+                "evidence": [],
+            },
+            "decision": {
+                "issue_key": issue_key,
+                "classification": "article_analysis",
+                "is_bug": False,
+                "is_complete": True,
+                "ready_for_dev": True,
+                "confidence": 1.0,
+                "missing_items": [],
+                "evidence_used": [item.chunk_id for item in article_search],
+                "contradictions": [],
+                "financial_impact_detected": False,
+                "requires_human_review": False,
+                "rationale": prompt_result.output_text,
+                "provider": prompt_result.provider,
+                "model": prompt_result.model,
+            },
+            "prompt_execution": prompt_result.model_dump(mode="json"),
+            "article_run": {
+                "title": article_request.title,
+                "source": source,
+                "prompt_name": article_request.prompt_name,
+                "search_query": query_text,
+                "top_k": article_request.top_k,
+                "related_doc_id": article_request.related_doc_id,
+                "related_limit": article_request.related_limit,
+                "metadata": article_request.metadata,
+                "content_excerpt": article_request.content[:4000],
+                "output_text": prompt_result.output_text,
+                "warnings": warnings,
+                "related_articles": related_articles,
+            },
+            "runtime": {
+                **runtime_payload,
+            },
+        },
+    )
+    return audit_path
 
 
 def describe_flow(
@@ -573,6 +863,7 @@ def describe_flow(
         "temporal_graphrag_mode": settings.temporal_graphrag_mode,
         "confidentiality": settings.confidentiality_mode,
         "langgraph": settings.enable_langgraph,
+        "monkeyocr": settings.enable_monkeyocr_pdf_parser,
         "dspy_active": (by_id["dspy"].active if "dspy" in by_id else False),
         "ragas_active": (by_id["ragas"].active if "ragas" in by_id else False),
         "supported_runtime_nodes": supported_runtime_nodes,
@@ -589,6 +880,8 @@ def _llm_model_for_provider(settings: Settings, provider_name: str) -> str:
         return settings.gemini_model
     if lowered == "ollama":
         return settings.ollama_model
+    if lowered == "ollm":
+        return settings.ollm_model
     return settings.primary_model
 
 
@@ -638,6 +931,11 @@ def _build_describe_warnings(
         warnings.append(
             "GraphRAG is configured in the canvas, but Neo4j is not available. "
             "Related-issue graph traversal will be skipped."
+        )
+
+    if configured_settings.enable_monkeyocr_pdf_parser:
+        warnings.append(
+            "MonkeyOCR is enabled in the flow. PDF parsing will try the local sidecar first and silently fall back if it is unavailable."
         )
 
     if ignored_nodes:

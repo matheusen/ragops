@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from time import perf_counter
 from typing import Any, TypedDict
+from uuid import uuid4
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
@@ -97,7 +98,7 @@ class LangGraphValidationRunner:
         prompt_name: str | None,
         thread_id: str | None = None,
     ) -> dict[str, Any]:
-        effective_thread_id = thread_id or issue.issue_key
+        effective_thread_id = thread_id or f"{issue.issue_key}-{uuid4().hex[:8]}"
         config = {"configurable": {"thread_id": effective_thread_id}}
         return self.graph.invoke(
             {

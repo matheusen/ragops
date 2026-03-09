@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -20,7 +20,7 @@ import {
   MarkerType,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { saveFlowAction, deleteFlowAction } from "@/app/actions";
+import { saveFlowAction, updateFlowAction, deleteFlowAction } from "@/app/actions";
 import { getApiBase } from "@/lib/api-base";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -120,6 +120,15 @@ const NODE_CATALOG: CatalogEntry[] = [
     tech: ["Policy engine", "PII redaction", "Audit logging"],
     optional: false,
     serviceFile: "config.py",
+  },
+  {
+    id: "monkeyocr",
+    category: "processing",
+    label: "MonkeyOCR PDF Parser",
+    description: "Ativa o sidecar MonkeyOCR para PDFs complexos. No article-analysis ele vira a primeira passagem do ArticleStore; no issue-validation ele também é usado para anexos PDF antes de pypdf, Docling e Tesseract.",
+    tech: ["MonkeyOCR", "PDF SRR", "Sidecar HTTP", "PDF attachments"],
+    optional: true,
+    serviceFile: "article_store.py / artifacts.py",
   },
   {
     id: "normalizer",
@@ -302,6 +311,7 @@ const NODE_CATALOG: CatalogEntry[] = [
       { id: "gemini-flash", label: "Gemini 2.5 Flash", description: "Multimodal, 1M ctx, rápido e barato. Ideal para high-volume.", tech: ["Gemini", "2.5 Flash", "1M ctx"] },
       { id: "gemini-pro",   label: "Gemini 2.5 Pro",   description: "Maior capacidade da linha Gemini, 2M ctx, raciocínio profundo.", tech: ["Gemini", "2.5 Pro", "2M ctx"] },
       { id: "ollama",     label: "Ollama (local)",    description: "Modelo local — privacidade total, zero custo de API, sem latência de rede.", tech: ["Ollama", "local", "Free", "Private"] },
+      { id: "ollm",       label: "oLLM (in-process)", description: "Modelo local no próprio backend Python, com offload para RAM/SSD e foco em contexto longo em hardware comum.", tech: ["oLLM", "In-process", "Offload", "Private"] },
       { id: "mock",       label: "Mock Provider",     description: "Retorno simulado determinístico — sem custo, ideal para testes e CI.", tech: ["Mock", "dev/test", "Free"] },
     ],
     selectedVariant: "gpt4o",
@@ -458,6 +468,63 @@ const DEFAULT_EDGES: Edge[] = [
   { id:"e26", source:"result-norm",    target:"audit",            style: eStyle, markerEnd: mk },
   { id:"e27", source:"result-norm",    target:"ragas",            style: eDash,  markerEnd: { ...mk, color: "#cbd5e1" } },
 ];
+
+const FLOW_DRAFT_STORAGE_KEY = "ragflow:flow-canvas:draft:v1";
+
+function serializeCanvasState(nodes: PipelineNode[], edges: Edge[]) {
+  return {
+    nodes: nodes.map((n) => ({
+      id: n.id,
+      x: n.position.x,
+      y: n.position.y,
+      active: n.data.active,
+      selectedVariant: n.data.selectedVariant,
+    })),
+    edges: edges.map((e) => ({
+      id: e.id,
+      source: e.source,
+      target: e.target,
+    })),
+  };
+}
+
+type ActiveFlowRef = { id: string; name: string } | null;
+
+function sortStateNodes(nodes: SavedFlow["nodes"]) {
+  return [...nodes].sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function sortStateEdges(edges: SavedFlow["edges"]) {
+  return [...edges].sort((left, right) => {
+    const leftKey = `${left.source}->${left.target}:${left.id}`;
+    const rightKey = `${right.source}->${right.target}:${right.id}`;
+    return leftKey.localeCompare(rightKey);
+  });
+}
+
+function areCanvasStatesEqual(
+  leftNodes: SavedFlow["nodes"],
+  leftEdges: SavedFlow["edges"],
+  rightNodes: SavedFlow["nodes"],
+  rightEdges: SavedFlow["edges"],
+) {
+  const aNodes = sortStateNodes(leftNodes);
+  const bNodes = sortStateNodes(rightNodes);
+  const aEdges = sortStateEdges(leftEdges);
+  const bEdges = sortStateEdges(rightEdges);
+
+  return JSON.stringify(aNodes) === JSON.stringify(bNodes)
+    && JSON.stringify(aEdges) === JSON.stringify(bEdges);
+}
+
+function findMatchingSavedFlow(
+  flows: SavedFlow[],
+  nodes: SavedFlow["nodes"],
+  edges: SavedFlow["edges"],
+): ActiveFlowRef {
+  const match = flows.find((flow) => areCanvasStatesEqual(flow.nodes, flow.edges, nodes, edges));
+  return match ? { id: match.id, name: match.name } : null;
+}
 
 // ── Custom node component ──────────────────────────────────────────────────────
 function PipelineNodeComponent({ data, selected }: NodeProps<PipelineNode>) {
@@ -702,7 +769,7 @@ type FlowDescription = {
     policy_loop: boolean;
     temporal_graphrag: boolean;
   };
-  reranker: boolean; distiller: string; confidentiality: boolean; langgraph: boolean;
+  reranker: boolean; distiller: string; confidentiality: boolean; langgraph: boolean; monkeyocr: boolean;
   planner_mode: string; query_rewriter_mode: string; reflection_mode: string;
   policy_mode: string; temporal_graphrag_mode: string;
   dspy_active: boolean; ragas_active: boolean;
@@ -747,6 +814,7 @@ type DSPyOptimizationResult = {
   skipped_reason: string | null;
   dev_score: number | null;
   exported_files: string[];
+  history_file?: string | null;
 };
 
 type FlowRunResponse = {
@@ -791,6 +859,7 @@ function normalizeFlowDescription(raw: unknown, fallbackMode: string): FlowDescr
     distiller: typeof data.distiller === "string" ? data.distiller : "simple",
     confidentiality: Boolean(data.confidentiality),
     langgraph: Boolean(data.langgraph),
+    monkeyocr: Boolean(data.monkeyocr),
     planner_mode: typeof data.planner_mode === "string" ? data.planner_mode : "",
     query_rewriter_mode: typeof data.query_rewriter_mode === "string" ? data.query_rewriter_mode : "",
     reflection_mode: typeof data.reflection_mode === "string" ? data.reflection_mode : "",
@@ -1018,6 +1087,7 @@ function RunFlowPanel({
                 <span className="pc__run-chip pc__run-chip--muted">
                   modo: {formatModeLabel(desc.flow_mode)}
                 </span>
+                {desc.monkeyocr           && <span className="pc__run-chip">MonkeyOCR PDF ✓</span>}
                 {desc.retrieval.external && <span className="pc__run-chip">Qdrant</span>}
                 {desc.retrieval.graphrag  && <span className="pc__run-chip pc__run-chip--graph">Neo4j GraphRAG</span>}
                 {desc.reranker            && <span className="pc__run-chip">Reranker ✓</span>}
@@ -1227,6 +1297,12 @@ function RunFlowPanel({
                       </ul>
                     </>
                   )}
+                  {result.dspy_optimization.history_file && (
+                    <>
+                      <div className="pc__rr-label" style={{ marginTop: ".5rem" }}>Histórico</div>
+                      <p className="pc__rr-text">{result.dspy_optimization.history_file}</p>
+                    </>
+                  )}
                 </div>
               )}
               {result.warnings.length > 0 && (
@@ -1280,6 +1356,8 @@ export function PipelineCanvas({ initialFlows = [] }: { initialFlows?: SavedFlow
   const [showRun,    setShowRun]    = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [flows, setFlows] = useState<SavedFlow[]>(initialFlows);
+  const [activeFlow, setActiveFlow] = useState<ActiveFlowRef>(null);
+  const draftHydratedRef = useRef(false);
 
   const onConnect = useCallback(
     (connection: Connection) =>
@@ -1313,19 +1391,103 @@ export function PipelineCanvas({ initialFlows = [] }: { initialFlows?: SavedFlow
     });
   }, [nodes, setNodes]);
 
+  useEffect(() => {
+    if (draftHydratedRef.current) {
+      return;
+    }
+    draftHydratedRef.current = true;
+
+    try {
+      const raw = window.localStorage.getItem(FLOW_DRAFT_STORAGE_KEY);
+      if (!raw) {
+        return;
+      }
+      const parsed = JSON.parse(raw) as {
+        nodes?: SavedFlow["nodes"];
+        edges?: SavedFlow["edges"];
+        activeFlow?: ActiveFlowRef;
+      };
+      if (Array.isArray(parsed.nodes) && parsed.nodes.length > 0) {
+        setNodes(buildDefaultNodes(parsed.nodes));
+      }
+      if (Array.isArray(parsed.edges) && parsed.edges.length > 0) {
+        setEdges(parsed.edges.map((edge) => ({ ...edge, style: eStyle, markerEnd: mk })));
+      }
+      if (parsed.activeFlow?.id && parsed.activeFlow?.name) {
+        setActiveFlow(parsed.activeFlow);
+      } else if (Array.isArray(parsed.nodes) && Array.isArray(parsed.edges)) {
+        const inferredFlow = findMatchingSavedFlow(initialFlows, parsed.nodes, parsed.edges);
+        if (inferredFlow) {
+          setActiveFlow(inferredFlow);
+        }
+      }
+    } catch {
+      window.localStorage.removeItem(FLOW_DRAFT_STORAGE_KEY);
+    }
+  }, [initialFlows, setEdges, setNodes]);
+
+  useEffect(() => {
+    if (activeFlow || flows.length === 0) {
+      return;
+    }
+    const currentState = serializeCanvasState(nodes, edges);
+    const inferredFlow = findMatchingSavedFlow(flows, currentState.nodes, currentState.edges);
+    if (inferredFlow) {
+      setActiveFlow(inferredFlow);
+    }
+  }, [activeFlow, edges, flows, nodes]);
+
+  useEffect(() => {
+    if (!draftHydratedRef.current) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(
+        FLOW_DRAFT_STORAGE_KEY,
+        JSON.stringify({
+          ...serializeCanvasState(nodes, edges),
+          activeFlow,
+        }),
+      );
+    } catch {
+      // Ignore storage failures; the flow still remains manually savable.
+    }
+  }, [activeFlow, edges, nodes]);
+
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
 
   const handleSave = async (name: string) => {
     setSaveStatus("saving");
-    const payload = {
-      nodes: nodes.map((n) => ({ id: n.id, x: n.position.x, y: n.position.y, active: n.data.active, selectedVariant: n.data.selectedVariant })),
-      edges: edges.map((e) => ({ id: e.id, source: e.source, target: e.target })),
-    };
+    const payload = serializeCanvasState(nodes, edges);
     const result = await saveFlowAction(name, payload.nodes, payload.edges);
     if (result.ok) {
       setSaveStatus("saved");
-      setFlows((prev) => [...prev, { id: result.id, name, createdAt: new Date().toISOString(), nodes: payload.nodes, edges: payload.edges }]);
+      const savedFlow = { id: result.id, name, createdAt: new Date().toISOString(), nodes: payload.nodes, edges: payload.edges };
+      setActiveFlow({ id: result.id, name });
+      setFlows((prev) => [savedFlow, ...prev]);
       setTimeout(() => { setSaveStatus("idle"); setShowSave(false); }, 1500);
+    } else {
+      setSaveStatus("error");
+    }
+  };
+
+  const handleUpdateSavedFlow = async () => {
+    if (!activeFlow) {
+      return;
+    }
+    setSaveStatus("saving");
+    const payload = serializeCanvasState(nodes, edges);
+    const result = await updateFlowAction(activeFlow.id, activeFlow.name, payload.nodes, payload.edges);
+    if (result.ok) {
+      setSaveStatus("saved");
+      setFlows((prev) =>
+        prev.map((flow) =>
+          flow.id === activeFlow.id
+            ? { ...flow, name: activeFlow.name, nodes: payload.nodes, edges: payload.edges }
+            : flow,
+        ),
+      );
+      setTimeout(() => { setSaveStatus("idle"); }, 1200);
     } else {
       setSaveStatus("error");
     }
@@ -1336,18 +1498,24 @@ export function PipelineCanvas({ initialFlows = [] }: { initialFlows?: SavedFlow
     setEdges(
       flow.edges.map((e) => ({ ...e, style: eStyle, markerEnd: mk })),
     );
+    setActiveFlow({ id: flow.id, name: flow.name });
     setSelectedNodeId(null);
   };
 
   const handleDelete = async (id: string) => {
     await deleteFlowAction(id);
     setFlows((prev) => prev.filter((f) => f.id !== id));
+    if (activeFlow?.id === id) {
+      setActiveFlow(null);
+    }
   };
 
   const handleReset = () => {
     setNodes(buildDefaultNodes());
     setEdges(DEFAULT_EDGES);
+    setActiveFlow(null);
     setSelectedNodeId(null);
+    window.localStorage.removeItem(FLOW_DRAFT_STORAGE_KEY);
   };
 
   const activeCount   = nodes.filter((n) => n.data.active).length;
@@ -1394,8 +1562,19 @@ export function PipelineCanvas({ initialFlows = [] }: { initialFlows?: SavedFlow
             <button className="btn-sm" onClick={() => setShowLoad(true)}>
               📂 Carregar
             </button>
-            <button className="btn-sm btn-sm--primary" onClick={() => { setSaveStatus("idle"); setShowSave(true); }}>
-              💾 Salvar flow
+            <button
+              className="btn-sm btn-sm--primary"
+              onClick={() => {
+                if (activeFlow) {
+                  void handleUpdateSavedFlow();
+                  return;
+                }
+                setSaveStatus("idle");
+                setShowSave(true);
+              }}
+              title={activeFlow ? `Atualizar "${activeFlow.name}"` : "Salvar novo flow"}
+            >
+              💾 {activeFlow ? "Atualizar flow" : "Salvar flow"}
             </button>
             <button className="btn-sm btn-sm--run" onClick={() => setShowRun(true)}>
               ▶ Run flow
@@ -1407,6 +1586,11 @@ export function PipelineCanvas({ initialFlows = [] }: { initialFlows?: SavedFlow
 
           {/* Legend */}
           <Panel position="bottom-left" className="pc__legend">
+            {activeFlow && (
+              <div className="pc__legend-item pc__legend-item--hint">
+                <span className="pc__legend-label">Editando: <strong>{activeFlow.name}</strong></span>
+              </div>
+            )}
             {(Object.entries(CATEGORY_CONFIG) as [NodeCategory, typeof CATEGORY_CONFIG[NodeCategory]][]).map(([key, cfg]) => (
               <div key={key} className="pc__legend-item">
                 <span className="pc__legend-dot" style={{ background: cfg.color }} />

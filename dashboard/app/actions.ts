@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { createPromptFile, deletePromptFile, updatePromptFile, type PromptMode } from "@/lib/dashboard-data";
 import { deleteSetting, saveSetting } from "@/lib/settings-store";
-import { saveFlow, deleteFlow, type SavedFlowDoc } from "@/lib/flow-store";
+import { saveFlow, updateFlow, deleteFlow, type SavedFlowDoc } from "@/lib/flow-store";
 
 export interface PromptActionState {
   status: "idle" | "success" | "error";
@@ -126,7 +126,7 @@ export interface ProviderConfigState {
   message: string;
 }
 
-/** Saves DEFAULT_PROVIDER + the matching model key (OPENAI_MODEL / GEMINI_MODEL / OLLAMA_MODEL) at once. */
+/** Saves DEFAULT_PROVIDER + the matching model key (OPENAI_MODEL / GEMINI_MODEL / OLLAMA_MODEL / OLLM_MODEL) at once. */
 export async function saveProviderConfigAction(
   _previousState: ProviderConfigState,
   formData: FormData,
@@ -144,6 +144,7 @@ export async function saveProviderConfigAction(
     openai: "OPENAI_MODEL",
     gemini: "GEMINI_MODEL",
     ollama: "OLLAMA_MODEL",
+    ollm: "OLLM_MODEL",
   };
 
   try {
@@ -165,6 +166,15 @@ export async function saveFlowAction(
   edges: SavedFlowDoc["edges"],
 ): Promise<{ ok: boolean; id: string }> {
   return saveFlow(name, nodes, edges);
+}
+
+export async function updateFlowAction(
+  id: string,
+  name: string,
+  nodes: SavedFlowDoc["nodes"],
+  edges: SavedFlowDoc["edges"],
+): Promise<{ ok: boolean; id: string }> {
+  return updateFlow(id, name, nodes, edges);
 }
 
 export async function deleteFlowAction(id: string): Promise<{ ok: boolean }> {

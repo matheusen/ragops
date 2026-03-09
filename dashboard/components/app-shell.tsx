@@ -314,7 +314,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   onChange={(e) => setQkProvider(e.target.value)}
                   disabled={qkLoading}
                 >
-                  {["mock","ollama","openai","gemini"].map((p) => (
+                  {["mock", "ollama", "ollm", "openai", "gemini"].map((p) => (
                     <option key={p} value={p}>{p}</option>
                   ))}
                 </select>

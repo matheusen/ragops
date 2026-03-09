@@ -8,9 +8,10 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 
 from jira_issue_rag.core.config import Settings, get_settings
 from jira_issue_rag.services.workflow import ValidationWorkflow
-from jira_issue_rag.services.flow_runner import describe_flow, run_flow
+from jira_issue_rag.services.flow_runner import describe_flow, run_flow, write_article_analysis_audit
 from jira_issue_rag.services.article_store import ArticleStore
 from jira_issue_rag.shared.models import (
+    ArticlePromptUploadResponse,
     ArticleIngestRequest,
     ArticleIngestResponse,
     ArticleRelatedRequest,
@@ -72,7 +73,7 @@ def health(settings: Settings = Depends(get_settings)) -> HealthResponse:
     description=(
         "Fluxo principal de validação. Recebe uma `IssueCanonical` e opcionalmente caminhos de artefatos. "
         "Executa o pipeline completo: recuperação vetorial → reranking → avaliação de regras → juiz LLM. "
-        "\n\n**Providers disponíveis:** `mock`, `ollama`, `openai`, `gemini`"
+        "\n\n**Providers disponíveis:** `mock`, `ollama`, `ollm`, `openai`, `gemini`"
     ),
 )
 def validate_issue(
@@ -186,6 +187,154 @@ def validate_upload(
             prompt_name=prompt_name or None,
         )
         return workflow.validate_folder(req)
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@router.post(
+    "/articles/analyze-upload",
+    response_model=ArticlePromptUploadResponse,
+    tags=["articles"],
+    summary="Analisar artigo(s) enviados",
+    description=(
+        "Recebe um ou mais arquivos via multipart/form-data, extrai o texto e executa um prompt textual "
+        "de análise de artigo. Ideal para PDFs, TXTs ou notas técnicas que não devem passar pelo pipeline de issue."
+    ),
+)
+def analyze_article_upload(
+    title: str | None = Form(None),
+    provider: str | None = Form(None),
+    prompt_name: str = Form("article_analysis"),
+    search_query: str | None = Form(None),
+    files: list[UploadFile] = File(...),
+    workflow: ValidationWorkflow = Depends(get_workflow),
+    store: ArticleStore = Depends(get_article_store),
+    settings: Settings = Depends(get_settings),
+) -> ArticlePromptUploadResponse:
+    from types import SimpleNamespace
+
+    tmpdir = tempfile.mkdtemp(prefix="ragflow_article_")
+    try:
+        saved_paths: list[Path] = []
+        saved_names: list[str] = []
+        texts: list[str] = []
+        for upload in files:
+            fname = upload.filename or "file"
+            dest = Path(tmpdir) / fname
+            with dest.open("wb") as fh:
+                shutil.copyfileobj(upload.file, fh)
+            saved_paths.append(dest)
+            saved_names.append(fname)
+            extracted = store._extract_text(dest).strip()
+            if extracted:
+                texts.append(extracted)
+
+        combined_text = "\n\n".join(texts).strip()
+        effective_title = title.strip() if title and title.strip() else ", ".join(saved_names[:2]) + ("..." if len(saved_names) > 2 else "")
+        ingest_titles = [effective_title] if len(saved_paths) == 1 else [path.stem.replace("_", " ").replace("-", " ").title() for path in saved_paths]
+        ingest_results = store.ingest(
+            paths=[str(path) for path in saved_paths],
+            titles=ingest_titles,
+            collection="articles",
+        )
+        query_text = (search_query.strip() if search_query and search_query.strip() else effective_title).strip()
+        article_search = store.search(query=query_text, top_k=5) if query_text else []
+
+        prompt_content = combined_text
+        if article_search:
+            retrieved_context = "\n\n".join(
+                f"[{item.title} #{item.chunk_index}] {item.content[:480]}"
+                for item in article_search
+            )
+            prompt_content = (
+                f"{prompt_content}\n\nContexto adicional recuperado do corpus de artigos:\n{retrieved_context}"
+            ).strip()
+
+        prompt_execution = workflow.execute_prompt(
+            PromptExecutionRequest(
+                prompt_name=prompt_name,
+                content=prompt_content,
+                provider=provider,
+                title=effective_title,
+                metadata={
+                    "source_files": saved_names,
+                    "source_path": str(saved_paths[0]) if len(saved_paths) == 1 else "",
+                },
+            )
+        )
+
+        audit_path = write_article_analysis_audit(
+            settings=settings,
+            article_request=SimpleNamespace(
+                title=effective_title,
+                content=combined_text,
+                metadata={
+                    "source": str(saved_paths[0]) if len(saved_paths) == 1 else ", ".join(saved_names),
+                    "source_files": saved_names,
+                },
+                prompt_name=prompt_name,
+                top_k=5,
+                related_doc_id=None,
+                related_limit=5,
+            ),
+            prompt_result=prompt_execution,
+            article_search=article_search,
+            related_articles=[],
+            query_text=query_text,
+            warnings=[],
+            runtime_summary={
+                "flow_mode": "article-analysis",
+                "execution_path": "run-upload",
+                "configured_provider": provider or settings.default_provider,
+                "configured_llm_model": prompt_execution.model,
+                "embedding_model": (
+                    settings.gemini_embedding_model
+                    if (provider or settings.default_provider).lower() == "gemini"
+                    else settings.openai_embedding_model
+                ),
+                "retrieval": {
+                    "external": store._qdrant_available(),
+                    "graphrag": False,
+                    "cascade": False,
+                },
+                "agentic": {
+                    "planner": False,
+                    "query_rewriter": False,
+                    "reflection_memory": False,
+                    "policy_loop": False,
+                    "temporal_graphrag": False,
+                },
+                "reranker": False,
+                "distiller": "simple",
+                "planner_mode": settings.planner_mode,
+                "query_rewriter_mode": settings.query_rewriter_mode,
+                "reflection_mode": settings.reflection_mode,
+                "policy_mode": settings.policy_mode,
+                "temporal_graphrag_mode": settings.temporal_graphrag_mode,
+                "confidentiality": settings.confidentiality_mode,
+                "langgraph": False,
+                "monkeyocr": settings.enable_monkeyocr_pdf_parser,
+                "dspy_active": False,
+                "ragas_active": False,
+                "supported_runtime_nodes": [
+                    "article-upload",
+                    "prompt-catalog",
+                    *([ "article-search" ] if article_search else []),
+                    *([ "qdrant" ] if store._qdrant_available() else []),
+                ],
+                "ignored_nodes": [],
+                "warnings": [],
+            },
+        )
+        audit_file = Path(audit_path)
+        result_id = f"{audit_file.parent.name}__{audit_file.stem}"
+        return ArticlePromptUploadResponse(
+            title=effective_title,
+            source_files=saved_names,
+            prompt_execution=prompt_execution,
+            article_search=article_search,
+            result_id=result_id,
+        )
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 

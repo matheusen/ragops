@@ -23,6 +23,7 @@ app = FastAPI(
         "|----------|---------------|----------------------------------|\n"
         "| `mock`   | Não           | ✅ Sim                           |\n"
         "| `ollama` | Não           | ✅ Sim                           |\n"
+        "| `ollm`   | Não           | ✅ Sim                           |\n"
         "| `openai` | Sim           | ⛔ Não (a menos que ALLOW_THIRD_PARTY_LLM=true) |\n"
         "| `gemini` | Sim (Vertex)  | ⛔ Não (a menos que ALLOW_THIRD_PARTY_LLM=true) |\n\n"
         "### Links úteis\n"

@@ -8,6 +8,7 @@ export interface AuditSummary {
   issue_key: string;
   timestamp: string;
   summary: string;
+  kind: "issue-validation" | "article-analysis";
   classification: "bug" | "not_bug" | "needs_review" | string;
   is_bug: boolean;
   is_complete: boolean;
@@ -55,15 +56,81 @@ export interface ResultThemeCluster {
   summary: string;
 }
 
+export interface ResultRelatedAuditCard {
+  id: string;
+  issue_key: string;
+  summary: string;
+  classification: "bug" | "not_bug" | "needs_review" | string;
+  confidence: number;
+  provider: string;
+  generated_at: string;
+  relation_score: number;
+  relation_kind: "duplicate_signal" | "same-context" | "semantic-neighbor";
+  reasons: string[];
+  shared_topics: string[];
+}
+
+export interface ResultArticleContextHit {
+  id: string;
+  title: string;
+  excerpt: string;
+  score: number;
+  topics: string[];
+  source_name: string;
+}
+
+export interface ResultArticleAnalysisView {
+  title: string;
+  source: string;
+  prompt_name: string;
+  provider: string;
+  model: string;
+  search_query: string;
+  content_excerpt: string;
+  executive_summary: string;
+  central_ideas: string[];
+  risks: string[];
+  next_steps: string[];
+  raw_output: string;
+  warnings: string[];
+  retrieved_contexts: ResultArticleContextHit[];
+  related_articles: Array<Record<string, unknown>>;
+}
+
+export interface ResultTechniqueItem {
+  id: string;
+  label: string;
+  value?: string;
+  detail?: string;
+}
+
+export interface ResultRuntimeView {
+  flow_mode: string;
+  execution_path: string;
+  provider: string;
+  model: string;
+  prompt_name: string;
+  query_text: string;
+  search_hits: number;
+  summary: string;
+  techniques: ResultTechniqueItem[];
+  warnings: string[];
+  supported_runtime_nodes: string[];
+  ignored_nodes: string[];
+  trace_nodes: string[];
+}
+
 export interface ResultKnowledgeMap {
   summary: string;
   topics: ResultKnowledgeTopic[];
   documents: ResultKnowledgeDocument[];
   article_cards: ResultArticleCard[];
   theme_clusters: ResultThemeCluster[];
+  related_audits: ResultRelatedAuditCard[];
 }
 
 export interface ResultAudit {
+  result_kind: "issue-validation" | "article-analysis";
   issue: {
     issue_key: string;
     summary: string;
@@ -118,6 +185,16 @@ export interface ResultAudit {
     provider: string;
     model: string;
   };
+  prompt_execution?: {
+    prompt_name: string;
+    mode: "decision" | "text";
+    provider: string;
+    model: string;
+    output_text: string;
+  };
+  runtime?: Record<string, unknown>;
+  runtime_view?: ResultRuntimeView | null;
+  article_run?: ResultArticleAnalysisView | null;
   result_meta: {
     id: string;
     timestamp: string;
@@ -129,7 +206,28 @@ export interface ResultAudit {
 const REPO_ROOT = path.resolve(process.cwd(), "..");
 const AUDIT_DIR = path.join(REPO_ROOT, "data", "audit");
 
-type RawAudit = Omit<ResultAudit, "result_meta" | "knowledge_map">;
+type RawAudit = {
+  issue: ResultAudit["issue"];
+  attachment_facts?: ResultAudit["attachment_facts"];
+  rule_evaluation?: ResultAudit["rule_evaluation"];
+  retrieved?: ResultAudit["retrieved"];
+  decision?: ResultAudit["decision"];
+  prompt_execution?: ResultAudit["prompt_execution"];
+  article_run?: {
+    title?: string;
+    source?: string;
+    prompt_name?: string;
+    search_query?: string;
+    metadata?: Record<string, unknown>;
+    content_excerpt?: string;
+    output_text?: string;
+    warnings?: string[];
+    related_articles?: Array<Record<string, unknown>>;
+  } | null;
+  runtime?: Record<string, unknown>;
+  run_kind?: string;
+};
+type AuditSeed = { issueKey: string; timestamp: string; payload: RawAudit };
 
 const TOPIC_LIBRARY: Array<{
   id: string;
@@ -223,7 +321,7 @@ async function loadLocalAudits(): Promise<ResultAudit[]> {
         issueKey,
         timestamp,
         "local",
-        all.map((item) => item.payload),
+        all,
       ),
     )
     .sort((left, right) => right.result_meta.timestamp.localeCompare(left.result_meta.timestamp));
@@ -235,13 +333,16 @@ function toSummary(audit: ResultAudit): AuditSummary {
     id: audit.result_meta.id,
     issue_key: audit.issue.issue_key,
     timestamp: audit.result_meta.timestamp,
-    summary: audit.issue.summary,
-    classification: decision?.classification ?? "needs_review",
+    summary: audit.article_run?.title ?? audit.issue.summary,
+    kind: audit.result_kind,
+    classification: audit.result_kind === "article-analysis"
+      ? "article_analysis"
+      : (decision?.classification ?? "needs_review"),
     is_bug: Boolean(decision?.is_bug),
-    is_complete: Boolean(decision?.is_complete),
-    ready_for_dev: Boolean(decision?.ready_for_dev),
-    confidence: Number(decision?.confidence ?? 0),
-    provider: decision?.provider ?? "mock",
+    is_complete: audit.result_kind === "article-analysis" ? true : Boolean(decision?.is_complete),
+    ready_for_dev: audit.result_kind === "article-analysis" ? true : Boolean(decision?.ready_for_dev),
+    confidence: Number(decision?.confidence ?? (audit.result_kind === "article-analysis" ? 1 : 0)),
+    provider: audit.prompt_execution?.provider ?? decision?.provider ?? "mock",
     requires_human_review: Boolean(decision?.requires_human_review),
     financial_impact_detected: Boolean(decision?.financial_impact_detected),
     generated_at: audit.result_meta.timestamp,
@@ -254,65 +355,40 @@ function enrichAudit(
   issueKey: string,
   timestamp: string,
   dataSource: ResultDataSource,
-  peerPayloads: RawAudit[],
+  peerAudits: AuditSeed[],
 ): ResultAudit {
+  const resultKind = payload.run_kind === "article-analysis" || payload.article_run
+    ? "article-analysis"
+    : "issue-validation";
   return {
     ...payload,
+    result_kind: resultKind,
+    runtime: payload.runtime,
+    runtime_view: buildRuntimeView(payload),
+    article_run: buildArticleAnalysisView(payload),
     result_meta: {
       id: `${issueKey}__${timestamp}`,
       timestamp,
       data_source: dataSource,
     },
-    knowledge_map: buildKnowledgeMap(payload, peerPayloads),
+    knowledge_map: buildKnowledgeMap(payload, issueKey, timestamp, peerAudits),
   };
 }
 
-function buildKnowledgeMap(audit: RawAudit, peerPayloads: RawAudit[]): ResultKnowledgeMap {
-  const textCorpus = [
-    audit.issue.summary,
-    audit.issue.description,
-    audit.issue.expected_behavior,
-    audit.issue.actual_behavior,
-    ...(audit.attachment_facts?.artifacts?.map((artifact) => artifact.extracted_text) ?? []),
-    ...(audit.retrieved?.map((item) => item.content) ?? []),
-    ...(audit.rule_evaluation?.contradictions ?? []),
-    ...(audit.decision?.contradictions ?? []),
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-  const rankedTopics = TOPIC_LIBRARY.map((topic) => {
-    const hits = topic.tokens.reduce((count, token) => {
-      return count + (textCorpus.includes(token) ? 1 : 0);
-    }, 0);
-    return {
-      id: topic.id,
-      label: topic.label,
-      strength: hits / topic.tokens.length,
-      notes: topic.notes,
-    };
-  })
-    .filter((topic) => topic.strength > 0)
-    .sort((left, right) => right.strength - left.strength)
-    .slice(0, 4);
-
-  const topics = rankedTopics.length > 0
-    ? rankedTopics
-    : [
-        {
-          id: "triage",
-          label: "Triage",
-          strength: 0.55,
-          notes: "Fallback de triagem quando a auditoria não contém sinais fortes o suficiente.",
-        },
-      ];
+function buildKnowledgeMap(
+  audit: RawAudit,
+  issueKey: string,
+  timestamp: string,
+  peerAudits: AuditSeed[],
+): ResultKnowledgeMap {
+  const topics = rankTopicsForAudit(audit);
 
   const articleCards = (audit.attachment_facts?.artifacts ?? []).map((artifact, index) =>
     buildArticleCard(artifact, index, topics),
   );
 
   const themeClusters = buildThemeClusters(articleCards);
+  const relatedAudits = buildRelatedAuditCards(audit, issueKey, timestamp, topics, peerAudits);
 
   const artifactDocuments: ResultKnowledgeDocument[] = (audit.attachment_facts?.artifacts ?? []).slice(0, 4).map((artifact) => {
     const title = path.basename(artifact.source_path);
@@ -328,35 +404,14 @@ function buildKnowledgeMap(audit: RawAudit, peerPayloads: RawAudit[]): ResultKno
     };
   });
 
-  const peerDocuments: ResultKnowledgeDocument[] = peerPayloads
-    .filter((peer) => peer.issue.issue_key !== audit.issue.issue_key)
-    .map((peer) => {
-      const sharedSignals = [
-        peer.issue.component && peer.issue.component === audit.issue.component,
-        peer.issue.service && peer.issue.service === audit.issue.service,
-        (peer.issue.labels ?? []).some((label) => (audit.issue.labels ?? []).includes(label)),
-      ].filter(Boolean).length;
-
-      return {
-        peer,
-        score: sharedSignals,
-      };
-    })
-    .filter((item) => item.score > 0)
-    .filter((item, index, all) => {
-      return all.findIndex((candidate) => candidate.peer.issue.issue_key === item.peer.issue.issue_key) === index;
-    })
-    .slice(0, 3)
-    .map(({ peer }) => ({
-      id: `issue:${peer.issue.issue_key}`,
-      title: peer.issue.issue_key,
-      kind: "issue" as const,
-      summary: peer.issue.summary,
-      linked_topic_ids: topics
-        .filter((topic) => matchesTopic(`${peer.issue.summary} ${peer.issue.description}`.toLowerCase(), topic.id))
-        .map((topic) => topic.id),
-      evidence_refs: [peer.issue.issue_key],
-    }));
+  const peerDocuments: ResultKnowledgeDocument[] = relatedAudits.slice(0, 4).map((peer) => ({
+    id: `issue:${peer.issue_key}:${peer.generated_at}`,
+    title: peer.issue_key,
+    kind: "issue" as const,
+    summary: peer.summary,
+    linked_topic_ids: peer.shared_topics,
+    evidence_refs: [peer.id, ...peer.reasons],
+  }));
 
   const curatedDocuments: ResultKnowledgeDocument[] = [
     {
@@ -388,7 +443,268 @@ function buildKnowledgeMap(audit: RawAudit, peerPayloads: RawAudit[]): ResultKno
     documents: documents.slice(0, 6),
     article_cards: articleCards,
     theme_clusters: themeClusters,
+    related_audits: relatedAudits,
   };
+}
+
+function buildTopicTextCorpus(audit: RawAudit): string {
+  return [
+    audit.issue.summary,
+    audit.issue.description,
+    audit.issue.expected_behavior,
+    audit.issue.actual_behavior,
+    audit.issue.component,
+    audit.issue.service,
+    audit.issue.environment,
+    ...(audit.issue.labels ?? []),
+    ...(audit.attachment_facts?.artifacts?.map((artifact) => artifact.extracted_text) ?? []),
+    ...(audit.retrieved?.map((item) => item.content) ?? []),
+    ...(audit.rule_evaluation?.contradictions ?? []),
+    ...(audit.decision?.contradictions ?? []),
+    audit.prompt_execution?.output_text,
+    audit.article_run?.search_query,
+    audit.article_run?.content_excerpt,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function rankTopicsForAudit(audit: RawAudit): ResultKnowledgeTopic[] {
+  const textCorpus = buildTopicTextCorpus(audit);
+  const rankedTopics = TOPIC_LIBRARY.map((topic) => {
+    const hits = topic.tokens.reduce((count, token) => {
+      return count + (textCorpus.includes(token) ? 1 : 0);
+    }, 0);
+    return {
+      id: topic.id,
+      label: topic.label,
+      strength: hits / topic.tokens.length,
+      notes: topic.notes,
+    };
+  })
+    .filter((topic) => topic.strength > 0)
+    .sort((left, right) => right.strength - left.strength)
+    .slice(0, 4);
+
+  return rankedTopics.length > 0
+    ? rankedTopics
+    : [
+        {
+          id: "triage",
+          label: "Triage",
+          strength: 0.55,
+          notes: "Fallback de triagem quando a auditoria não contém sinais fortes o suficiente.",
+        },
+      ];
+}
+
+function buildRelatedAuditCards(
+  audit: RawAudit,
+  issueKey: string,
+  timestamp: string,
+  topics: ResultKnowledgeTopic[],
+  peerAudits: AuditSeed[],
+): ResultRelatedAuditCard[] {
+  const currentContext = buildCorrelationContext(audit, issueKey, timestamp, topics);
+  const ranked = peerAudits
+    .filter((peer) => !(peer.issueKey === issueKey && peer.timestamp === timestamp))
+    .map((peer) => {
+      const peerTopics = rankTopicsForAudit(peer.payload);
+      const peerContext = buildCorrelationContext(peer.payload, peer.issueKey, peer.timestamp, peerTopics);
+      const correlation = correlateAuditContexts(currentContext, peerContext);
+      return correlation
+        ? {
+            id: `${peer.issueKey}__${peer.timestamp}`,
+            issue_key: peer.issueKey,
+            summary: peer.payload.issue.summary,
+            classification: peer.payload.decision?.classification ?? "needs_review",
+            confidence: Number(peer.payload.decision?.confidence ?? 0),
+            provider: peer.payload.decision?.provider ?? "mock",
+            generated_at: peer.timestamp,
+            relation_score: correlation.score,
+            relation_kind: correlation.kind,
+            reasons: correlation.reasons,
+            shared_topics: correlation.sharedTopics,
+          }
+        : null;
+    })
+    .filter((item): item is ResultRelatedAuditCard => item !== null)
+    .sort((left, right) => {
+      if (right.relation_score !== left.relation_score) {
+        return right.relation_score - left.relation_score;
+      }
+      return right.generated_at.localeCompare(left.generated_at);
+    });
+
+  const deduped = new Map<string, ResultRelatedAuditCard>();
+  ranked.forEach((item) => {
+    if (!deduped.has(item.issue_key)) {
+      deduped.set(item.issue_key, item);
+    }
+  });
+
+  return [...deduped.values()].slice(0, 6);
+}
+
+function buildCorrelationContext(
+  audit: RawAudit,
+  issueKey: string,
+  timestamp: string,
+  topics: ResultKnowledgeTopic[],
+) {
+  const component = normalizeToken(audit.issue.component);
+  const service = normalizeToken(audit.issue.service);
+  const environment = normalizeToken(audit.issue.environment);
+  const labels = new Set((audit.issue.labels ?? []).map(normalizeToken).filter(Boolean));
+  const topicsSet = new Set(topics.map((topic) => topic.id));
+  const contradictionText = [
+    ...(audit.rule_evaluation?.contradictions ?? []),
+    ...(audit.attachment_facts?.contradictions ?? []),
+    ...(audit.decision?.contradictions ?? []),
+  ]
+    .join(" ")
+    .toLowerCase();
+  const extracted = [
+    audit.issue.summary,
+    audit.issue.description,
+    ...(audit.attachment_facts?.artifacts?.map((artifact) => artifact.extracted_text) ?? []),
+    ...(audit.retrieved?.map((item) => item.content) ?? []),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  const signalTokens = new Set(
+    tokenizeForCorrelation([
+      audit.issue.summary,
+      audit.issue.description,
+      audit.issue.expected_behavior,
+      audit.issue.actual_behavior,
+      contradictionText,
+      extracted,
+    ].join(" "))
+  );
+
+  return {
+    id: `${issueKey}__${timestamp}`,
+    issueKey,
+    component,
+    service,
+    environment,
+    labels,
+    topics: topicsSet,
+    signalTokens,
+    contradictionText,
+    classification: audit.decision?.classification ?? "needs_review",
+    hasHumanReview: Boolean(audit.decision?.requires_human_review),
+    hasFinancialImpact: Boolean(audit.decision?.financial_impact_detected),
+  };
+}
+
+function correlateAuditContexts(
+  current: ReturnType<typeof buildCorrelationContext>,
+  peer: ReturnType<typeof buildCorrelationContext>,
+): { score: number; reasons: string[]; sharedTopics: string[]; kind: ResultRelatedAuditCard["relation_kind"] } | null {
+  const reasons: string[] = [];
+  let score = 0;
+
+  if (current.component && current.component === peer.component) {
+    score += 0.26;
+    reasons.push(`Mesmo componente: ${current.component}`);
+  }
+  if (current.service && current.service === peer.service) {
+    score += 0.24;
+    reasons.push(`Mesmo serviço: ${current.service}`);
+  }
+  if (current.environment && current.environment === peer.environment) {
+    score += 0.08;
+    reasons.push(`Mesmo ambiente: ${current.environment}`);
+  }
+
+  const sharedLabels = intersectSets(current.labels, peer.labels);
+  if (sharedLabels.length > 0) {
+    score += Math.min(0.18, sharedLabels.length * 0.06);
+    reasons.push(`Labels em comum: ${sharedLabels.slice(0, 3).join(", ")}`);
+  }
+
+  const sharedTopics = intersectSets(current.topics, peer.topics);
+  if (sharedTopics.length > 0) {
+    score += Math.min(0.24, sharedTopics.length * 0.08);
+    reasons.push(`Tópicos em comum: ${sharedTopics.slice(0, 3).join(", ")}`);
+  }
+
+  const sharedTokens = intersectSets(current.signalTokens, peer.signalTokens);
+  if (sharedTokens.length >= 3) {
+    score += Math.min(0.22, sharedTokens.length * 0.015);
+    reasons.push(`Vocabulário técnico próximo: ${sharedTokens.slice(0, 4).join(", ")}`);
+  }
+
+  if (current.classification === peer.classification) {
+    score += 0.05;
+  }
+  if (current.hasHumanReview && peer.hasHumanReview) {
+    score += 0.07;
+    reasons.push("Ambas pedem revisão humana");
+  }
+  if (current.hasFinancialImpact && peer.hasFinancialImpact) {
+    score += 0.07;
+    reasons.push("Ambas têm sinal financeiro");
+  }
+
+  if (score < 0.24) {
+    return null;
+  }
+
+  let kind: ResultRelatedAuditCard["relation_kind"] = "semantic-neighbor";
+  if (
+    (current.component && current.component === peer.component) ||
+    (current.service && current.service === peer.service)
+  ) {
+    kind = "same-context";
+  }
+  if (
+    (current.component && current.component === peer.component) &&
+    sharedTokens.length >= 5 &&
+    sharedTopics.length >= 2
+  ) {
+    kind = "duplicate_signal";
+  }
+
+  return {
+    score: Math.min(0.99, Number(score.toFixed(3))),
+    reasons: reasons.slice(0, 4),
+    sharedTopics,
+    kind,
+  };
+}
+
+function tokenizeForCorrelation(text: string): string[] {
+  const stopwords = new Set([
+    "the", "and", "for", "with", "that", "this", "from", "into", "have", "were",
+    "como", "para", "com", "uma", "que", "por", "das", "dos", "não", "mais",
+    "issue", "user", "data", "flow", "card", "page", "resultado", "audit",
+  ]);
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .split(/[^a-z0-9_-]+/)
+    .map((part) => part.trim())
+    .filter((part) => part.length >= 4 && !stopwords.has(part));
+}
+
+function normalizeToken(value: string | null | undefined): string {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function intersectSets(left: Set<string>, right: Set<string>): string[] {
+  const out: string[] = [];
+  left.forEach((value) => {
+    if (right.has(value)) {
+      out.push(value);
+    }
+  });
+  return out;
 }
 
 function buildKnowledgeSummary(
@@ -398,6 +714,12 @@ function buildKnowledgeSummary(
   articleCards: ResultArticleCard[],
   themeClusters: ResultThemeCluster[],
 ): string {
+  if (audit.run_kind === "article-analysis" || audit.article_run) {
+    const title = audit.article_run?.title || audit.issue.summary;
+    const provider = audit.prompt_execution?.provider || audit.decision?.provider || "provider";
+    const topTopic = topics[0]?.label ?? "Article analysis";
+    return `Análise de artigo para "${title}" via ${provider}. O resultado conectou ${articleCards.length} card(s) de conteúdo, ${documents.length} documento(s) de apoio e destacou ${topTopic} como tema dominante.`;
+  }
   const topTopic = topics[0]?.label ?? "Triage";
   const documentCount = documents.length;
   const artifactCount = audit.attachment_facts?.artifacts?.length ?? 0;
@@ -497,6 +819,292 @@ function slugify(value: string): string {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+function buildArticleAnalysisView(audit: RawAudit): ResultArticleAnalysisView | null {
+  const looksLikeArticleUpload = Boolean(
+    audit.attachment_facts?.artifacts?.some((artifact) => artifact.artifact_type === "pdf" || artifact.artifact_type === "text")
+    && /^upload:/i.test(audit.issue.summary || "")
+  );
+
+  if (!(audit.run_kind === "article-analysis" || audit.article_run || audit.prompt_execution?.prompt_name === "article_analysis" || looksLikeArticleUpload)) {
+    return null;
+  }
+
+  const outputText = (audit.article_run?.output_text || audit.prompt_execution?.output_text || audit.decision?.rationale || "").trim();
+  const parsed = parseArticleOutput(outputText);
+  const source = String(audit.article_run?.source || audit.attachment_facts?.artifacts?.[0]?.source_path || "");
+  const title = String(audit.article_run?.title || audit.issue.summary || "Article analysis");
+  const contentExcerpt = String(
+    audit.article_run?.content_excerpt
+    || audit.attachment_facts?.artifacts?.[0]?.extracted_text
+    || audit.issue.description
+    || ""
+  );
+  const contexts = (audit.retrieved ?? []).slice(0, 6).map((item) => ({
+    id: item.evidence_id,
+    title: item.source || item.evidence_id,
+    excerpt: summarizeText(item.content, 220) || item.content,
+    score: Number(item.final_score ?? 0),
+    topics: Array.isArray((item.metadata as Record<string, unknown> | undefined)?.topics)
+      ? ((item.metadata as Record<string, unknown>).topics as unknown[]).filter((topic): topic is string => typeof topic === "string")
+      : [],
+    source_name: path.basename(String(item.source || item.evidence_id)),
+  }));
+
+  return {
+    title,
+    source,
+    prompt_name: audit.prompt_execution?.prompt_name || audit.article_run?.prompt_name || "article_analysis",
+    provider: audit.prompt_execution?.provider || audit.decision?.provider || "unknown",
+    model: audit.prompt_execution?.model || audit.decision?.model || "unknown",
+    search_query: String(audit.article_run?.search_query || ""),
+    content_excerpt: contentExcerpt,
+    executive_summary: resolveArticleSummary(parsed.executiveSummary, contentExcerpt, looksLikeArticleUpload),
+    central_ideas: parsed.centralIdeas.length > 0 ? parsed.centralIdeas : extractIdeaFallbacks(contentExcerpt),
+    risks: parsed.risks.length > 0 ? parsed.risks : buildRiskFallbacks(audit),
+    next_steps: parsed.nextSteps.length > 0 ? parsed.nextSteps : buildNextStepFallbacks(audit),
+    raw_output: outputText,
+    warnings: audit.article_run?.warnings ?? [],
+    retrieved_contexts: contexts,
+    related_articles: audit.article_run?.related_articles ?? [],
+  };
+}
+
+function buildRuntimeView(audit: RawAudit): ResultRuntimeView | null {
+  const runtime = audit.runtime;
+  if (!runtime || typeof runtime !== "object") {
+    return null;
+  }
+
+  const runtimeRecord = runtime as Record<string, unknown>;
+  const settings = asRecord(runtimeRecord.settings);
+  const retrieval = asRecord(runtimeRecord.retrieval);
+  const agentic = asRecord(runtimeRecord.agentic);
+  const flowMode = readString(runtimeRecord.flow_mode) || (audit.article_run ? "article-analysis" : "issue-validation");
+  const provider = readString(runtimeRecord.provider) || audit.prompt_execution?.provider || audit.decision?.provider || "unknown";
+  const model = readString(runtimeRecord.llm_model) || readString(runtimeRecord.model) || audit.prompt_execution?.model || audit.decision?.model || "unknown";
+  const promptName = readString(runtimeRecord.prompt_name) || audit.prompt_execution?.prompt_name || "";
+  const queryText = readString(runtimeRecord.query_text);
+  const searchHits = readNumber(runtimeRecord.search_hits);
+  const warnings = readStringArray(runtimeRecord.warnings);
+  const supportedRuntimeNodes = readStringArray(runtimeRecord.supported_runtime_nodes);
+  const ignoredNodes = readStringArray(runtimeRecord.ignored_nodes);
+  const traceNodes = uniqueLines(
+    Array.isArray(runtimeRecord.trace)
+      ? runtimeRecord.trace
+        .map((entry) => (typeof entry === "object" && entry && "node" in entry ? readString((entry as Record<string, unknown>).node) : ""))
+        .filter(Boolean)
+      : [],
+  );
+
+  const techniques: ResultTechniqueItem[] = [];
+  const addTechnique = (id: string, label: string, value?: string, detail?: string) => {
+    techniques.push({ id, label, value, detail });
+  };
+
+  if (readBool(runtimeRecord.langgraph)) {
+    addTechnique("langgraph", "LangGraph", "ativo", traceNodes.length > 0 ? `etapas: ${traceNodes.join(" -> ")}` : "orquestracao do workflow");
+  }
+  if (readBool(runtimeRecord.monkeyocr)) {
+    addTechnique("monkeyocr", "MonkeyOCR PDF", "ativo", "parsing preferencial para PDFs quando disponivel");
+  }
+  if (readBool(runtimeRecord.reranker)) {
+    addTechnique("reranker", "Reranker", "ativo", "reordena evidencias recuperadas antes da decisao");
+  }
+
+  const distillerMode = readString(runtimeRecord.distiller) || readString(settings?.distiller_mode);
+  if (distillerMode) {
+    addTechnique("distiller", "Distiller", distillerMode, distillerMode === "refrag" ? "compressao REFRAG aplicada ao contexto" : "compressao simples de contexto");
+  }
+
+  if (readBool(retrieval?.external)) {
+    addTechnique("qdrant", "Qdrant Retrieval", "ativo", "busca vetorial/hibrida no corpus externo");
+  }
+  if (readBool(retrieval?.graphrag)) {
+    addTechnique("graphrag", "Neo4j GraphRAG", "ativo", "expansao via grafo de relacoes");
+  }
+  if (readBool(retrieval?.cascade)) {
+    addTechnique("cascade", "Cascade Retrieval", "ativo", "refino progressivo da recuperacao");
+  }
+
+  const plannerEnabled = readBool(agentic?.planner) || readBool(settings?.enable_planner) || traceNodes.includes("plan");
+  if (plannerEnabled) {
+    addTechnique("planner", "Planner", readString(runtimeRecord.planner_mode) || readString(settings?.planner_mode) || "ativo");
+  }
+  const rewriterEnabled = readBool(agentic?.query_rewriter) || readBool(settings?.enable_query_rewriter) || traceNodes.includes("rewrite");
+  if (rewriterEnabled) {
+    addTechnique("query-rewriter", "Query Rewriter", readString(runtimeRecord.query_rewriter_mode) || readString(settings?.query_rewriter_mode) || "ativo");
+  }
+  const reflectionEnabled = readBool(agentic?.reflection_memory) || readBool(settings?.enable_reflection_memory) || traceNodes.includes("reflect");
+  if (reflectionEnabled) {
+    addTechnique("reflection", "Reflection Memory", readString(runtimeRecord.reflection_mode) || readString(settings?.reflection_mode) || "ativo");
+  }
+  const policyLoopEnabled = readBool(agentic?.policy_loop) || readBool(settings?.enable_policy_loop) || traceNodes.includes("policy");
+  if (policyLoopEnabled) {
+    addTechnique("policy-loop", "Policy Loop", readString(runtimeRecord.policy_mode) || readString(settings?.policy_mode) || "ativo");
+  }
+  const temporalEnabled = readBool(agentic?.temporal_graphrag) || readBool(settings?.enable_temporal_graphrag) || traceNodes.includes("temporal");
+  if (temporalEnabled) {
+    addTechnique("temporal-graphrag", "Temporal GraphRAG", readString(runtimeRecord.temporal_graphrag_mode) || readString(settings?.temporal_graphrag_mode) || "ativo");
+  }
+  if (readBool(runtimeRecord.dspy_active)) {
+    addTechnique("dspy", "DSPy + GEPA", "ativo", "otimizacao experimental de prompts");
+  }
+  if (readBool(runtimeRecord.ragas_active)) {
+    addTechnique("ragas", "RAGAS", "ativo", "avaliacao runtime habilitada");
+  }
+  if (promptName) {
+    addTechnique("prompt", "Prompt", promptName, "prompt selecionado para a analise");
+  }
+  if (Number.isFinite(searchHits) && searchHits > 0) {
+    addTechnique("retrieved-context", "Contexto recuperado", `${searchHits}`, "chunks externos usados como contexto adicional");
+  }
+  if (supportedRuntimeNodes.includes("article-upload")) {
+    addTechnique("upload-direct", "Upload direto", "run", "analise executada a partir da page Run, sem canvas salvo");
+  }
+
+  const executionPath = readString(runtimeRecord.execution_path)
+    || (supportedRuntimeNodes.length > 0 ? "run-flow" : (flowMode === "article-analysis" ? "run-upload" : "validation-workflow"));
+  const summary = flowMode === "article-analysis"
+    ? `${provider} analisou o artigo com ${techniques.length} tecnica(s) ativa(s).`
+    : `A validacao executou ${Math.max(traceNodes.length, techniques.length, 1)} etapa(s) relevantes do runtime.`;
+
+  return {
+    flow_mode: flowMode,
+    execution_path: executionPath,
+    provider,
+    model,
+    prompt_name: promptName,
+    query_text: queryText,
+    search_hits: Number.isFinite(searchHits) ? searchHits : 0,
+    summary,
+    techniques,
+    warnings,
+    supported_runtime_nodes: supportedRuntimeNodes,
+    ignored_nodes: ignoredNodes,
+    trace_nodes: traceNodes,
+  };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function readString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function readStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function readBool(value: unknown): boolean {
+  return value === true;
+}
+
+function readNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : Number.NaN;
+}
+
+function parseArticleOutput(output: string): {
+  executiveSummary: string;
+  centralIdeas: string[];
+  risks: string[];
+  nextSteps: string[];
+} {
+  const lines = output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const sections = {
+    executiveSummary: [] as string[],
+    centralIdeas: [] as string[],
+    risks: [] as string[],
+    nextSteps: [] as string[],
+  };
+
+  let current: keyof typeof sections = "executiveSummary";
+  for (const line of lines) {
+    const normalized = line
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+    if (normalized.includes("resumo executivo")) {
+      current = "executiveSummary";
+      continue;
+    }
+    if (normalized.includes("ideias centrais") || normalized.includes("pontos centrais")) {
+      current = "centralIdeas";
+      continue;
+    }
+    if (normalized.startsWith("riscos") || normalized.includes("pontos fracos")) {
+      current = "risks";
+      continue;
+    }
+    if (normalized.includes("recomendacoes") || normalized.includes("proximos passos")) {
+      current = "nextSteps";
+      continue;
+    }
+
+    const bullet = line.replace(/^[-*•]\s*/, "").trim();
+    sections[current].push(bullet);
+  }
+
+  const summary = sections.executiveSummary.join(" ");
+  const fallbackSummary = summarizeText(output, 320);
+  return {
+    executiveSummary: summary || fallbackSummary || "Sem resumo executivo gerado.",
+    centralIdeas: uniqueLines(sections.centralIdeas).slice(0, 6),
+    risks: uniqueLines(sections.risks).slice(0, 6),
+    nextSteps: uniqueLines(sections.nextSteps).slice(0, 6),
+  };
+}
+
+function uniqueLines(lines: string[]): string[] {
+  return lines.filter((line, index, all) => line && all.indexOf(line) === index);
+}
+
+function resolveArticleSummary(
+  parsedSummary: string,
+  contentExcerpt: string,
+  preferContentFallback: boolean,
+): string {
+  if (!preferContentFallback) {
+    return parsedSummary;
+  }
+  const normalized = parsedSummary.toLowerCase();
+  if (normalized.includes("failure evidence") || normalized.includes("missing required fields")) {
+    return summarizeText(contentExcerpt, 320) || parsedSummary;
+  }
+  return parsedSummary;
+}
+
+function extractIdeaFallbacks(content: string): string[] {
+  const sentences = content
+    .replace(/\s+/g, " ")
+    .split(/(?<=[.!?])\s+/)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 40);
+  return uniqueLines(sentences.slice(0, 4).map((item) => summarizeText(item, 180)));
+}
+
+function buildRiskFallbacks(audit: RawAudit): string[] {
+  return uniqueLines([
+    ...(audit.rule_evaluation?.contradictions ?? []),
+    ...(audit.decision?.contradictions ?? []),
+    ...(audit.decision?.requires_human_review ? ["O resultado indicou necessidade de revisao humana."] : []),
+  ]).slice(0, 5);
+}
+
+function buildNextStepFallbacks(audit: RawAudit): string[] {
+  return uniqueLines([
+    ...(audit.decision?.missing_items?.map((item) => `Complementar: ${item}`) ?? []),
+    ...(audit.retrieved?.slice(0, 2).map((item) => `Revisar contexto recuperado: ${item.source}`) ?? []),
+  ]).slice(0, 5);
 }
 
 async function safeReadDir(dirPath: string): Promise<string[]> {
@@ -686,7 +1294,11 @@ function buildMockAudits(): ResultAudit[] {
       payload.issue.issue_key,
       timestamp,
       "mock",
-      all.map((item) => item.payload),
+      all.map((item) => ({
+        issueKey: item.payload.issue.issue_key,
+        timestamp: item.timestamp,
+        payload: item.payload,
+      })),
     ),
   );
 }

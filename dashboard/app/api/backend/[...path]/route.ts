@@ -46,6 +46,13 @@ function shouldFallback(pathname: string, result: UpstreamResult): boolean {
     }
   }
 
+  if (
+    pathname.startsWith("/api/v1/validate/") ||
+    pathname.startsWith("/api/v1/jira/")
+  ) {
+    return result.status === 404 || result.status >= 500;
+  }
+
   return false;
 }
 

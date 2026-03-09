@@ -59,6 +59,9 @@ optimization = [
 graphrag = [
   "neo4j>=5.0.0"
 ]
+ollm = [
+  "ollm>=1.0.3"
+]
 dev = [
   "pytest>=8.4.0",
   "pytest-asyncio>=1.1.0"

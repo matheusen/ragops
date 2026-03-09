@@ -8,7 +8,7 @@ export default function RunPage() {
     <main className="page">
       <PageHeader
         title="Run"
-        subtitle="Execute o pipeline de validação de issues — via Jira, entrada manual ou pasta de artefatos"
+        subtitle="Execute validação de issues ou análise de artigos, com seleção explícita de modo, provider e prompt"
       />
       <RunPanel />
     </main>

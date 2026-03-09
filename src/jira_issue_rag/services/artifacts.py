@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import csv
 import hashlib
+import os
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -228,6 +229,12 @@ class ArtifactPipeline:
         return ""
 
     def _extract_pdf_text(self, path: Path) -> str:
+        # 0th pass: MonkeyOCR sidecar (opt-in, best quality for complex PDFs)
+        if self.settings and self.settings.enable_monkeyocr_pdf_parser:
+            text = self._extract_pdf_monkeyocr(path)
+            if text.strip():
+                return text
+
         # 1st pass: pypdf (safe and fast for born-digital PDFs)
         text = self._extract_pdf_pypdf(path)
         if text.strip():
@@ -247,6 +254,45 @@ class ArtifactPipeline:
 
         # 4th pass: sidecar .txt
         return self._extract_sidecar_text(path)
+
+    @staticmethod
+    def _extract_pdf_monkeyocr(path: Path) -> str:
+        base_url = os.environ.get("MONKEYOCR_API_URL", "http://localhost:8000").rstrip("/")
+        try:
+            with open(path, "rb") as fh:
+                resp = httpx.post(
+                    f"{base_url}/parse",
+                    files={"file": (path.name, fh, "application/pdf")},
+                    timeout=300.0,
+                )
+            if resp.status_code != 200:
+                return ""
+            data = resp.json()
+            if not data.get("success"):
+                return ""
+
+            output_dir = data.get("output_dir")
+            if output_dir and Path(output_dir).is_dir():
+                md_files = sorted(Path(output_dir).glob("**/*.md"))
+                if md_files:
+                    return "\n\n".join(
+                        file.read_text(encoding="utf-8", errors="replace")
+                        for file in md_files
+                    ).strip()
+                txt_files = sorted(Path(output_dir).glob("**/*.txt"))
+                if txt_files:
+                    return "\n\n".join(
+                        file.read_text(encoding="utf-8", errors="replace")
+                        for file in txt_files
+                    ).strip()
+
+            for key in ("content", "markdown", "text"):
+                value = data.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+            return ""
+        except Exception:
+            return ""
 
     @staticmethod
     def _extract_pdf_pypdf(path: Path) -> str:

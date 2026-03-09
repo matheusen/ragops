@@ -7,6 +7,7 @@ from jira_issue_rag.providers.base import LLMProvider
 from jira_issue_rag.providers.decision_contract import normalize_decision_data
 from jira_issue_rag.providers.gemini_provider import GeminiProvider
 from jira_issue_rag.providers.mock_provider import MockProvider
+from jira_issue_rag.providers.ollm_provider import OLLMProvider
 from jira_issue_rag.providers.ollama_provider import OllamaProvider
 from jira_issue_rag.providers.openai_provider import OpenAIProvider
 from jira_issue_rag.services.prompt_catalog import PromptCatalog
@@ -193,5 +194,19 @@ class ProviderRouter:
         if lowered == "gemini":
             return GeminiProvider(settings=self.settings, model_name=self.settings.gemini_model)
         if lowered == "ollama":
-            return OllamaProvider(base_url=self.settings.ollama_base_url, model_name=self.settings.ollama_model)
+            return OllamaProvider(
+                base_url=self.settings.ollama_base_url,
+                model_name=self.settings.ollama_model,
+                timeout_seconds=self.settings.ollama_timeout_seconds,
+            )
+        if lowered == "ollm":
+            return OLLMProvider(
+                model_name=self.settings.ollm_model,
+                device=self.settings.ollm_device,
+                models_dir=self.settings.ollm_models_dir,
+                cache_dir=self.settings.ollm_cache_dir,
+                force_download=self.settings.ollm_force_download,
+                offload_layers=self.settings.ollm_offload_layers,
+                max_new_tokens=self.settings.ollm_max_new_tokens,
+            )
         return MockProvider(self.settings.primary_model)

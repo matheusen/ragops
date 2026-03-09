@@ -1,0 +1,269 @@
+{
+  "run_kind": "article-analysis",
+  "issue": {
+    "issue_key": "ARTICLE-07507D",
+    "summary": "Coleta de lixo em Java _ Stackademic.pdf",
+    "description": "99% dos desenvolvedores Java não\nentendem a coleta de lixo — veja o que\nrealmente acontece.\n99% dos desenvolvedores Java não entendem a coleta de\nlixo — veja o que realmente acontece.\n7 minutos de leitura\n28 de janeiro de 2026\nNosso aplicativo Java gastou 90% do tempo coletando lixo — veja por quê.\nPressione Enter ou clique para ver a imagem em tamanho real.\nSe você não é membro, pode ler o conteúdo AQUI .\nFoi isso que aprendi quando uma correção perfeita congelou de repente sob tráfego real. A\nCPU estava em 100%, a memória estava \"normal\", mas todas as requisições expiraram.\nO que é culpa? Uma única métrica devastadora: Tempo gasto em coleta de lixo: 87% . O\nsistema estava tão ocupado limpando seu próprio lixo que se esqueceu de fazer seu trabalho.\nVamos desvendar os bastidores da JVM e ver como esse assassino silencioso era.\nO que é uma Máquina Virtual Java?\nAntes de falarmos sobre coleta de lixo, você precisa entender que é uma JVM (Máquina Virtual\nJava).\nUma JVM é uma máquina computacional abstrata — um programa que se comporta como\numa máquina para os programas Java. Quando você escreve o código Java, você não está\nescrevendo para Windows, Linux ou Mac. Você está escrevendo para JVM.\nEis o que acontece quando você executa o Java:\n// Você escreve esta classe pública    \nHelloWorld { public static void main ( String[] args ) { System. out .println( \n\"Olá, Mundo!\" ); } } // O compilador cria HelloWorld.class (bytecode) // A JVM \nlê o bytecode, não o seu código-fonte Java // A JVM traduz o bytecode em \ninstruções de máquina para o seu sistema operacional // Seu programa é \nexecutado\n       \nPor isso é importante: A JVM não sabe nada sobre a linguagem Java. Ela só conhece\n.classarquivos (bytecode). É por isso que outras linguagens como Kotlin, Scala e Groovy\npodem ser realizadas na JVM — todas elas são compiladas para o mesmo formato de\nbytecode.\nA principal conclusão: qualquer linguagem que possa ser expressa como bytecode válido\npode ser executada na JVM. A JVM é independente de plataforma, o que significa \"escreva\numa vez, execute em qualquer lugar\".\nComo a JVM realmente gerencia a memória\nA JVM divide a memória em regiões específicas, cada uma com uma finalidade específica:\n┌────────────────────────────────────────────────────────┐\n│ Memória da JVM │\n├──────────────────────────┬───────────────────────────┤\n│ Memória Heap │ Memória Não-Heap │\n├──────────────────────────┼───────────────────────────┤\n│ - Geração Jovem │ - Área do Método             │\n│ • Espaço Éden            │ - Cache de Código             │ \n│    • Survivor Space (S0) │  - Thread Stacks         │\n│    • Survivor Space (S1) │                          │\n│  - Old Generation        │                          │\n│  - (Tenured)             │                          │\n└──────────────────────────┴──────────────────────────┘\nThe heap is where your object data is stored. This is what the garbage collector manages.\nMost performance tuning focuses on the heap size and which garbage collector you choose.\nThe Three Components That Affect Performance\nWhen tuning Java performance, you focus on three things:\n1. The Heap\nWhere all your objects live. Divided into generations:\n// When you create objects\nList<String> names = new ArrayList<>();  // ArrayList object → Heap\nnames.add(\"Alice\");                      // String object → Heap  \nnames.add(\"Bob\");                        // String object → Heap\n// All these objects allocated in Young Generation (Eden)\n2. The Garbage Collector\nAutomatically reclaims memory from dead objects. Chosen at JVM startup:\njava -XX:+UseG1GC MyApp          # Use G1 collector\njava -XX:+UseSerialGC MyApp      # Use Serial collector\njava -XX:+UseParallelGC MyApp    # Use Parallel collector\n3. The JIT Compiler\nCompiles frequently-executed bytecode to native machine code for speed. Usually, it doesn’t\nneed tuning in modern JVMs.\nThe focus: Most performance tuning is about the heap and the garbage collector.\nHow Objects Live and Die in the JVM\nNow let’s ",
+    "comments": [],
+    "acceptance_criteria": [],
+    "reproduction_steps": [],
+    "expected_behavior": "",
+    "actual_behavior": "",
+    "priority": null,
+    "issue_type": "Article",
+    "status": null,
+    "project": null,
+    "component": null,
+    "service": null,
+    "environment": null,
+    "affected_version": null,
+    "labels": [
+      "article-analysis"
+    ],
+    "issue_links": [],
+    "attachments": [],
+    "changelog": [],
+    "collected_at": "2026-03-09T19:16:56.963201+00:00"
+  },
+  "attachment_facts": {
+    "issue_key": "ARTICLE-07507D",
+    "artifacts": [
+      {
+        "artifact_id": "article:559dc174def0962f0a67434b56de6c4da5e2bf37",
+        "artifact_type": "pdf",
+        "source_path": "C:\\Users\\mengl\\AppData\\Local\\Temp\\ragflow_article_pa837u29\\Coleta de lixo em Java _ Stackademic.pdf",
+        "extracted_text": "99% dos desenvolvedores Java não\nentendem a coleta de lixo — veja o que\nrealmente acontece.\n99% dos desenvolvedores Java não entendem a coleta de\nlixo — veja o que realmente acontece.\n7 minutos de leitura\n28 de janeiro de 2026\nNosso aplicativo Java gastou 90% do tempo coletando lixo — veja por quê.\nPressione Enter ou clique para ver a imagem em tamanho real.\nSe você não é membro, pode ler o conteúdo AQUI .\nFoi isso que aprendi quando uma correção perfeita congelou de repente sob tráfego real. A\nCPU estava em 100%, a memória estava \"normal\", mas todas as requisições expiraram.\nO que é culpa? Uma única métrica devastadora: Tempo gasto em coleta de lixo: 87% . O\nsistema estava tão ocupado limpando seu próprio lixo que se esqueceu de fazer seu trabalho.\nVamos desvendar os bastidores da JVM e ver como esse assassino silencioso era.\nO que é uma Máquina Virtual Java?\nAntes de falarmos sobre coleta de lixo, você precisa entender que é uma JVM (Máquina Virtual\nJava).\nUma JVM é uma máquina computacional abstrata — um programa que se comporta como\numa máquina para os programas Java. Quando você escreve o código Java, você não está\nescrevendo para Windows, Linux ou Mac. Você está escrevendo para JVM.\nEis o que acontece quando você executa o Java:\n// Você escreve esta classe pública    \nHelloWorld { public static void main ( String[] args ) { System. out .println( \n\"Olá, Mundo!\" ); } } // O compilador cria HelloWorld.class (bytecode) // A JVM \nlê o bytecode, não o seu código-fonte Java // A JVM traduz o bytecode em \ninstruções de máquina para o seu sistema operacional // Seu programa é \nexecutado\n       \nPor isso é importante: A JVM não sabe nada sobre a linguagem Java. Ela só conhece\n.classarquivos (bytecode). É por isso que outras linguagens como Kotlin, Scala e Groovy\npodem ser realizadas na JVM — todas elas são compiladas para o mesmo formato de\nbytecode.\nA principal conclusão: qualquer linguagem que possa ser expressa como bytecode válido\npode ser executada na JVM. A JVM é independente de plataforma, o que significa \"escreva\numa vez, execute em qualquer lugar\".\nComo a JVM realmente gerencia a memória\nA JVM divide a memória em regiões específicas, cada uma com uma finalidade específica:\n┌────────────────────────────────────────────────────────┐\n│ Memória da JVM │\n├──────────────────────────┬───────────────────────────┤\n│ Memória Heap │ Memória Não-Heap │\n├──────────────────────────┼───────────────────────────┤\n│ - Geração Jovem │ - Área do Método             │\n│ • Espaço Éden            │ - Cache de Código             │ \n│    • Survivor Space (S0) │  - Thread Stacks         │\n│    • Survivor Space (S1) │                          │\n│  - Old Generation        │                          │\n│  - (Tenured)             │                          │\n└──────────────────────────┴──────────────────────────┘\nThe heap is where your object data is stored. This is what the garbage collector manages.\nMost performance tuning focuses on the heap size and which garbage collector you choose.\nThe Three Components That Affect Performance\nWhen tuning Java performance, you focus on three things:\n1. The Heap\nWhere all your objects live. Divided into generations:\n// When you create objects\nList<String> names = new ArrayList<>();  // ArrayList object → Heap\nnames.add(\"Alice\");                      // String object → Heap  \nnames.add(\"Bob\");                        // String object → Heap\n// All these objects allocated in Young Generation (Eden)\n2. The Garbage Collector\nAutomatically reclaims memory from dead objects. Chosen at JVM startup:\njava -XX:+UseG1GC MyApp          # Use G1 collector\njava -XX:+UseSerialGC MyApp      # Use Serial collector\njava -XX:+UseParallelGC MyApp    # Use Parallel collector\n3. The JIT Compiler\nCompiles frequently-executed bytecode to native machine code for speed. Usually, it doesn’t\nneed tuning in modern JVMs.\nThe focus: Most performance tuning is about the heap and the garbage collector.\nHow Objects Live and Die in the JVM\nNow let’s see what actually happens to your objects.\nStep 1: New Objects Go to Eden\npublic void processOrders() {\n    for (int i = 0; i < 1000; i++) {\n        Order order = new Order();  // Allocated in Eden space\n        process(order);\n    }\n}\n// All new objects start in Eden\n// Eden is the first stop for every object\nEden space: Where all new objects are allocated. It fills up quickly.\nStep 2: Eden Fills Up → Minor GC Triggers\nBefore Minor GC:\n┌─────────┬──────┬──────┐\n│  Eden   │  S0  │  S1  │\n│  FULL   │ empty│ empty│\n└─────────┴──────┴──────┘\nAfter Minor GC:\n┌─────────┬──────┬──────┐\n│  Eden   │  S0  │  S1  │\n│  empty  │ used │ empty│\n└─────────┴──────┴──────┘\nWhat happens:\n1. JVM pauses all application threads\n2. Scans Eden for objects still in use (referenced)\n3. Copies live objects to Survivor Space (S0)\n4. Deletes everything else (unreferenced objects)\n5. Resumes application\nUnreferenced objects are deleted instantly. No cleanup code needed.\nStep 3: Objects Survive and Age\npublic class SessionManager {\n    private Map<String, Session> sessions = new HashMap<>();\n    \n    public void createSession(String id) {\n        Session session = new Session();\n        sessions.put(id, session);  // Session is still referenced!\n    }\n}\n// Session object survives Minor GC (still in Map)\n// Moved to Survivor space\n// Age counter incremented\nAt the next Minor GC:\nBefore:\n┌─────────┬──────┬──────┐\n│  Eden   │  S0  │  S1  │\n│  FULL   │ age=1│ empty│\n└─────────┴──────┴──────┘\nAfter:\n┌─────────┬──────┬──────┐\n│  Eden   │  S0  │  S1  │\n│  empty  │ empty│ age=2│\n└─────────┴──────┴──────┘\nSurvivor spaces switch roles. Objects bounce between S0 and S1, getting older each time.\nStep 4: Promotion to Old Generation\npublic class UserCache {\n    // These objects will live a long time\n    private Map<Long, User> cache = new HashMap<>();\n    \n    public void cacheUser(User user) {\n        cache.put(user.getId(), user);\n    }\n}\n// User objects survive many Minor GCs\n// After age threshold (typically 8), promoted to Old generation\nWhen objects reach the age threshold (8 in this example):\nCopied from Survivor space to the Old generation\nNow considered “long-lived.”\nStay there until Major GC\nStep 5: Major GC Cleans Old Generation\nOld Generation fills up:\n┌──────────────────────────┐\n│   Old Generation         │\n│   █████████████████ 95%  │\n└──────────────────────────┘\nMajor GC triggered:\n1. Stop all application threads (LONG pause)\n2. Mark all reachable objects in entire heap\n3. Sweep unreachable objects\n4. Compact memory (move objects together)\n5. Resume application\nMajor GC is expensive. Pause times can be 100ms to several seconds, depending on heap\nsize.\nThe Three Garbage Collectors Explained\nThe JVM offers different collectors for different needs.\nColetor de Lixo Serial — Simples e de Thread Única\njava - XX :+UseSerialGC - Xms512m - Xmx512m  MyApp\nComo funciona:\nUma única thread realiza todo o trabalho de coleta de lixo.\nPare o mundo para ambos os GC Minor e Major.\nAlgoritmo mais simples, menor sobrecarga\nQuando usar:\nSistemas de núcleo único\nPilhas com menos de 2 GB\nDesenvolvimento/teste\nAplicações simples\nPor que isso é importante:\nHeap de 2 GB com coleta de lixo serial : Pausa  \nmenor na coleta de lixo : 50 msPausa  \nimportante na coleta de lixo : 200 ms\nPrevisível e simples\nHeap de 32 GB com coleta de lixo serial : Pausa  \nmenor na coleta de lixo : 500 ms\nPausa importante do coletor de lixo :  mais de 10 segundos ! \nNão é adequado para heaps grandes.\nA JVM seleciona automaticamente o coletor de lixo serial (Serial GC) quando detecta\nmenos de 2 CPUs ou um heap com menos de 2 GB.\nColeta de lixo paralela — Multithread para maiorprodutividade\njava - XX :+UseParallelGC - XX :ParallelGCThreads= 8 - Xms8g - Xmx8g  MyApp\nComo funciona:\nVárias threads executam a coleta de lixo em paralelo.\nUtiliza todos os núcleos de CPU disponíveis.\nAinda capaz de parar o mundo, mas muito mais rápido.\nOtimizado para máxima produtividade\nQuando usar:\nServidores com múltiplos núcleos (4 ou mais núcleos)\nProcessamento em lote\nTrabalhos de apoio\nQuando a produtividade total importa mais do que as pausas individuais\nO desempenho aumenta com o número de núcleos:\n8 GB de heap, 8 núcleos de CPU:\n Coleta de lixo serial :      pausa de 400 ms ( 1 thread)\n Coleta de lixo paralela :    pausa de 50 ms ( 8 threads)\n Melhoria de 8 vezes !\nG1 GC — Equilibrado e Previsível\njava - XX :+UseG1GC - XX :MaxGCPauseMillis= 200 - Xms16g - Xmx16g  MyApp\nComo funciona:\nDivide a pilha em milhares de pequenas regiões.\nCada região pode ser Éden, Sobrevivente ou Antiga.\nColeta primeiro as regiões com maior quantidade de lixo (“Lixo Primeiro”).\nAlvos com tempos de pausa previsíveis\nAlgumas tarefas são executadas simultaneamente (o aplicativo continua em execução).\nA abordagem baseada na região:\nPressione Enter ou clique para ver a imagem em tamanho real.\n GC tradicional :\n┌────────────────┬─────────────────┐\n│ Geração Jovem        │ Geração Velha          │ \n│ ( tudo  ou  nada )   │ ( tudo  ou  nada )    │\n└────────────────┴─────────────────┘\nG1  GC :\n┌──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┐\n│ E │ E │ S │ O │ O │ E │ O │ S │ E │ O │ O │\n└──┴──┴──┴──┴──┴──┴──┴──┴──┴──┴──┘\nE = Éden ,  S = Sobrevivente ,  O = Antigo. \nG1  coleta  regiões individuais .  Concentra-se primeiro nas regiões de maior \nrelevância ( regiões consideradas lixo) . Tempos de pausa mais previsíveis.\n    \n   \nQuando usar:\nHeaps grandes (8 GB ou mais)\nAplicações que necessitam de pausas previsíveis\nServidores multi-core\nSistemas de produção modernos\nG1 é o padrão desde o Java 9 em sistemas com 2 ou mais CPUs e 2 GB ou mais de heap.\nPor que o G1 é diferente:\nHeap de 32 GB, pausas alvo de 200 ms :\n \nColeta de lixo completa tradicional : \n-  Analisa os 32 GB inteiros \n-  Pausa: mais de 5 segundos \n-  Imprevisível \nColeta de lixo G1 : \n-  Marca a geração antiga simultaneamente (aplicativo em execução) \n-  Identifica as regiões com maior quantidade de lixo \n-  Coleta apenas essas regiões \n-  Pausa: 150-200 ms \n-  Previsível!\nLimitação importante: o G1 é orientado para a taxa de transferência com latência limitada,\nnão sendo verdadeiramente de baixa latência. Metas de pausa inferiores a 50 ms são\nirrealistas.\nO que isso significa na prática\nCompreender a coleta de lixo altera o que você otimiza:\n// Objetos de curta duração são essencialmente gratuitos \npublic  String formatData( List <Item> items) {\n    StringBuilder sb = novo StringBuilder();\n    para (Item item : itens) {\n        sb.append(item.toString());   // Vários objetos temporários\n    }\n    return sb.toString();\n     // Todos os objetos temporários são descartados no Eden \n    // O coletor de lixo secundário os limpa de forma eficiente\n}\n// Objetos de longa duração são caros \npublic class Cache {\n     private  Map < String , Data > cache = new HashMap<>();\n    \n    public  void  cache ( String key, Data  data ) {\n         cache .put(key, data );   // Permanece indefinidamente \n        // Eventualmente promovido para a geração antiga \n        // Causa pressão no coletor de lixo principal\n    }\n}\nO princípio fundamental: a maioria dos objetos deve ser eliminada precocemente. Se muitos\nobjetos atingirem a geração antiga, ocorrerão coletas de lixo frequentes (Major GC) e um\ndesempenho ruim.\nDo mistério à compreensão\nA diferença entre os desenvolvedores que entendem de coleta de lixo (GC) e os que não\nentendem reside na capacidade de diagnosticar problemas de desempenho.\nAntes de entender o GC:\n“Meu aplicativo fica lento às vezes, não sei por quê.”\n“Adicionar mais memória não ajudou.”\n“O uso da CPU está no máximo, mas não estamos fazendo muita coisa.”\nApós compreender o GC:\n“Estamos gastando 40% do tempo da CPU em coleta de lixo.”\n“Os objetos estão sendo promovidos para a geração antiga muito rapidamente.”\n“Precisamos reduzir o tempo de vida dos objetos ou mudar os algoritmos de coleta de\nlixo.”\nA coleta de lixo da JVM é um dos maiores trunfos do Java — o gerenciamento automático de\nmemória significa que você não precisa alocar e liberar memória manualmente como em C ou\nC++. Mas “automático” não significa “mágico”. Compreender como o modelo geracional\nfunciona, como os objetos envelhecem e são promovidos, e como diferentes coletores fazem\ndiferentes concessões é essencial para escrever aplicações Java que tenham bom desempenho\nsob carga.\nNa próxima vez que sua aplicação ficar lenta sob carga, verifique os logs do coletor de lixo\n(GC). A resposta geralmente está lá: objetos com tempo de vida muito longo, um coletor\ninadequado para sua carga de trabalho ou um heap com tamanho incorreto. Entender o que\nestá acontecendo dentro da JVM transforma mistério em conhecimento.\nQual conceito de GC era novo para você? Deixe um comentário dizendo o que você\naprendeu hoje.",
+        "facts": {
+          "article_title": "Coleta de lixo em Java _ Stackademic.pdf",
+          "primary_theme": "",
+          "secondary_themes": []
+        },
+        "confidence": 1.0
+      }
+    ],
+    "contradictions": [],
+    "missing_information": []
+  },
+  "rule_evaluation": {
+    "missing_items": [],
+    "contradictions": [],
+    "financial_impact_detected": false,
+    "requires_human_review": false,
+    "results": []
+  },
+  "retrieved": [
+    {
+      "chunk_id": "8a8b8100-1593-506a-af37-94356f4936b6",
+      "doc_id": "07507dbbd0ea0e74",
+      "title": "Coleta de lixo em Java _ Stackademic.pdf",
+      "chunk_index": 11,
+      "content": "Algoritmo mais simples, menor sobrecarga\nQuando usar:\nSistemas de núcleo único\nPilhas com menos de 2 GB\nDesenvolvimento/teste\nAplicações simples\nPor que isso é importante:\nHeap de 2 GB com coleta de lixo serial : Pausa  \nmenor na coleta de lixo : 50 msPausa  \nimportante na coleta de lixo : 200 ms\nPrevisível e simples\nHeap de 32 GB com coleta de lixo serial : Pausa  \nmenor na coleta de lixo : 500 ms\nPausa importante do coletor de lixo :  mais de 10 segundos ! Não é adequado para heaps grandes. A JVM seleciona automaticamente o coletor de lixo serial (Serial GC) quando detecta\nmenos de 2 CPUs ou um heap com menos de 2 GB.",
+      "topics": [
+        "lixo",
+        "coleta",
+        "serial",
+        "simples",
+        "menor",
+        "menos",
+        "importante",
+        "heap"
+      ],
+      "score": 13.2155,
+      "source_path": "C:\\Users\\mengl\\AppData\\Local\\Temp\\ragflow_article_pa837u29\\Coleta de lixo em Java _ Stackademic.pdf",
+      "canonical_title": "coleta de lixo em java",
+      "published_at": "2026-01-28",
+      "published_year": 2026,
+      "version_label": null
+    },
+    {
+      "chunk_id": "5390f8bd-129a-56d6-b9b9-1463289b9336",
+      "doc_id": "07507dbbd0ea0e74",
+      "title": "Coleta de lixo em Java _ Stackademic.pdf",
+      "chunk_index": 12,
+      "content": "Coleta de lixo paralela — Multithread para maiorprodutividade\njava - XX :+UseParallelGC - XX :ParallelGCThreads= 8 - Xms8g - Xmx8g  MyApp\nComo funciona:\nVárias threads executam a coleta de lixo em paralelo. Utiliza todos os núcleos de CPU disponíveis. Ainda capaz de parar o mundo, mas muito mais rápido. Otimizado para máxima produtividade\nQuando usar:\nServidores com múltiplos núcleos (4 ou mais núcleos)\nProcessamento em lote\nTrabalhos de apoio\nQuando a produtividade total importa mais do que as pausas individuais\nO desempenho aumenta com o número de núcleos:\n8 GB de heap, 8 núcleos de CPU:\n Coleta de lixo serial :      pausa de 400 ms ( 1 thread)\n Coleta de lixo paralela :    pausa de 50 ms ( 8 threads)\n Melhoria de 8 vezes !",
+      "topics": [
+        "núcleos",
+        "coleta",
+        "lixo",
+        "mais",
+        "paralela",
+        "threads",
+        "produtividade",
+        "quando"
+      ],
+      "score": 12.2261,
+      "source_path": "C:\\Users\\mengl\\AppData\\Local\\Temp\\ragflow_article_pa837u29\\Coleta de lixo em Java _ Stackademic.pdf",
+      "canonical_title": "coleta de lixo em java",
+      "published_at": "2026-01-28",
+      "published_year": 2026,
+      "version_label": null
+    },
+    {
+      "chunk_id": "7d3c9a1c-4afb-5b2c-927f-17983524bd56",
+      "doc_id": "07507dbbd0ea0e74",
+      "title": "Coleta de lixo em Java _ Stackademic.pdf",
+      "chunk_index": 0,
+      "content": "99% dos desenvolvedores Java não\nentendem a coleta de lixo — veja o que\nrealmente acontece. 99% dos desenvolvedores Java não entendem a coleta de\nlixo — veja o que realmente acontece. 7 minutos de leitura\n28 de janeiro de 2026\nNosso aplicativo Java gastou 90% do tempo coletando lixo — veja por quê. Pressione Enter ou clique para ver a imagem em tamanho real. Se você não é membro, pode ler o conteúdo AQUI . Foi isso que aprendi quando uma correção perfeita congelou de repente sob tráfego real. A\nCPU estava em 100%, a memória estava \"normal\", mas todas as requisições expiraram. O que é culpa? Uma única métrica devastadora: Tempo gasto em coleta de lixo: 87% . O\nsistema estava tão ocupado limpando seu próprio lixo que se esqueceu de fazer seu trabalho.",
+      "topics": [
+        "lixo",
+        "java",
+        "coleta",
+        "veja",
+        "estava",
+        "desenvolvedores",
+        "entendem",
+        "realmente"
+      ],
+      "score": 10.715,
+      "source_path": "C:\\Users\\mengl\\AppData\\Local\\Temp\\ragflow_article_pa837u29\\Coleta de lixo em Java _ Stackademic.pdf",
+      "canonical_title": "coleta de lixo em java",
+      "published_at": "2026-01-28",
+      "published_year": 2026,
+      "version_label": null
+    },
+    {
+      "chunk_id": "6013b133-7586-5b22-9b45-beb8942572a6",
+      "doc_id": "07507dbbd0ea0e74",
+      "title": "Coleta de lixo em Java _ Stackademic.pdf",
+      "chunk_index": 15,
+      "content": "Por que o G1 é diferente:\nHeap de 32 GB, pausas alvo de 200 ms :\n \nColeta de lixo completa tradicional : \n-  Analisa os 32 GB inteiros \n-  Pausa: mais de 5 segundos \n-  Imprevisível \nColeta de lixo G1 : \n-  Marca a geração antiga simultaneamente (aplicativo em execução) \n-  Identifica as regiões com maior quantidade de lixo \n-  Coleta apenas essas regiões \n-  Pausa: 150-200 ms \n-  Previsível! Limitação importante: o G1 é orientado para a taxa de transferência com latência limitada,\nnão sendo verdadeiramente de baixa latência. Metas de pausa inferiores a 50 ms são\nirrealistas.",
+      "topics": [
+        "coleta",
+        "lixo",
+        "pausa",
+        "regiões",
+        "latência",
+        "diferente",
+        "heap",
+        "pausas"
+      ],
+      "score": 8.1717,
+      "source_path": "C:\\Users\\mengl\\AppData\\Local\\Temp\\ragflow_article_pa837u29\\Coleta de lixo em Java _ Stackademic.pdf",
+      "canonical_title": "coleta de lixo em java",
+      "published_at": "2026-01-28",
+      "published_year": 2026,
+      "version_label": null
+    },
+    {
+      "chunk_id": "8f95439d-8372-5e6c-b5bc-aabb0c0077f2",
+      "doc_id": "07507dbbd0ea0e74",
+      "title": "Coleta de lixo em Java _ Stackademic.pdf",
+      "chunk_index": 18,
+      "content": "Antes de entender o GC:\n“Meu aplicativo fica lento às vezes, não sei por quê.”\n“Adicionar mais memória não ajudou.”\n“O uso da CPU está no máximo, mas não estamos fazendo muita coisa.”\nApós compreender o GC:\n“Estamos gastando 40% do tempo da CPU em coleta de lixo.”\n“Os objetos estão sendo promovidos para a geração antiga muito rapidamente.”\n“Precisamos reduzir o tempo de vida dos objetos ou mudar os algoritmos de coleta de\nlixo.”\nA coleta de lixo da JVM é um dos maiores trunfos do Java — o gerenciamento automático de\nmemória significa que você não precisa alocar e liberar memória manualmente como em C ou\nC++. Mas “automático” não significa “mágico”.",
+      "topics": [
+        "memória",
+        "coleta",
+        "lixo",
+        "estamos",
+        "tempo",
+        "objetos",
+        "automático",
+        "significa"
+      ],
+      "score": 7.1828,
+      "source_path": "C:\\Users\\mengl\\AppData\\Local\\Temp\\ragflow_article_pa837u29\\Coleta de lixo em Java _ Stackademic.pdf",
+      "canonical_title": "coleta de lixo em java",
+      "published_at": "2026-01-28",
+      "published_year": 2026,
+      "version_label": null
+    }
+  ],
+  "distilled": {
+    "key_facts": [],
+    "preserved_quotes": [],
+    "evidence": []
+  },
+  "decision": {
+    "issue_key": "ARTICLE-07507D",
+    "classification": "article_analysis",
+    "is_bug": false,
+    "is_complete": true,
+    "ready_for_dev": true,
+    "confidence": 1.0,
+    "missing_items": [],
+    "evidence_used": [
+      "8a8b8100-1593-506a-af37-94356f4936b6",
+      "5390f8bd-129a-56d6-b9b9-1463289b9336",
+      "7d3c9a1c-4afb-5b2c-927f-17983524bd56",
+      "6013b133-7586-5b22-9b45-beb8942572a6",
+      "8f95439d-8372-5e6c-b5bc-aabb0c0077f2"
+    ],
+    "contradictions": [],
+    "financial_impact_detected": false,
+    "requires_human_review": false,
+    "rationale": "Mock analysis based on selected prompt. Summary: Analise o artigo abaixo.  Titulo: Coleta de lixo em Java _ Stackademic.pdf  Metadados: {   \"source_files\": [     \"Coleta de lixo em Java _ Stackademic.pdf\"   ],   \"source_path\": \"C:\\\\Users\\\\mengl\\\\AppData\\\\Local\\\\Temp\\\\ragflow_article_pa837",
+    "provider": "mock",
+    "model": "mock-judge-v1"
+  },
+  "prompt_execution": {
+    "prompt_name": "article_analysis",
+    "mode": "text",
+    "provider": "mock",
+    "model": "mock-judge-v1",
+    "output_text": "Mock analysis based on selected prompt. Summary: Analise o artigo abaixo.  Titulo: Coleta de lixo em Java _ Stackademic.pdf  Metadados: {   \"source_files\": [     \"Coleta de lixo em Java _ Stackademic.pdf\"   ],   \"source_path\": \"C:\\\\Users\\\\mengl\\\\AppData\\\\Local\\\\Temp\\\\ragflow_article_pa837"
+  },
+  "article_run": {
+    "title": "Coleta de lixo em Java _ Stackademic.pdf",
+    "source": "C:\\Users\\mengl\\AppData\\Local\\Temp\\ragflow_article_pa837u29\\Coleta de lixo em Java _ Stackademic.pdf",
+    "prompt_name": "article_analysis",
+    "search_query": "Coleta de lixo em Java _ Stackademic.pdf",
+    "top_k": 5,
+    "related_doc_id": null,
+    "related_limit": 5,
+    "metadata": {
+      "source": "C:\\Users\\mengl\\AppData\\Local\\Temp\\ragflow_article_pa837u29\\Coleta de lixo em Java _ Stackademic.pdf",
+      "source_files": [
+        "Coleta de lixo em Java _ Stackademic.pdf"
+      ]
+    },
+    "content_excerpt": "99% dos desenvolvedores Java não\nentendem a coleta de lixo — veja o que\nrealmente acontece.\n99% dos desenvolvedores Java não entendem a coleta de\nlixo — veja o que realmente acontece.\n7 minutos de leitura\n28 de janeiro de 2026\nNosso aplicativo Java gastou 90% do tempo coletando lixo — veja por quê.\nPressione Enter ou clique para ver a imagem em tamanho real.\nSe você não é membro, pode ler o conteúdo AQUI .\nFoi isso que aprendi quando uma correção perfeita congelou de repente sob tráfego real. A\nCPU estava em 100%, a memória estava \"normal\", mas todas as requisições expiraram.\nO que é culpa? Uma única métrica devastadora: Tempo gasto em coleta de lixo: 87% . O\nsistema estava tão ocupado limpando seu próprio lixo que se esqueceu de fazer seu trabalho.\nVamos desvendar os bastidores da JVM e ver como esse assassino silencioso era.\nO que é uma Máquina Virtual Java?\nAntes de falarmos sobre coleta de lixo, você precisa entender que é uma JVM (Máquina Virtual\nJava).\nUma JVM é uma máquina computacional abstrata — um programa que se comporta como\numa máquina para os programas Java. Quando você escreve o código Java, você não está\nescrevendo para Windows, Linux ou Mac. Você está escrevendo para JVM.\nEis o que acontece quando você executa o Java:\n// Você escreve esta classe pública    \nHelloWorld { public static void main ( String[] args ) { System. out .println( \n\"Olá, Mundo!\" ); } } // O compilador cria HelloWorld.class (bytecode) // A JVM \nlê o bytecode, não o seu código-fonte Java // A JVM traduz o bytecode em \ninstruções de máquina para o seu sistema operacional // Seu programa é \nexecutado\n       \nPor isso é importante: A JVM não sabe nada sobre a linguagem Java. Ela só conhece\n.classarquivos (bytecode). É por isso que outras linguagens como Kotlin, Scala e Groovy\npodem ser realizadas na JVM — todas elas são compiladas para o mesmo formato de\nbytecode.\nA principal conclusão: qualquer linguagem que possa ser expressa como bytecode válido\npode ser executada na JVM. A JVM é independente de plataforma, o que significa \"escreva\numa vez, execute em qualquer lugar\".\nComo a JVM realmente gerencia a memória\nA JVM divide a memória em regiões específicas, cada uma com uma finalidade específica:\n┌────────────────────────────────────────────────────────┐\n│ Memória da JVM │\n├──────────────────────────┬───────────────────────────┤\n│ Memória Heap │ Memória Não-Heap │\n├──────────────────────────┼───────────────────────────┤\n│ - Geração Jovem │ - Área do Método             │\n│ • Espaço Éden            │ - Cache de Código             │ \n│    • Survivor Space (S0) │  - Thread Stacks         │\n│    • Survivor Space (S1) │                          │\n│  - Old Generation        │                          │\n│  - (Tenured)             │                          │\n└──────────────────────────┴──────────────────────────┘\nThe heap is where your object data is stored. This is what the garbage collector manages.\nMost performance tuning focuses on the heap size and which garbage collector you choose.\nThe Three Components That Affect Performance\nWhen tuning Java performance, you focus on three things:\n1. The Heap\nWhere all your objects live. Divided into generations:\n// When you create objects\nList<String> names = new ArrayList<>();  // ArrayList object → Heap\nnames.add(\"Alice\");                      // String object → Heap  \nnames.add(\"Bob\");                        // String object → Heap\n// All these objects allocated in Young Generation (Eden)\n2. The Garbage Collector\nAutomatically reclaims memory from dead objects. Chosen at JVM startup:\njava -XX:+UseG1GC MyApp          # Use G1 collector\njava -XX:+UseSerialGC MyApp      # Use Serial collector\njava -XX:+UseParallelGC MyApp    # Use Parallel collector\n3. The JIT Compiler\nCompiles frequently-executed bytecode to native machine code for speed. Usually, it doesn’t\nneed tuning in modern JVMs.\nThe focus: Most performance tuning is about the heap and the garbage collector.\nHow Objects Live and Die in the JVM\nNow let’s ",
+    "output_text": "Mock analysis based on selected prompt. Summary: Analise o artigo abaixo.  Titulo: Coleta de lixo em Java _ Stackademic.pdf  Metadados: {   \"source_files\": [     \"Coleta de lixo em Java _ Stackademic.pdf\"   ],   \"source_path\": \"C:\\\\Users\\\\mengl\\\\AppData\\\\Local\\\\Temp\\\\ragflow_article_pa837",
+    "warnings": [],
+    "related_articles": []
+  },
+  "runtime": {
+    "flow_mode": "article-analysis",
+    "execution_path": "run-upload",
+    "configured_provider": "ollm",
+    "configured_llm_model": "mock-judge-v1",
+    "embedding_model": "text-embedding-3-large",
+    "retrieval": {
+      "external": true,
+      "graphrag": false,
+      "cascade": false
+    },
+    "agentic": {
+      "planner": false,
+      "query_rewriter": false,
+      "reflection_memory": false,
+      "policy_loop": false,
+      "temporal_graphrag": false
+    },
+    "reranker": false,
+    "distiller": "simple",
+    "planner_mode": "step-plan",
+    "query_rewriter_mode": "metadata-aware",
+    "reflection_mode": "summary-log",
+    "policy_mode": "rule-gated",
+    "temporal_graphrag_mode": "versioned-graph",
+    "confidentiality": true,
+    "langgraph": false,
+    "monkeyocr": false,
+    "dspy_active": false,
+    "ragas_active": false,
+    "supported_runtime_nodes": [
+      "article-upload",
+      "prompt-catalog",
+      "article-search",
+      "qdrant"
+    ],
+    "ignored_nodes": [],
+    "warnings": [],
+    "provider": "mock",
+    "llm_model": "mock-judge-v1",
+    "model": "mock-judge-v1",
+    "prompt_name": "article_analysis",
+    "query_text": "Coleta de lixo em Java _ Stackademic.pdf",
+    "search_hits": 5
+  }
+}

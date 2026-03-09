@@ -93,6 +93,14 @@ class Settings(BaseSettings):
     # Ollama local provider (from article: oLLM / Programação Agentic totalmente local)
     ollama_base_url: str = Field(default="http://localhost:11434", alias="OLLAMA_BASE_URL")
     ollama_model: str = Field(default="llama3.1:8b", alias="OLLAMA_MODEL")
+    ollama_timeout_seconds: int = Field(default=600, alias="OLLAMA_TIMEOUT_SECONDS")
+    ollm_model: str = Field(default="llama3-1B-chat", alias="OLLM_MODEL")
+    ollm_device: str = Field(default="cuda:0", alias="OLLM_DEVICE")
+    ollm_models_dir: Path = Field(default=PROJECT_ROOT / "data/ollm_models", alias="OLLM_MODELS_DIR")
+    ollm_cache_dir: Path = Field(default=PROJECT_ROOT / "data/ollm_cache", alias="OLLM_CACHE_DIR")
+    ollm_force_download: bool = Field(default=False, alias="OLLM_FORCE_DOWNLOAD")
+    ollm_offload_layers: int = Field(default=0, alias="OLLM_OFFLOAD_LAYERS")
+    ollm_max_new_tokens: int = Field(default=1200, alias="OLLM_MAX_NEW_TOKENS")
 
     # Auto-improvement threshold (from article: Criando arquitetura de treinamento)
     auto_improvement_threshold: float = Field(default=0.75, alias="AUTO_IMPROVEMENT_THRESHOLD")
@@ -102,6 +110,7 @@ class Settings(BaseSettings):
     # Provider used for the compression LLM in refrag mode — defaults to the primary provider.
     # Set to a cheaper/faster model (e.g. "openai" with gpt-5-mini) to keep latency low.
     distiller_provider: str = Field(default="", alias="DISTILLER_PROVIDER")
+    enable_monkeyocr_pdf_parser: bool = Field(default=False, alias="ENABLE_MONKEYOCR_PDF_PARSER")
     enable_docling_pdf_parser: bool = Field(default=False, alias="ENABLE_DOCLING_PDF_PARSER")
     enable_tesseract_pdf_ocr: bool = Field(default=True, alias="ENABLE_TESSERACT_PDF_OCR")
 
@@ -130,12 +139,12 @@ class Settings(BaseSettings):
 
     def allows_provider(self, provider_name: str | None) -> bool:
         lowered = (provider_name or "mock").lower()
-        # mock and ollama are always allowed — no external API calls
-        if lowered in {"mock", "ollama"}:
+        # mock, ollama and ollm are always allowed — no external API calls
+        if lowered in {"mock", "ollama", "ollm"}:
             return True
         if lowered in {"openai", "gemini"}:
             return not self.confidentiality_mode or self.allow_third_party_llm
-        return True
+        return not self.confidentiality_mode or self.allow_third_party_llm
 
     def allows_external_embeddings(self) -> bool:
         return not self.confidentiality_mode or self.allow_third_party_embeddings
@@ -164,6 +173,8 @@ def get_settings() -> Settings:
     settings.eval_reports_dir.mkdir(parents=True, exist_ok=True)
     settings.prompts_dir.mkdir(parents=True, exist_ok=True)
     settings.dspy_lab_dir.mkdir(parents=True, exist_ok=True)
+    settings.ollm_models_dir.mkdir(parents=True, exist_ok=True)
+    settings.ollm_cache_dir.mkdir(parents=True, exist_ok=True)
     return settings
 
 

@@ -2,10 +2,16 @@
 # Infraestrutura — Jira Issue Validation RAG
 #
 # Subir tudo (sem GPU):              docker compose up -d
+# Isso sobe: Qdrant, Neo4j, MongoDB e Ollama.
+# MonkeyOCR existe neste compose, mas fica em profile separado (`gpu`).
+# Motivo: ele requer clone local do repositorio MonkeyOCR + GPU NVIDIA.
+# Por padrao, este compose usa o clone vizinho em `../MonkeyOCR`.
+# Se quiser outro caminho, defina `MONKEYOCR_SRC` no `.env`.
+#
 # Subir serviço individual:          docker compose up qdrant -d
 # Subir Qdrant + Neo4j:              docker compose up qdrant neo4j -d
 # Subir MongoDB (dashboard):         docker compose up mongodb -d
-# MonkeyOCR (requer GPU NVIDIA):     docker compose --profile gpu up monkeyocr -d
+# MonkeyOCR (requer GPU NVIDIA):     docker compose --profile gpu up monkeyocr --build -d
 #
 # Ver README.md → "Infraestrutura com Docker" para configuração detalhada.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -71,46 +77,73 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── Ollama — provider LLM 100% local (CPU, sem GPU obrigatória) ─────────────
+  # ── Ollama — provider LLM 100% local com aceleração por GPU NVIDIA ──────────
   # API: http://localhost:11434   →  OLLAMA_BASE_URL=http://localhost:11434
   # Baixar modelo após subir:
   #   docker exec -it ragops-ollama ollama pull llama3.1:8b
   #   docker exec -it ragops-ollama ollama pull qwen2.5:7b
+  # Requer Docker Desktop/Engine com suporte NVIDIA Container Toolkit.
   ollama:
     image: ollama/ollama:latest
     container_name: ragops-ollama
     ports:
       - "11434:11434"
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
     volumes:
       - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     restart: unless-stopped
 
   # ── MonkeyOCR v1.5 — extração de PDFs complexos (SRR paradigm) ──────────────
+  # Este servico ESTA no docker compose.
+  # Ele nao sobe no `docker compose up -d` padrao porque:
+  #   1. depende de GPU NVIDIA
+  #   2. o build usa o clone local do MonkeyOCR
+  #
   # Não há imagem pré-compilada no Docker Hub; o container é construído localmente.
   #
   # PRÉ-REQUISITO (fazer apenas uma vez):
-  #   git clone https://github.com/Yuliang-Liu/MonkeyOCR monkeyocr-src
+  #   git clone https://github.com/Yuliang-Liu/MonkeyOCR ../MonkeyOCR
   #
   # Subir (requer GPU NVIDIA ≥ 8 GB VRAM):
   #   docker compose --profile gpu up monkeyocr --build -d
+  # Ver logs:
+  #   docker compose --profile gpu logs -f monkeyocr
   #
   # API: http://localhost:8001  →  MONKEYOCR_API_URL=http://localhost:8001
   # Sem GPU: não suba este serviço; o sistema usa Docling → pypdf → Tesseract.
   monkeyocr:
     profiles: ["gpu"]
     build:
-      context: ./monkeyocr-src          # pasta criada pelo git clone acima
-      dockerfile: Dockerfile             # Dockerfile do próprio projeto
+      context: ${MONKEYOCR_SRC:-../MonkeyOCR}  # clone local do MonkeyOCR
+      dockerfile: docker/Dockerfile     # Dockerfile oficial do projeto MonkeyOCR
+      args:
+        LMDEPLOY_PATCHED: "true"
     container_name: ragops-monkeyocr
+    command: ["fastapi"]
     ports:
-      - "8001:8000"
+      - "8001:7861"
     environment:
       # MonkeyOCR-pro-1.2B  → ~4 GB VRAM, rápido, recomendado
       # MonkeyOCR-chat-8B   → ~16 GB VRAM, maior precisão em fórmulas densas
       MODEL_NAME: MonkeyOCR-pro-1.2B
+      FASTAPI_HOST: 0.0.0.0
+      FASTAPI_PORT: 7861
+      TMPDIR: /app/tmp
+      CUDA_VISIBLE_DEVICES: 0
+      HF_HUB_CACHE: /app/MonkeyOCR/model_weight
+      MODELSCOPE_CACHE: /app/MonkeyOCR/model_weight
     volumes:
-      - monkeyocr_models:/app/models
-      - monkeyocr_output:/app/output    # MDs extraídos salvos aqui
+      - monkeyocr_models:/app/MonkeyOCR/model_weight
+      - monkeyocr_output:/app/output    # artefatos extraídos salvos aqui
     deploy:
       resources:
         reservations:

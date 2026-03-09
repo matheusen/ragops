@@ -7,7 +7,7 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fi
 
 from jira_issue_rag.core.config import Settings
 from jira_issue_rag.providers.base import LLMProvider
-from jira_issue_rag.providers.decision_contract import decision_response_schema, normalize_decision_data
+from jira_issue_rag.providers.decision_contract import decision_output_contract_text, decision_response_schema, normalize_decision_data
 from jira_issue_rag.providers.google_vertex_auth import GoogleVertexAuth
 from jira_issue_rag.shared.models import DecisionResult, JudgeInput
 
@@ -40,7 +40,9 @@ class GeminiProvider(LLMProvider):
         output_text = self.run_prompt(
             system_prompt=(
                 "You are validating whether a Jira issue is a real bug, whether it is complete, "
-                "and whether it is ready for development. Return only valid JSON."
+                "and whether it is ready for development. "
+                "Build an explicit readiness checklist, list blockers, and give a short next action. "
+                + decision_output_contract_text()
             ),
             user_prompt=(
                 "Validate if this Jira issue is a bug, complete, and ready for dev. "

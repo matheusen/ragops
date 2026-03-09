@@ -2,9 +2,12 @@ export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ArticleAnalysisReport } from "@/components/article-analysis-report";
 import { ArticleSummaryBoard } from "@/components/article-summary-board";
 import { EvidenceCards } from "@/components/evidence-cards";
+import { RelatedResultsBoard } from "@/components/related-results-board";
 import { ResultCanvas } from "@/components/result-canvas";
+import { RuntimeTechniquesPanel } from "@/components/runtime-techniques-panel";
 import { getResultById } from "@/lib/results-data";
 
 interface Props {
@@ -27,14 +30,23 @@ export default async function ResultCanvasPage({ params }: Props) {
         <span className="rc__breadcrumb-id">{issueKey}</span>
         <span className="rc__breadcrumb-ts">{timestamp}</span>
       </div>
-      <section className="rc__shell">
-        <ResultCanvas audit={audit} />
-      </section>
+      {audit.article_run ? (
+        <ArticleAnalysisReport audit={audit} />
+      ) : (
+        <section className="rc__shell">
+          <ResultCanvas audit={audit} />
+        </section>
+      )}
+      <RuntimeTechniquesPanel audit={audit} />
       <ArticleSummaryBoard
         articleCards={audit.knowledge_map.article_cards}
         themeClusters={audit.knowledge_map.theme_clusters}
       />
-      <EvidenceCards audit={audit} />
+      <RelatedResultsBoard
+        currentId={audit.result_meta.id}
+        items={audit.knowledge_map.related_audits}
+      />
+      {!audit.article_run && <EvidenceCards audit={audit} />}
     </main>
   );
 }

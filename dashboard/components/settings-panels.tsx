@@ -13,6 +13,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   openai: "OpenAI",
   gemini: "Google Gemini",
   ollama: "Ollama (local)",
+  ollm: "oLLM (in-process)",
   mock: "Mock (testing)",
 };
 
@@ -20,6 +21,7 @@ const PROVIDER_COLOR: Record<string, string> = {
   openai: "#10a37f",
   gemini: "#4285f4",
   ollama: "#e05d2a",
+  ollm: "#0f766e",
   mock: "#888",
 };
 
@@ -27,6 +29,7 @@ const MODEL_PRESETS: Record<string, string[]> = {
   openai: ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini", "o3", "o4-mini"],
   gemini: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-pro"],
   ollama: ["llama3", "llama3.1", "llama3.2", "mistral", "phi3", "gemma3", "qwen2.5"],
+  ollm: ["llama3-1B-chat", "llama3-3B-chat", "llama3-8B-chat", "gpt-oss-20B", "qwen3-next-80B", "gemma3-12B", "voxtral-small-24B"],
   mock: [],
 };
 
@@ -97,6 +100,7 @@ export function ActiveProviderBanner({ config }: { config: ActiveProviderConfig 
               <option value="openai">OpenAI</option>
               <option value="gemini">Google Gemini</option>
               <option value="ollama">Ollama (local)</option>
+              <option value="ollm">oLLM (in-process)</option>
               <option value="mock">Mock (testing)</option>
             </select>
           </div>

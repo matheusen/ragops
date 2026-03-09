@@ -127,12 +127,15 @@ class DecisionResult(BaseModel):
     is_bug: bool
     is_complete: bool
     ready_for_dev: bool
+    ready_for_dev_criteria_met: list[str] = Field(default_factory=list)
+    ready_for_dev_blockers: list[str] = Field(default_factory=list)
     missing_items: list[str] = Field(default_factory=list)
     evidence_used: list[str] = Field(default_factory=list)
     contradictions: list[str] = Field(default_factory=list)
     financial_impact_detected: bool = False
     confidence: float = 0.0
     requires_human_review: bool = False
+    next_action: str = ""
     provider: str = "mock"
     model: str = "mock-judge-v1"
     rationale: str = ""
@@ -333,6 +336,14 @@ class PromptInfoResponse(BaseModel):
     description: str = ""
 
 
+class ArticlePromptUploadResponse(BaseModel):
+    title: str
+    source_files: list[str] = Field(default_factory=list)
+    prompt_execution: PromptExecutionResponse
+    article_search: list["ArticleSearchResult"] = Field(default_factory=list)
+    result_id: str | None = None
+
+
 # ---------------------------------------------------------------------------
 # Pipeline Canvas — flow run
 # ---------------------------------------------------------------------------
@@ -387,6 +398,7 @@ class FlowDescribeResponse(BaseModel):
     temporal_graphrag_mode: str
     confidentiality: bool
     langgraph: bool
+    monkeyocr: bool
     dspy_active: bool
     ragas_active: bool
     supported_runtime_nodes: list[str] = Field(default_factory=list)
@@ -402,6 +414,7 @@ class FlowDSPyOptimizationResult(BaseModel):
     skipped_reason: str | None = None
     dev_score: float | None = None
     exported_files: list[str] = Field(default_factory=list)
+    history_file: str | None = None
 
 
 class FlowRunResponse(BaseModel):

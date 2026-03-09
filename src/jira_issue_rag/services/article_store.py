@@ -252,8 +252,7 @@ class ArticleStore:
 
     # ── Text extraction & chunking ────────────────────────────────────────────
 
-    @staticmethod
-    def _extract_text(path: Path) -> str:
+    def _extract_text(self, path: Path) -> str:
         """5-pass extraction — da mais rica para fallback simples.
 
         Pass 0 — MonkeyOCR  (SRR paradigm: melhor para PDFs com tabelas, fórmulas,
@@ -268,9 +267,10 @@ class ArticleStore:
 
         if suffix == ".pdf":
             # ── Pass 0: MonkeyOCR sidecar (melhor qualidade) ──────────────────
-            text = ArticleStore._monkeyocr(path)
-            if text.strip():
-                return text
+            if self.settings.enable_monkeyocr_pdf_parser:
+                text = ArticleStore._monkeyocr(path)
+                if text.strip():
+                    return text
 
             # ── Pass 1: Docling ───────────────────────────────────────────────
             text = ArticleStore._docling(path)

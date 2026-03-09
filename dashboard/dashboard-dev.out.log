@@ -1,0 +1,19 @@
+
+> jira-issue-rag-dashboard@0.1.0 dev
+> next dev
+
+▲ Next.js 16.1.6 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.100.99:3000
+
+✓ Starting...
+Creating turbopack project {
+  dir: 'C:\\Users\\mengl\\Documents\\Github\\ragflow\\dashboard',
+  testMode: true
+}
+✓ Ready in 2s
+ GET /run 200 in 1066ms (compile: 304ms, render: 762ms)
+ GET /flow 200 in 1486ms (compile: 800ms, render: 687ms)
+ GET /prompts 200 in 1529ms (compile: 518ms, render: 1011ms)
+ GET /api/backend/api/v1/health 200 in 1591ms (compile: 1523ms, render: 68ms)
+ POST /api/backend/api/v1/validate/issue 200 in 1707ms (compile: 1456ms, render: 251ms)
