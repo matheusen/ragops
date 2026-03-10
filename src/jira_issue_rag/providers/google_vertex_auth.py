@@ -27,13 +27,27 @@ class GoogleVertexAuth:
         raise RuntimeError("GCP_PROJECT_ID is not configured and could not be derived from the service account JSON")
 
     def get_access_token(self) -> str:
+        if self.settings.google_cloud_access_token:
+            return self.settings.google_cloud_access_token
         if not self._google_auth_available():
             raise RuntimeError(
                 "Google auth is not available. Install google-auth to use Vertex AI with a service account JSON"
             )
         request_cls = self._import_google_request()
         credentials = self._load_service_account_credentials()
-        credentials.refresh(request_cls())
+        try:
+            credentials.refresh(request_cls())
+        except Exception as exc:
+            details = str(exc).strip() or exc.__class__.__name__
+            credentials_path = self._credentials_path()
+            raise RuntimeError(
+                "Vertex AI authentication failed while refreshing the service account token. "
+                f"Details: {details}. "
+                "Verify that GOOGLE_APPLICATION_CREDENTIALS points to an active service account key, "
+                "that the private key was not rotated or revoked, and that the machine clock is correct. "
+                "You can also bypass the JSON by setting GOOGLE_CLOUD_ACCESS_TOKEN or GEMINI_API_KEY."
+                + (f" Credentials file: {credentials_path}" if credentials_path else "")
+            ) from exc
         if not credentials.token:
             raise RuntimeError("Unable to obtain Google Cloud access token for Vertex AI")
         return str(credentials.token)

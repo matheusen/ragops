@@ -841,6 +841,7 @@ def write_article_analysis_audit(
     issue_key = f"ARTICLE-{digest}"
     artifact_id = f"article:{hashlib.sha1((article_request.title + source + article_request.content[:500]).encode('utf-8')).hexdigest()}"
     artifact_kind = "pdf" if source.lower().endswith(".pdf") else "text"
+    extraction_reports = article_request.metadata.get("extraction_reports", []) if isinstance(article_request.metadata, dict) else []
     runtime_payload = dict(runtime_summary or {})
     runtime_payload.update(
         {
@@ -901,6 +902,8 @@ def write_article_analysis_audit(
                             "article_title": article_request.title,
                             "primary_theme": str(article_request.metadata.get("theme") or ""),
                             "secondary_themes": article_request.metadata.get("tags", []),
+                            "extraction_reports": extraction_reports,
+                            "pdf_extraction": extraction_reports[0] if len(extraction_reports) == 1 else {},
                         },
                         "confidence": 1.0,
                     }
@@ -956,6 +959,7 @@ def write_article_analysis_audit(
                 "related_limit": article_request.related_limit,
                 "use_small_model_distillation": article_request.use_small_model_distillation,
                 "metadata": article_request.metadata,
+                "extraction_reports": extraction_reports,
                 "content_excerpt": article_request.content[:4000],
                 "output_text": prompt_result.output_text,
                 "warnings": warnings,

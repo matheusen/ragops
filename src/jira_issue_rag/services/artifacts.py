@@ -65,8 +65,10 @@ class ArtifactPipeline:
             extracted_text, facts = self._extract_spreadsheet(path)
             confidence = 0.95 if extracted_text else 0.30
         elif artifact_type == "pdf":
-            extracted_text = self._extract_pdf_text(path)
+            extracted_text, extraction_report = self._extract_pdf_text(path)
             facts = self._extract_text_facts(extracted_text)
+            facts["pdf_extraction"] = extraction_report
+            facts["extraction_engine"] = extraction_report.get("selected_engine", "")
             confidence = 0.85 if extracted_text else 0.25
         elif artifact_type == "image":
             extracted_text = self._extract_image_vision(path)
@@ -228,34 +230,69 @@ class ArtifactPipeline:
                 return self._read_text(candidate)
         return ""
 
-    def _extract_pdf_text(self, path: Path) -> str:
+    def _extract_pdf_text(self, path: Path) -> tuple[str, dict[str, Any]]:
+        report: dict[str, Any] = {
+            "source_path": str(path),
+            "file_name": path.name,
+            "file_type": path.suffix.lower() or "pdf",
+            "selected_engine": "",
+            "used_monkeyocr": False,
+            "output_dir": "",
+            "files": [],
+            "attempts": [],
+        }
+
+        def record_attempt(engine: str, text: str, **meta: Any) -> tuple[str, dict[str, Any]]:
+            success = bool(text.strip())
+            report["attempts"].append(
+                {
+                    "engine": engine,
+                    "success": success,
+                    **{key: value for key, value in meta.items() if value not in (None, "", [], {})},
+                }
+            )
+            if success and not report["selected_engine"]:
+                report["selected_engine"] = engine
+                report["used_monkeyocr"] = engine == "monkeyocr"
+                if meta.get("output_dir"):
+                    report["output_dir"] = meta["output_dir"]
+                if meta.get("files"):
+                    report["files"] = meta["files"]
+            return text, report
+
         # 0th pass: MonkeyOCR sidecar (opt-in, best quality for complex PDFs)
         if self.settings and self.settings.enable_monkeyocr_pdf_parser:
-            text = self._extract_pdf_monkeyocr(path)
+            text, meta = self._extract_pdf_monkeyocr(path)
+            text, report = record_attempt("monkeyocr", text, **meta)
             if text.strip():
-                return text
+                return text, report
 
         # 1st pass: pypdf (safe and fast for born-digital PDFs)
         text = self._extract_pdf_pypdf(path)
+        text, report = record_attempt("pypdf", text)
         if text.strip():
-            return text
+            return text, report
 
         # 2nd pass: Docling is opt-in because some Windows PDF/OCR stacks are unstable.
         if self.settings and self.settings.enable_docling_pdf_parser:
             text = self._extract_pdf_docling(path)
+            text, report = record_attempt("docling", text)
             if text.strip():
-                return text
+                return text, report
 
         # 3rd pass: OCR via Tesseract for scanned/image-only PDFs.
         if self.settings is None or self.settings.enable_tesseract_pdf_ocr:
             text = self._extract_pdf_tesseract(path)
+            text, report = record_attempt("tesseract", text)
             if text.strip():
-                return text
+                return text, report
 
         # 4th pass: sidecar .txt
-        return self._extract_sidecar_text(path)
+        text = self._extract_sidecar_text(path)
+        text, report = record_attempt("sidecar-txt", text)
+        return text, report
 
-    def _extract_pdf_monkeyocr(self, path: Path) -> str:
+    def _extract_pdf_monkeyocr(self, path: Path) -> tuple[str, dict[str, Any]]:
         base_url = (
             self.settings.monkeyocr_api_url
             if self.settings and self.settings.monkeyocr_api_url
@@ -269,33 +306,34 @@ class ArtifactPipeline:
                     timeout=300.0,
                 )
             if resp.status_code != 200:
-                return ""
+                return "", {"endpoint": base_url, "status_code": resp.status_code}
             data = resp.json()
             if not data.get("success"):
-                return ""
+                return "", {"endpoint": base_url, "status_code": resp.status_code}
 
             output_dir = data.get("output_dir")
+            files = [str(item) for item in (data.get("files") or []) if isinstance(item, str)]
             if output_dir and Path(output_dir).is_dir():
                 md_files = sorted(Path(output_dir).glob("**/*.md"))
                 if md_files:
                     return "\n\n".join(
                         file.read_text(encoding="utf-8", errors="replace")
                         for file in md_files
-                    ).strip()
+                    ).strip(), {"endpoint": base_url, "output_dir": str(output_dir), "files": files}
                 txt_files = sorted(Path(output_dir).glob("**/*.txt"))
                 if txt_files:
                     return "\n\n".join(
                         file.read_text(encoding="utf-8", errors="replace")
                         for file in txt_files
-                    ).strip()
+                    ).strip(), {"endpoint": base_url, "output_dir": str(output_dir), "files": files}
 
             for key in ("content", "markdown", "text"):
                 value = data.get(key)
                 if isinstance(value, str) and value.strip():
-                    return value.strip()
-            return ""
+                    return value.strip(), {"endpoint": base_url, "output_dir": str(output_dir or ""), "files": files}
+            return "", {"endpoint": base_url, "output_dir": str(output_dir or ""), "files": files}
         except Exception:
-            return ""
+            return "", {"endpoint": base_url}
 
     @staticmethod
     def _extract_pdf_pypdf(path: Path) -> str:

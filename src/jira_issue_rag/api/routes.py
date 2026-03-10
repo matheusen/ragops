@@ -5,7 +5,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from jira_issue_rag.core.config import Settings, get_settings
 from jira_issue_rag.services.workflow import ValidationWorkflow
@@ -228,6 +228,7 @@ def analyze_article_upload(
         saved_paths: list[Path] = []
         saved_names: list[str] = []
         texts: list[str] = []
+        extraction_reports: list[dict[str, object]] = []
         for upload in files:
             fname = upload.filename or "file"
             dest = Path(tmpdir) / fname
@@ -235,7 +236,9 @@ def analyze_article_upload(
                 shutil.copyfileobj(upload.file, fh)
             saved_paths.append(dest)
             saved_names.append(fname)
-            extracted = store._extract_text(dest).strip()
+            extracted, extraction_report = store._extract_text_with_report(dest)
+            extraction_reports.append(extraction_report)
+            extracted = extracted.strip()
             if extracted:
                 texts.append(extracted)
 
@@ -271,18 +274,22 @@ def analyze_article_upload(
             ).strip()
 
         prompt_started = time.perf_counter()
-        prompt_execution = workflow.execute_prompt(
-            PromptExecutionRequest(
-                prompt_name=prompt_name,
-                content=prompt_content,
-                provider=provider,
-                title=effective_title,
-                metadata={
-                    "source_files": saved_names,
-                    "source_path": str(saved_paths[0]) if len(saved_paths) == 1 else "",
-                },
+        try:
+            prompt_execution = workflow.execute_prompt(
+                PromptExecutionRequest(
+                    prompt_name=prompt_name,
+                    content=prompt_content,
+                    provider=provider,
+                    title=effective_title,
+                    metadata={
+                        "source_files": saved_names,
+                        "source_path": str(saved_paths[0]) if len(saved_paths) == 1 else "",
+                        "extraction_reports": extraction_reports,
+                    },
+                )
             )
-        )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
         timings_ms["prompt"] = round((time.perf_counter() - prompt_started) * 1000, 2)
         timings_ms["total"] = round((time.perf_counter() - upload_started) * 1000, 2)
         runtime_payload = _build_article_runtime_payload(
@@ -295,6 +302,7 @@ def analyze_article_upload(
                 metadata={
                     "source": str(saved_paths[0]) if len(saved_paths) == 1 else ", ".join(saved_names),
                     "source_files": saved_names,
+                    "extraction_reports": extraction_reports,
                 },
                 prompt_name=prompt_name,
                 collection="articles",
@@ -434,7 +442,10 @@ def execute_prompt(
     request: PromptExecutionRequest,
     workflow: ValidationWorkflow = Depends(get_workflow),
 ) -> PromptExecutionResponse:
-    return workflow.execute_prompt(request)
+    try:
+        return workflow.execute_prompt(request)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @router.post(

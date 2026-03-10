@@ -69,6 +69,7 @@ flowchart LR
 ```
 
 ![alt text](image.png)
+![alt text](image-1.png)
 
 ## Arquitetura Resumida
 
@@ -79,7 +80,7 @@ As camadas principais sao:
 - `API layer`: recebe requests HTTP, valida schema e roteia para o workflow
 - `workflow layer`: centraliza a orquestracao entre execucao direta e LangGraph
 - `evidence layer`: normaliza issue e extrai fatos de logs, PDFs, planilhas e imagens
-- `rules layer`: detecta faltas, contradicoes e impacto financeiro antes do LLM
+- `rules layer`: detecta faltas, contradicoes antes do LLM
 - `retrieval layer`: combina contexto local, Qdrant, Neo4j, reranker e distillation
 - `provider layer`: renderiza prompt e executa com `mock`, OpenAI, Gemini ou Ollama
 - `audit/eval layer`: grava trilha de execucao e compara cenarios offline

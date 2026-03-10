@@ -504,6 +504,7 @@ class ArticleIngestResponse(BaseModel):
     published_at: str | None = None
     published_year: int | None = None
     version_label: str | None = None
+    extraction: dict[str, Any] = Field(default_factory=dict)
     chunk_stats: dict[str, Any] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
     ok: bool = True

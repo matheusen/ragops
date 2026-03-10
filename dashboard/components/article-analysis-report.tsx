@@ -129,6 +129,41 @@ export function ArticleAnalysisReport({ audit }: ArticleAnalysisReportProps) {
         </article>
       </div>
 
+      {view.extraction_reports.length > 0 && (
+        <article className="aar__card">
+          <div className="aar__label">Inspeção da extração do PDF</div>
+          <div className="aar__context-grid">
+            {view.extraction_reports.map((report, index) => (
+              <article key={`${report.source_path}-${index}`} className="aar__context-card">
+                <div className="aar__context-top">
+                  <h3>{report.file_name || `arquivo ${index + 1}`}</h3>
+                  <span>{report.selected_engine || "sem engine"}</span>
+                </div>
+                <div className="aar__chips">
+                  {report.used_monkeyocr && <span className="aar__chip aar__chip--accent">MonkeyOCR</span>}
+                  {report.file_type && <span className="aar__chip">{report.file_type}</span>}
+                  {report.output_dir && <span className="aar__chip">{report.output_dir}</span>}
+                </div>
+                {report.files.length > 0 && (
+                  <ul className="aar__list">
+                    {report.files.map((file) => <li key={`${report.source_path}-${file}`}>{file}</li>)}
+                  </ul>
+                )}
+                {report.attempts.length > 0 && (
+                  <ul className="aar__list">
+                    {report.attempts.map((attempt, attemptIndex) => (
+                      <li key={`${report.source_path}-${attempt.engine}-${attemptIndex}`}>
+                        {attempt.engine}: {attempt.success ? "ok" : "falhou"}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </article>
+            ))}
+          </div>
+        </article>
+      )}
+
       {view.distillation && (
         <article className="aar__card">
           <div className="aar__label">Small-model distillation</div>

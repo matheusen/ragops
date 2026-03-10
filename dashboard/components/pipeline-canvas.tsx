@@ -540,11 +540,6 @@ function PipelineNodeComponent({ data, selected }: NodeProps<PipelineNode>) {
       <Handle type="target" position={Position.Left}  className="pn__handle pn__handle--target" />
       <div className="pn__top">
         <span className="pn__cat" style={{ background: isActive ? cfg.color : "#94a3b8" }}>{cfg.label}</span>
-        {data.optional && (
-          <span className={`pn__status ${isActive ? "pn__status--on" : "pn__status--off"}`}>
-            {isActive ? "ativo" : "off"}
-          </span>
-        )}
       </div>
       <div className="pn__label">{data.label}</div>
       {activeVariant && (

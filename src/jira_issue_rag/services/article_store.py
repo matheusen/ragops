@@ -460,11 +460,11 @@ class ArticleStore:
         title  = title or path.stem.replace("_", " ").replace("-", " ").title()
         source_tags = sorted(set(source_tags or []))
 
-        raw_text = self._extract_text(path)
+        raw_text, extraction_report = self._extract_text_with_report(path)
         if not raw_text.strip():
             return ArticleIngestResponse(
                 doc_id=doc_id, title=title, path=str(path), collection=collection, tenant_id=tenant_id, source_tags=source_tags,
-                chunks_indexed=0, topics=[], ok=False,
+                chunks_indexed=0, topics=[], ok=False, extraction=extraction_report,
                 error="Não foi possível extrair texto do arquivo.",
             )
 
@@ -474,7 +474,7 @@ class ArticleStore:
         if not chunk_records:
             return ArticleIngestResponse(
                 doc_id=doc_id, title=title, path=str(path), collection=collection, tenant_id=tenant_id, source_tags=source_tags,
-                chunks_indexed=0, topics=[], ok=False,
+                chunks_indexed=0, topics=[], ok=False, extraction=extraction_report,
                 chunk_stats=chunk_stats,
                 warnings=[*chunk_warnings, "Nenhum chunk válido restou após a validação do documento."],
                 error="Chunking inválido ou texto insuficiente após deduplicação.",
@@ -553,6 +553,7 @@ class ArticleStore:
             published_at=temporal_meta["published_at"],
             published_year=temporal_meta["published_year"],
             version_label=temporal_meta["version_label"],
+            extraction=extraction_report,
             chunk_stats=chunk_stats,
             warnings=chunk_warnings,
             ok=True,
@@ -561,6 +562,10 @@ class ArticleStore:
     # ── Text extraction & chunking ────────────────────────────────────────────
 
     def _extract_text(self, path: Path) -> str:
+        text, _report = self._extract_text_with_report(path)
+        return text
+
+    def _extract_text_with_report(self, path: Path) -> tuple[str, dict[str, Any]]:
         """5-pass extraction — da mais rica para fallback simples.
 
         Pass 0 — MonkeyOCR  (SRR paradigm: melhor para PDFs com tabelas, fórmulas,
@@ -572,42 +577,82 @@ class ArticleStore:
         Pass 4 — sidecar    (arquivo .txt ao lado do PDF, ground truth manual)
         """
         suffix = path.suffix.lower()
+        report: dict[str, Any] = {
+            "source_path": str(path),
+            "file_name": path.name,
+            "file_type": suffix or "unknown",
+            "selected_engine": "",
+            "used_monkeyocr": False,
+            "output_dir": "",
+            "files": [],
+            "attempts": [],
+        }
+
+        def record_attempt(engine: str, text: str, **meta: Any) -> tuple[str, dict[str, Any]]:
+            success = bool(text.strip())
+            report["attempts"].append(
+                {
+                    "engine": engine,
+                    "success": success,
+                    **{key: value for key, value in meta.items() if value not in (None, "", [], {})},
+                }
+            )
+            if success and not report["selected_engine"]:
+                report["selected_engine"] = engine
+                report["used_monkeyocr"] = engine == "monkeyocr"
+                if meta.get("output_dir"):
+                    report["output_dir"] = meta["output_dir"]
+                if meta.get("files"):
+                    report["files"] = meta["files"]
+            return text, report
 
         if suffix == ".pdf":
             # ── Pass 0: MonkeyOCR sidecar (melhor qualidade) ──────────────────
             if self.settings.enable_monkeyocr_pdf_parser:
-                text = self._monkeyocr(path)
+                text, meta = self._monkeyocr_with_report(path)
+                text, report = record_attempt("monkeyocr", text, **meta)
                 if text.strip():
-                    return text
+                    return text, report
 
             # ── Pass 1: pypdf (mais estável para born-digital PDFs) ───────────
             text = ArticleStore._pypdf(path)
+            text, report = record_attempt("pypdf", text)
             if text.strip():
-                return text
+                return text, report
 
             # ── Pass 2: Docling ───────────────────────────────────────────────
             if self.settings.enable_docling_pdf_parser:
                 text = ArticleStore._docling(path)
+                text, report = record_attempt("docling", text)
                 if text.strip():
-                    return text
+                    return text, report
 
             # ── Pass 3: OCR (Tesseract via pdf2image) ─────────────────────────
             if self.settings.enable_tesseract_pdf_ocr:
                 text = ArticleStore._ocr_tesseract(path)
+                text, report = record_attempt("tesseract", text)
                 if text.strip():
-                    return text
+                    return text, report
 
         if suffix in {".txt", ".md"}:
-            return path.read_text(encoding="utf-8", errors="replace")
+            text = path.read_text(encoding="utf-8", errors="replace")
+            text, report = record_attempt("plain-text", text)
+            return text, report
 
         # ── Pass 4: sidecar ───────────────────────────────────────────────────
         for candidate in (Path(str(path) + ".txt"), path.with_suffix(".txt")):
             if candidate.exists():
-                return candidate.read_text(encoding="utf-8", errors="replace")
+                text = candidate.read_text(encoding="utf-8", errors="replace")
+                text, report = record_attempt("sidecar-txt", text, sidecar_path=str(candidate))
+                return text, report
 
-        return ""
+        return "", report
 
     def _monkeyocr(self, path: Path) -> str:
+        text, _meta = self._monkeyocr_with_report(path)
+        return text
+
+    def _monkeyocr_with_report(self, path: Path) -> tuple[str, dict[str, Any]]:
         """MonkeyOCR v1.5 via FastAPI sidecar local.
 
         Usa o paradigma SRR (Structure-Recognition-Relation): detecta primeiro os
@@ -647,33 +692,34 @@ class ArticleStore:
                     timeout=300.0,
                 )
             if resp.status_code != 200:
-                return ""
+                return "", {"endpoint": base_url, "status_code": resp.status_code}
             data = resp.json()
             if not data.get("success"):
-                return ""
+                return "", {"endpoint": base_url, "status_code": resp.status_code}
 
             # MonkeyOCR /parse saves markdown to output_dir on disk (same machine).
             # Find the .md file and read it; fall back to .txt if no .md present.
             output_dir = data.get("output_dir")
+            files = [str(item) for item in (data.get("files") or []) if isinstance(item, str)]
             if output_dir and Path(output_dir).is_dir():
                 md_files = sorted(Path(output_dir).glob("**/*.md"))
                 if md_files:
                     parts = [f.read_text(encoding="utf-8", errors="replace") for f in md_files]
-                    return "\n\n".join(parts).strip()
+                    return "\n\n".join(parts).strip(), {"endpoint": base_url, "output_dir": str(output_dir), "files": files}
                 txt_files = sorted(Path(output_dir).glob("**/*.txt"))
                 if txt_files:
                     parts = [f.read_text(encoding="utf-8", errors="replace") for f in txt_files]
-                    return "\n\n".join(parts).strip()
+                    return "\n\n".join(parts).strip(), {"endpoint": base_url, "output_dir": str(output_dir), "files": files}
 
             # Inline content fallback (older API shape)
             for key in ("content", "markdown", "text"):
                 val = data.get(key)
                 if isinstance(val, str) and val.strip():
-                    return val.strip()
-            return ""
+                    return val.strip(), {"endpoint": base_url, "output_dir": str(output_dir or ""), "files": files}
+            return "", {"endpoint": base_url, "output_dir": str(output_dir or ""), "files": files}
         except Exception:
             # sidecar não está rodando — fallback silencioso para Docling
-            return ""
+            return "", {"endpoint": base_url}
 
     @staticmethod
     def _docling(path: Path) -> str:

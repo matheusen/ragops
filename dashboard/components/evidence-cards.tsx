@@ -37,13 +37,24 @@ function buildCards(audit: ResultAudit): EvidenceCard[] {
   // Artifacts
   for (const a of audit.attachment_facts?.artifacts ?? []) {
     const factKeys = Object.keys(a.facts ?? {}).slice(0, 3).join(", ");
+    const extraction = (a.facts as Record<string, unknown> | undefined)?.pdf_extraction as Record<string, unknown> | undefined;
+    const extractionEngine = typeof extraction?.selected_engine === "string" ? extraction.selected_engine : "";
+    const extractionOutputDir = typeof extraction?.output_dir === "string" ? extraction.output_dir : "";
+    const extractionFiles = Array.isArray(extraction?.files)
+      ? extraction.files.filter((file): file is string => typeof file === "string")
+      : [];
+    const extractionSummary = [
+      extractionEngine ? `engine: ${extractionEngine}` : "",
+      extractionOutputDir ? `output: ${extractionOutputDir}` : "",
+      extractionFiles.length ? `files: ${extractionFiles.slice(0, 3).join(", ")}` : "",
+    ].filter(Boolean).join(" | ");
     cards.push({
       id: `artifact-${a.artifact_id}`,
       kind: "artifact",
       icon: a.artifact_type === "pdf" ? "📄" : a.artifact_type === "image" ? "🖼️" : a.artifact_type === "xlsx" ? "📊" : "📝",
       title: a.source_path.split(/[/\\]/).pop() ?? a.artifact_id,
-      subtitle: `${a.artifact_type.toUpperCase()} · confiança ${Math.round(a.confidence * 100)}%`,
-      body: a.extracted_text?.slice(0, 200) || factKeys || "Sem texto extraído.",
+      subtitle: `${a.artifact_type.toUpperCase()} · confiança ${Math.round(a.confidence * 100)}%${extractionEngine ? ` · ${extractionEngine}` : ""}`,
+      body: [extractionSummary, a.extracted_text?.slice(0, 200) || factKeys || "Sem texto extraído."].filter(Boolean).join("\n\n"),
       badge: a.artifact_type,
       badgeMod: "ev__badge--artifact",
       score: a.confidence,

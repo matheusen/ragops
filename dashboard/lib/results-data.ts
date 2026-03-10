@@ -105,6 +105,24 @@ export interface ResultArticleDistillation {
   evidence_paths: ResultArticleEvidencePath[];
 }
 
+export interface ResultExtractionAttempt {
+  engine: string;
+  success: boolean;
+  output_dir: string;
+  files: string[];
+}
+
+export interface ResultExtractionReport {
+  source_path: string;
+  file_name: string;
+  file_type: string;
+  selected_engine: string;
+  used_monkeyocr: boolean;
+  output_dir: string;
+  files: string[];
+  attempts: ResultExtractionAttempt[];
+}
+
 export interface ResultArticleBenchmarkScenario {
   mode: string;
   retrieval_mode: string;
@@ -140,6 +158,7 @@ export interface ResultArticleAnalysisView {
   graph_assessment: ResultGraphAssessment | null;
   distillation: ResultArticleDistillation | null;
   benchmark: ResultArticleBenchmark | null;
+  extraction_reports: ResultExtractionReport[];
 }
 
 export interface ResultTechniqueItem {
@@ -271,6 +290,7 @@ type RawAudit = {
     graph_assessment?: Record<string, unknown> | null;
     distillation?: Record<string, unknown> | null;
     benchmark?: Record<string, unknown> | null;
+    extraction_reports?: unknown[];
   } | null;
   runtime?: Record<string, unknown>;
   run_kind?: string;
@@ -887,6 +907,15 @@ function buildArticleAnalysisView(audit: RawAudit): ResultArticleAnalysisView | 
   const graphAssessment = normalizeGraphAssessment(audit.article_run?.graph_assessment ?? runtimeGraphAssessment);
   const distillation = normalizeArticleDistillation(audit.article_run?.distillation);
   const benchmark = normalizeArticleBenchmark(audit.article_run?.benchmark);
+  const extractionReports = normalizeExtractionReports(
+    audit.article_run?.extraction_reports
+      ?? (audit.attachment_facts?.artifacts?.[0]?.facts as Record<string, unknown> | undefined)?.extraction_reports
+      ?? (
+        (audit.attachment_facts?.artifacts?.[0]?.facts as Record<string, unknown> | undefined)?.pdf_extraction
+          ? [(audit.attachment_facts?.artifacts?.[0]?.facts as Record<string, unknown>).pdf_extraction]
+          : []
+      ),
+  );
   const contentExcerpt = String(
     audit.article_run?.content_excerpt
     || audit.attachment_facts?.artifacts?.[0]?.extracted_text
@@ -930,7 +959,47 @@ function buildArticleAnalysisView(audit: RawAudit): ResultArticleAnalysisView | 
     graph_assessment: graphAssessment,
     distillation,
     benchmark,
+    extraction_reports: extractionReports,
   };
+}
+
+function normalizeExtractionReports(value: unknown): ResultExtractionReport[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) => {
+      const record = asRecord(item);
+      if (!record) {
+        return null;
+      }
+      return {
+        source_path: readString(record.source_path),
+        file_name: readString(record.file_name),
+        file_type: readString(record.file_type),
+        selected_engine: readString(record.selected_engine),
+        used_monkeyocr: Boolean(record.used_monkeyocr),
+        output_dir: readString(record.output_dir),
+        files: readStringArray(record.files),
+        attempts: Array.isArray(record.attempts)
+          ? record.attempts
+              .map((attempt) => {
+                const attemptRecord = asRecord(attempt);
+                if (!attemptRecord) {
+                  return null;
+                }
+                return {
+                  engine: readString(attemptRecord.engine),
+                  success: Boolean(attemptRecord.success),
+                  output_dir: readString(attemptRecord.output_dir),
+                  files: readStringArray(attemptRecord.files),
+                };
+              })
+              .filter((attempt): attempt is ResultExtractionAttempt => attempt !== null)
+          : [],
+      };
+    })
+    .filter((item): item is ResultExtractionReport => item !== null);
 }
 
 function normalizeGraphAssessment(value: unknown): ResultGraphAssessment | null {
