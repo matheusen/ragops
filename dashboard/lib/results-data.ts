@@ -274,7 +274,21 @@ type RawAudit = {
   issue: ResultAudit["issue"];
   attachment_facts?: ResultAudit["attachment_facts"];
   rule_evaluation?: ResultAudit["rule_evaluation"];
-  retrieved?: ResultAudit["retrieved"];
+  retrieved?: Array<{
+    evidence_id?: string;
+    source?: string;
+    title?: string;
+    chunk_id?: string;
+    source_path?: string;
+    content?: string;
+    topics?: string[];
+    entities?: string[];
+    retrieval_mode?: string;
+    evidence_paths?: unknown[];
+    metadata?: { category?: string; type?: string; retrieval_mode?: string; topics?: string[]; entities?: string[]; evidence_paths?: unknown[] };
+    final_score?: number;
+    score?: number;
+  }>;
   decision?: ResultAudit["decision"];
   prompt_execution?: ResultAudit["prompt_execution"];
   article_run?: {
@@ -430,6 +444,7 @@ function enrichAudit(
     : "issue-validation";
   return {
     ...payload,
+    retrieved: normalizeRetrieved(payload.retrieved),
     result_kind: resultKind,
     runtime: payload.runtime,
     runtime_view: buildRuntimeView(payload),
@@ -451,14 +466,15 @@ function buildKnowledgeMap(
 ): ResultKnowledgeMap {
   const topics = rankTopicsForAudit(audit);
 
-  const articleCards = (audit.attachment_facts?.artifacts ?? []).map((artifact, index) =>
+  const articleArtifacts = buildKnowledgeArtifacts(audit);
+  const articleCards = articleArtifacts.map((artifact, index) =>
     buildArticleCard(artifact, index, topics),
   );
 
   const themeClusters = buildThemeClusters(articleCards);
   const relatedAudits = buildRelatedAuditCards(audit, issueKey, timestamp, topics, peerAudits);
 
-  const artifactDocuments: ResultKnowledgeDocument[] = (audit.attachment_facts?.artifacts ?? []).slice(0, 4).map((artifact) => {
+  const artifactDocuments: ResultKnowledgeDocument[] = articleArtifacts.slice(0, 4).map((artifact) => {
     const title = path.basename(artifact.source_path);
     return {
       id: `artifact:${artifact.artifact_id}`,
@@ -808,6 +824,79 @@ function summarizeText(text: string, maxLength: number): string {
   return `${clean.slice(0, maxLength - 1)}…`;
 }
 
+function buildKnowledgeArtifacts(
+  audit: RawAudit,
+): NonNullable<NonNullable<RawAudit["attachment_facts"]>["artifacts"]> {
+  const artifacts = audit.attachment_facts?.artifacts ?? [];
+  const metadata = asRecord(audit.article_run?.metadata);
+  const sourceDocuments = Array.isArray(metadata?.source_documents) ? metadata?.source_documents : [];
+  if (sourceDocuments.length === 0) {
+    return artifacts;
+  }
+
+  const hasGranularArtifacts = artifacts.length > 1;
+  if (hasGranularArtifacts) {
+    return artifacts;
+  }
+
+  const derivedArtifacts: NonNullable<NonNullable<RawAudit["attachment_facts"]>["artifacts"]> = [];
+  sourceDocuments.forEach((item, index) => {
+      const record = asRecord(item);
+      if (!record) {
+        return;
+      }
+      const fileName = readString(record.file_name) || `documento_${index + 1}.txt`;
+      const title = readString(record.title) || path.basename(fileName, path.extname(fileName));
+      const excerpt = summarizeText(readString(record.excerpt), 320);
+      const charCount = readNumber(record.char_count);
+      derivedArtifacts.push({
+        artifact_id: `article-meta:${index + 1}:${slugify(fileName) || "doc"}`,
+        artifact_type: fileName.toLowerCase().endsWith(".pdf") ? "pdf" : "text",
+        source_path: fileName,
+        extracted_text: excerpt || title,
+        facts: {
+          article_title: title,
+          primary_theme: "",
+          secondary_themes: [],
+          char_count: Number.isFinite(charCount) ? charCount : 0,
+        },
+        confidence: 1,
+      });
+    });
+  return derivedArtifacts;
+}
+
+function inferArticleTheme(
+  title: string,
+  summary: string,
+  linkedTopicIds: string[],
+): string {
+  const text = `${title} ${summary}`.toLowerCase();
+  if (text.includes("graphrag") || text.includes("grafo") || text.includes("knowledge graph")) {
+    return "GraphRAG";
+  }
+  if (text.includes("mcp")) {
+    return "MCP";
+  }
+  if (text.includes("ocr") || text.includes("pdf")) {
+    return "OCR e PDF";
+  }
+  if (text.includes("llmops") || text.includes("langsmith") || text.includes("observability")) {
+    return "LLMOps";
+  }
+  if (text.includes("rag")) {
+    return "RAG";
+  }
+  if (text.includes("agent") || text.includes("agente") || text.includes("langgraph")) {
+    return "Agentes";
+  }
+  if (text.includes("local") || text.includes("ollama") || text.includes("litellm")) {
+    return "Modelos Locais";
+  }
+  const topic = TOPIC_LIBRARY.find((item) => linkedTopicIds.includes(item.id));
+  return topic?.label || "Tema misto";
+}
+
 function buildArticleCard(
   artifact: NonNullable<NonNullable<RawAudit["attachment_facts"]>["artifacts"]>[number],
   index: number,
@@ -818,16 +907,17 @@ function buildArticleCard(
     readStringFact(facts, "article_title") ||
     path.basename(artifact.source_path, path.extname(artifact.source_path)) ||
     `Article ${index + 1}`;
-  const theme = readStringFact(facts, "primary_theme") || "Tema misto";
   const secondaryThemes = readStringArrayFact(facts, "secondary_themes");
-  const summary = summarizeText(artifact.extracted_text, 220) || `${theme} article`;
+  const summary = summarizeText(artifact.extracted_text, 220) || title;
   const sourceName = path.basename(artifact.source_path);
+  const baseTheme = readStringFact(facts, "primary_theme");
   const linkedTopicIds = topics
     .filter((topic) => {
-      const text = `${title} ${theme} ${secondaryThemes.join(" ")} ${artifact.extracted_text}`.toLowerCase();
+      const text = `${title} ${baseTheme} ${secondaryThemes.join(" ")} ${artifact.extracted_text}`.toLowerCase();
       return matchesTopic(text, topic.id);
     })
     .map((topic) => topic.id);
+  const theme = baseTheme || inferArticleTheme(title, summary, linkedTopicIds);
 
   return {
     id: `article-card:${artifact.artifact_id}`,
@@ -922,23 +1012,24 @@ function buildArticleAnalysisView(audit: RawAudit): ResultArticleAnalysisView | 
     || audit.issue.description
     || ""
   );
-  const contexts = (audit.retrieved ?? []).slice(0, 6).map((item) => ({
-    id: item.evidence_id,
-    title: item.source || item.evidence_id,
-    excerpt: summarizeText(item.content, 220) || item.content,
-    score: Number(item.final_score ?? 0),
-    topics: Array.isArray((item.metadata as Record<string, unknown> | undefined)?.topics)
-      ? ((item.metadata as Record<string, unknown>).topics as unknown[]).filter((topic): topic is string => typeof topic === "string")
-      : [],
-    entities: Array.isArray((item.metadata as Record<string, unknown> | undefined)?.entities)
-      ? ((item.metadata as Record<string, unknown>).entities as unknown[]).filter((entity): entity is string => typeof entity === "string")
-      : [],
-    retrieval_mode: typeof (item.metadata as Record<string, unknown> | undefined)?.retrieval_mode === "string"
-      ? String((item.metadata as Record<string, unknown> | undefined)?.retrieval_mode)
-      : "vector-global",
-    evidence_paths: normalizeEvidencePaths((item.metadata as Record<string, unknown> | undefined)?.evidence_paths),
-    source_name: path.basename(String(item.source || item.evidence_id)),
-  }));
+  const contexts = (audit.retrieved ?? []).slice(0, 6).map((item) => {
+    const metadata = asRecord(item.metadata);
+    const sourceTitle = readString(item.title) || readString(item.source) || readString(item.evidence_id) || readString(item.chunk_id);
+    const sourceName = readString(item.source_path) || readString(item.source) || sourceTitle;
+    const directTopics = Array.isArray(item.topics) ? item.topics.filter((topic): topic is string => typeof topic === "string") : [];
+    const directEntities = Array.isArray(item.entities) ? item.entities.filter((entity): entity is string => typeof entity === "string") : [];
+    return {
+      id: readString(item.chunk_id) || readString(item.evidence_id) || sourceTitle,
+      title: sourceTitle,
+      excerpt: summarizeText(readString(item.content), 220) || readString(item.content),
+      score: Number.isFinite(readNumber(item.score)) ? readNumber(item.score) : Number(item.final_score ?? 0),
+      topics: directTopics.length > 0 ? directTopics : readStringArray(metadata?.topics),
+      entities: directEntities.length > 0 ? directEntities : readStringArray(metadata?.entities),
+      retrieval_mode: readString(item.retrieval_mode) || readString(metadata?.retrieval_mode) || "vector-global",
+      evidence_paths: normalizeEvidencePaths(item.evidence_paths ?? metadata?.evidence_paths),
+      source_name: path.basename(sourceName),
+    };
+  });
 
   return {
     title,
@@ -961,6 +1052,24 @@ function buildArticleAnalysisView(audit: RawAudit): ResultArticleAnalysisView | 
     benchmark,
     extraction_reports: extractionReports,
   };
+}
+
+function normalizeRetrieved(value: RawAudit["retrieved"]): ResultAudit["retrieved"] {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  return value.map((item, index) => ({
+    evidence_id: readString(item.evidence_id) || readString(item.chunk_id) || `retrieved-${index + 1}`,
+    source: readString(item.source) || readString(item.title) || readString(item.source_path) || `source-${index + 1}`,
+    content: readString(item.content),
+    metadata: {
+      category: readString(item.metadata?.category) || "article",
+      type: readString(item.metadata?.type),
+    },
+    final_score: Number.isFinite(readNumber(item.final_score))
+      ? readNumber(item.final_score)
+      : (Number.isFinite(readNumber(item.score)) ? readNumber(item.score) : 0),
+  }));
 }
 
 function normalizeExtractionReports(value: unknown): ResultExtractionReport[] {

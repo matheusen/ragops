@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     primary_model: str = Field(default="mock-judge-v1", alias="PRIMARY_MODEL")
     openai_model: str = Field(default="gpt-5-mini", alias="OPENAI_MODEL")
     gemini_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
+    gemini_timeout_seconds: int = Field(default=900, alias="GEMINI_TIMEOUT_SECONDS")
     openai_embedding_model: str = Field(default="text-embedding-3-large", alias="OPENAI_EMBEDDING_MODEL")
     gemini_embedding_model: str = Field(default="gemini-embedding-001", alias="GEMINI_EMBEDDING_MODEL")
     embedding_dimension: int = Field(default=1536, alias="EMBEDDING_DIMENSION")

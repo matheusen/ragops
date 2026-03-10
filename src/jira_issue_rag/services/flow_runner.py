@@ -18,9 +18,11 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 import time
 from collections import Counter
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from jira_issue_rag.core.config import Settings
@@ -39,6 +41,11 @@ from jira_issue_rag.shared.models import (
     FlowRunResponse,
     PromptExecutionRequest,
 )
+
+_ARTICLE_PROMPT_MULTI_DOC_BUDGET = 50000
+_ARTICLE_PROMPT_SINGLE_DOC_LIMIT = 16000
+_ARTICLE_PROMPT_MAX_DOCS = 24
+_ARTICLE_PROMPT_MAX_RETRIEVED = 8
 
 
 # ---------------------------------------------------------------------------
@@ -324,6 +331,161 @@ def _normalise(label: str | None) -> str:
     return " ".join(normalized.split())
 
 
+def _clean_article_label(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return "Documento"
+    candidate = Path(raw).stem if any(sep in raw for sep in ("\\", "/", ".")) else raw
+    candidate = candidate.replace("_", " ").replace("-", " ")
+    candidate = re.sub(r"\s+", " ", candidate).strip(" ,;")
+    return candidate or raw
+
+
+def _compact_article_text(text: str, max_chars: int) -> str:
+    normalized = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+    normalized = re.sub(r"[ \t]+", " ", normalized)
+    normalized = re.sub(r"\n{3,}", "\n\n", normalized).strip()
+    if len(normalized) <= max_chars:
+        return normalized
+    head_chars = max(int(max_chars * 0.78), 1)
+    tail_chars = max(max_chars - head_chars - 5, 0)
+    head = normalized[:head_chars].rstrip()
+    if tail_chars <= 0:
+        return head
+    tail = normalized[-tail_chars:].lstrip()
+    return f"{head}\n...\n{tail}"
+
+
+def build_article_collection_title(
+    source_names: list[str],
+    explicit_title: str | None = None,
+) -> str:
+    if explicit_title and explicit_title.strip():
+        return explicit_title.strip()
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for name in source_names:
+        label = _clean_article_label(name)
+        key = label.lower()
+        if not label or key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(label)
+    if not cleaned:
+        return "Colecao de artigos"
+    if len(cleaned) == 1:
+        return cleaned[0]
+    if len(cleaned) == 2:
+        return f"{cleaned[0]} | {cleaned[1]}"
+    return f"Colecao de {len(cleaned)} artigos: {cleaned[0]} | {cleaned[1]} | +{len(cleaned) - 2}"
+
+
+def build_article_search_query(
+    explicit_query: str | None,
+    source_names: list[str],
+    fallback_title: str | None = None,
+) -> str:
+    if explicit_query and explicit_query.strip():
+        return explicit_query.strip()
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for name in source_names:
+        label = _clean_article_label(name)
+        key = label.lower()
+        if not label or key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(label)
+        if len(cleaned) >= 5:
+            break
+    if cleaned:
+        return "; ".join(cleaned) + "; temas centrais, tecnicas, riscos e recomendacoes praticas"
+    return str(fallback_title or "").strip()
+
+
+def build_article_prompt_packet(
+    *,
+    title: str,
+    raw_content: str,
+    source_documents: list[dict[str, Any]] | None = None,
+    article_search: list[Any] | None = None,
+    article_distillation: Any | None = None,
+) -> str:
+    docs = [doc for doc in (source_documents or []) if str(doc.get("text") or "").strip()]
+    article_search = list(article_search or [])
+    lines: list[str] = [
+        "Dossie estruturado para analise de artigo/corpus.",
+        f"Tema de referencia: {title.strip() or 'artigo enviado'}",
+    ]
+
+    if docs:
+        total_docs = len(docs)
+        lines.append(f"Escopo: colecao com {total_docs} documento(s).")
+        shown_docs = docs[: min(total_docs, _ARTICLE_PROMPT_MAX_DOCS)]
+        budget = _ARTICLE_PROMPT_SINGLE_DOC_LIMIT if total_docs == 1 else _ARTICLE_PROMPT_MULTI_DOC_BUDGET
+        excerpt_chars = min(2200, max(700, budget // max(len(shown_docs), 1)))
+        lines.extend(["", "## Documentos analisados"])
+        for index, doc in enumerate(shown_docs, start=1):
+            file_name = str(doc.get("file_name") or "").strip()
+            doc_title = str(doc.get("title") or _clean_article_label(file_name) or f"Documento {index}").strip()
+            excerpt_limit = _ARTICLE_PROMPT_SINGLE_DOC_LIMIT if total_docs == 1 else excerpt_chars
+            excerpt = _compact_article_text(str(doc.get("text") or ""), excerpt_limit)
+            lines.append(f"### Documento {index}: {doc_title}")
+            if file_name:
+                lines.append(f"Arquivo: {file_name}")
+            if doc.get("char_count"):
+                lines.append(f"Caracteres extraidos: {doc['char_count']}")
+            lines.append("Trecho-base:")
+            lines.append(excerpt)
+            lines.append("")
+        remaining = docs[len(shown_docs):]
+        if remaining:
+            remaining_titles = ", ".join(
+                _clean_article_label(str(item.get("title") or item.get("file_name") or "Documento"))
+                for item in remaining[:16]
+            )
+            suffix = f" (+{len(remaining) - 16} adicionais)" if len(remaining) > 16 else ""
+            lines.append(f"Documentos adicionais no corpus: {remaining_titles}{suffix}")
+            lines.append("")
+    else:
+        lines.extend(["", "## Conteudo principal", _compact_article_text(raw_content, _ARTICLE_PROMPT_SINGLE_DOC_LIMIT), ""])
+
+    if article_search:
+        lines.append("## Evidencias recuperadas do corpus")
+        for index, item in enumerate(article_search[:_ARTICLE_PROMPT_MAX_RETRIEVED], start=1):
+            meta_parts = [f"modo={getattr(item, 'retrieval_mode', '') or 'vector-global'}"]
+            score = getattr(item, "score", None)
+            if isinstance(score, (int, float)):
+                meta_parts.append(f"score={score:.2f}")
+            page_number = getattr(item, "page_number", None)
+            if page_number is not None:
+                meta_parts.append(f"page={page_number}")
+            section_title = getattr(item, "section_title", None)
+            if section_title:
+                meta_parts.append(f"secao={section_title}")
+            chunk_kind = getattr(item, "chunk_kind", None)
+            if chunk_kind:
+                meta_parts.append(f"tipo={chunk_kind}")
+            lines.append(f"- Evidencia {index}: {getattr(item, 'title', 'Sem titulo')} ({' | '.join(meta_parts)})")
+            lines.append(_compact_article_text(str(getattr(item, "content", "") or ""), 900))
+            lines.append("")
+
+    if article_distillation is not None:
+        lines.append("## Distilacao estrutural")
+        context_text = _compact_article_text(str(getattr(article_distillation, "context_text", "") or ""), 2400)
+        if context_text:
+            lines.append(context_text)
+        key_topics = list(getattr(article_distillation, "key_topics", []) or [])
+        if key_topics:
+            lines.append(f"Topicos-chave: {', '.join(key_topics[:12])}")
+        key_entities = list(getattr(article_distillation, "key_entities", []) or [])
+        if key_entities:
+            lines.append(f"Entidades-chave: {', '.join(key_entities[:12])}")
+        lines.append("")
+
+    return "\n".join(lines).strip()
+
+
 def resolve_flow_mode(nodes: list[FlowNodeState]) -> str:
     for node in nodes:
         if node.id != "flow-mode":
@@ -455,9 +617,14 @@ def run_flow(
         article_store = ArticleStore(settings=settings)
         article_request = request.article
         flow_started = time.perf_counter()
+        source_documents = article_request.metadata.get("source_documents") if isinstance(article_request.metadata, dict) else None
+        source_names = [
+            str(item.get("file_name") or item.get("title") or "")
+            for item in (source_documents if isinstance(source_documents, list) else [])
+            if isinstance(item, dict)
+        ]
         query_text = (
-            article_request.search_query
-            or article_request.title
+            build_article_search_query(article_request.search_query, source_names, article_request.title)
             or article_request.content[:280]
         ).strip()
         graph_assessment = article_store.assess_graph_usefulness(query_text) if query_text else None
@@ -513,19 +680,13 @@ def run_flow(
         )
         timings_ms["distill"] = round((time.perf_counter() - distill_started) * 1000, 2)
 
-        prompt_content = article_request.content.strip()
-        if article_distillation is not None:
-            prompt_content = (
-                f"{prompt_content}\n\nContexto grafo-destilado para modelo menor:\n{article_distillation.context_text}"
-            ).strip()
-        elif article_search:
-            retrieved_context = "\n\n".join(
-                f"[{item.title} #{item.chunk_index}] {item.content[:480]}"
-                for item in article_search[:article_request.top_k]
-            )
-            prompt_content = (
-                f"{prompt_content}\n\nContexto adicional recuperado do corpus de artigos:\n{retrieved_context}"
-            ).strip()
+        prompt_content = build_article_prompt_packet(
+            title=article_request.title,
+            raw_content=article_request.content.strip(),
+            source_documents=source_documents if isinstance(source_documents, list) else None,
+            article_search=article_search[:article_request.top_k],
+            article_distillation=article_distillation,
+        )
 
         prompt_started = time.perf_counter()
         prompt_result = workflow.execute_prompt(
@@ -842,6 +1003,7 @@ def write_article_analysis_audit(
     artifact_id = f"article:{hashlib.sha1((article_request.title + source + article_request.content[:500]).encode('utf-8')).hexdigest()}"
     artifact_kind = "pdf" if source.lower().endswith(".pdf") else "text"
     extraction_reports = article_request.metadata.get("extraction_reports", []) if isinstance(article_request.metadata, dict) else []
+    source_documents = article_request.metadata.get("source_documents", []) if isinstance(article_request.metadata, dict) else []
     runtime_payload = dict(runtime_summary or {})
     runtime_payload.update(
         {
@@ -862,6 +1024,64 @@ def write_article_analysis_audit(
             "warnings": _dedupe_warnings([*warnings, *runtime_payload.get("warnings", [])] if isinstance(runtime_payload.get("warnings"), list) else warnings),
         }
     )
+
+    artifacts_payload: list[dict[str, Any]] = []
+    if isinstance(source_documents, list) and source_documents:
+        report_by_name: dict[str, dict[str, Any]] = {}
+        for report in extraction_reports if isinstance(extraction_reports, list) else []:
+            if not isinstance(report, dict):
+                continue
+            file_name = str(report.get("file_name") or "").strip().lower()
+            source_path_key = Path(str(report.get("source_path") or "")).name.lower()
+            if file_name:
+                report_by_name[file_name] = report
+            if source_path_key:
+                report_by_name[source_path_key] = report
+
+        for index, item in enumerate(source_documents, start=1):
+            if not isinstance(item, dict):
+                continue
+            file_name = str(item.get("file_name") or f"documento_{index}").strip()
+            title = str(item.get("title") or _clean_article_label(file_name) or f"Documento {index}").strip()
+            excerpt = str(item.get("excerpt") or item.get("text") or "").strip()
+            char_count = int(item.get("char_count") or len(excerpt or ""))
+            matched_report = report_by_name.get(file_name.lower()) or report_by_name.get(Path(file_name).name.lower()) or {}
+            source_path_value = str(matched_report.get("source_path") or file_name)
+            artifacts_payload.append(
+                {
+                    "artifact_id": f"{artifact_id}:{index}",
+                    "artifact_type": "pdf" if file_name.lower().endswith(".pdf") else artifact_kind,
+                    "source_path": source_path_value,
+                    "extracted_text": excerpt,
+                    "facts": {
+                        "article_title": title,
+                        "primary_theme": "",
+                        "secondary_themes": [],
+                        "char_count": char_count,
+                        "extraction_reports": [matched_report] if matched_report else [],
+                        "pdf_extraction": matched_report if matched_report else {},
+                    },
+                    "confidence": 1.0,
+                }
+            )
+
+    if not artifacts_payload:
+        artifacts_payload = [
+            {
+                "artifact_id": artifact_id,
+                "artifact_type": artifact_kind,
+                "source_path": source or article_request.title,
+                "extracted_text": article_request.content,
+                "facts": {
+                    "article_title": article_request.title,
+                    "primary_theme": str(article_request.metadata.get("theme") or ""),
+                    "secondary_themes": article_request.metadata.get("tags", []),
+                    "extraction_reports": extraction_reports,
+                    "pdf_extraction": extraction_reports[0] if len(extraction_reports) == 1 else {},
+                },
+                "confidence": 1.0,
+            }
+        ]
 
     audit_path = AuditStore(settings.audit_dir).write(
         issue_key=issue_key,
@@ -892,22 +1112,7 @@ def write_article_analysis_audit(
             },
             "attachment_facts": {
                 "issue_key": issue_key,
-                "artifacts": [
-                    {
-                        "artifact_id": artifact_id,
-                        "artifact_type": artifact_kind,
-                        "source_path": source or article_request.title,
-                        "extracted_text": article_request.content,
-                        "facts": {
-                            "article_title": article_request.title,
-                            "primary_theme": str(article_request.metadata.get("theme") or ""),
-                            "secondary_themes": article_request.metadata.get("tags", []),
-                            "extraction_reports": extraction_reports,
-                            "pdf_extraction": extraction_reports[0] if len(extraction_reports) == 1 else {},
-                        },
-                        "confidence": 1.0,
-                    }
-                ],
+                "artifacts": artifacts_payload,
                 "contradictions": [],
                 "missing_information": [],
             },

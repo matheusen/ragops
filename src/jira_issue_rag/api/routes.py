@@ -11,6 +11,9 @@ from jira_issue_rag.core.config import Settings, get_settings
 from jira_issue_rag.services.workflow import ValidationWorkflow
 from jira_issue_rag.services.flow_runner import (
     _build_article_runtime_payload,
+    build_article_collection_title,
+    build_article_prompt_packet,
+    build_article_search_query,
     describe_flow,
     run_flow,
     write_article_analysis_audit,
@@ -227,7 +230,7 @@ def analyze_article_upload(
     try:
         saved_paths: list[Path] = []
         saved_names: list[str] = []
-        texts: list[str] = []
+        source_documents: list[dict[str, object]] = []
         extraction_reports: list[dict[str, object]] = []
         for upload in files:
             fname = upload.filename or "file"
@@ -240,10 +243,17 @@ def analyze_article_upload(
             extraction_reports.append(extraction_report)
             extracted = extracted.strip()
             if extracted:
-                texts.append(extracted)
+                source_documents.append(
+                    {
+                        "file_name": fname,
+                        "title": Path(fname).stem.replace("_", " ").replace("-", " ").strip(),
+                        "text": extracted,
+                        "char_count": len(extracted),
+                    }
+                )
 
-        combined_text = "\n\n".join(texts).strip()
-        effective_title = title.strip() if title and title.strip() else ", ".join(saved_names[:2]) + ("..." if len(saved_names) > 2 else "")
+        combined_text = "\n\n".join(str(doc["text"]) for doc in source_documents).strip()
+        effective_title = build_article_collection_title(saved_names, title)
         ingest_titles = [effective_title] if len(saved_paths) == 1 else [path.stem.replace("_", " ").replace("-", " ").title() for path in saved_paths]
         ingest_results = store.ingest(
             paths=[str(path) for path in saved_paths],
@@ -251,27 +261,26 @@ def analyze_article_upload(
             collection="articles",
         )
         upload_started = time.perf_counter()
-        query_text = (search_query.strip() if search_query and search_query.strip() else effective_title).strip()
+        query_text = build_article_search_query(search_query, saved_names, effective_title)
         graph_assessment = store.assess_graph_usefulness(query_text) if query_text else None
         timings_ms: dict[str, float] = {}
         warnings: list[str] = []
         search_started = time.perf_counter()
-        article_search = store.search(query=query_text, top_k=5) if query_text else []
+        retrieval_top_k = min(max(6, len(saved_names) // 6), 10)
+        article_search = store.search(query=query_text, top_k=retrieval_top_k) if query_text else []
         timings_ms["search"] = round((time.perf_counter() - search_started) * 1000, 2)
         if any(item.retrieval_mode == "corrective" for item in article_search):
             warnings.append("Corrective retrieval was triggered for this article query.")
         if query_text and store.retrieval_requires_human_review(query_text, article_search):
             warnings.append("Retrieval quality remained weak after routing; human review is recommended.")
 
-        prompt_content = combined_text
-        if article_search:
-            retrieved_context = "\n\n".join(
-                f"[{item.title} #{item.chunk_index}] {item.content[:480]}"
-                for item in article_search
-            )
-            prompt_content = (
-                f"{prompt_content}\n\nContexto adicional recuperado do corpus de artigos:\n{retrieved_context}"
-            ).strip()
+        prompt_content = build_article_prompt_packet(
+            title=effective_title,
+            raw_content=combined_text,
+            source_documents=source_documents,
+            article_search=article_search,
+            article_distillation=None,
+        )
 
         prompt_started = time.perf_counter()
         try:
@@ -284,6 +293,15 @@ def analyze_article_upload(
                     metadata={
                         "source_files": saved_names,
                         "source_path": str(saved_paths[0]) if len(saved_paths) == 1 else "",
+                        "source_document_count": len(source_documents),
+                        "source_documents": [
+                            {
+                                "file_name": str(doc["file_name"]),
+                                "title": str(doc["title"]),
+                                "char_count": int(doc["char_count"]),
+                            }
+                            for doc in source_documents
+                        ],
                         "extraction_reports": extraction_reports,
                     },
                 )
@@ -302,6 +320,15 @@ def analyze_article_upload(
                 metadata={
                     "source": str(saved_paths[0]) if len(saved_paths) == 1 else ", ".join(saved_names),
                     "source_files": saved_names,
+                    "source_document_count": len(source_documents),
+                    "source_documents": [
+                        {
+                            "file_name": str(doc["file_name"]),
+                            "title": str(doc["title"]),
+                            "char_count": int(doc["char_count"]),
+                        }
+                        for doc in source_documents
+                    ],
                     "extraction_reports": extraction_reports,
                 },
                 prompt_name=prompt_name,
@@ -312,7 +339,7 @@ def analyze_article_upload(
                 source_contains=None,
                 exact_match_required=False,
                 enable_corrective_rag=True,
-                top_k=5,
+                top_k=retrieval_top_k,
                 related_doc_id=None,
                 related_limit=5,
                 use_small_model_distillation=False,
@@ -334,9 +361,20 @@ def analyze_article_upload(
                 metadata={
                     "source": str(saved_paths[0]) if len(saved_paths) == 1 else ", ".join(saved_names),
                     "source_files": saved_names,
+                    "source_document_count": len(source_documents),
+                    "source_documents": [
+                        {
+                            "file_name": str(doc["file_name"]),
+                            "title": str(doc["title"]),
+                            "char_count": int(doc["char_count"]),
+                            "excerpt": str(doc["text"])[:1600],
+                        }
+                        for doc in source_documents
+                    ],
+                    "extraction_reports": extraction_reports,
                 },
                 prompt_name=prompt_name,
-                top_k=5,
+                top_k=retrieval_top_k,
                 related_doc_id=None,
                 related_limit=5,
                 collection="articles",

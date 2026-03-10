@@ -23,6 +23,10 @@ class GeminiProvider(LLMProvider):
     def is_available(self) -> bool:
         return self.vertex_auth.is_available() or bool(self.settings.gemini_api_key)
 
+    @property
+    def timeout_seconds(self) -> int:
+        return max(int(self.settings.gemini_timeout_seconds), 60)
+
     def _use_direct_api(self) -> bool:
         """Use the public Gemini API key instead of Vertex AI."""
         return bool(self.settings.gemini_api_key) and not self.vertex_auth.is_available()
@@ -76,25 +80,32 @@ class GeminiProvider(LLMProvider):
         if response_format == "json":
             payload["generationConfig"]["responseSchema"] = decision_response_schema()
 
-        if self._use_direct_api():
-            url = (
-                f"https://generativelanguage.googleapis.com/v1beta/models"
-                f"/{self.model_name}:generateContent"
-            )
-            with httpx.Client(timeout=45.0) as client:
-                response = client.post(
-                    url,
-                    params={"key": self.settings.gemini_api_key},
-                    json=payload,
+        timeout = httpx.Timeout(connect=20.0, read=float(self.timeout_seconds), write=120.0, pool=20.0)
+        try:
+            if self._use_direct_api():
+                url = (
+                    f"https://generativelanguage.googleapis.com/v1beta/models"
+                    f"/{self.model_name}:generateContent"
                 )
-                response.raise_for_status()
-                data = response.json()
-        else:
-            url = self.vertex_auth.build_generate_content_url(self.model_name)
-            with httpx.Client(timeout=45.0) as client:
-                response = client.post(url, headers=self.vertex_auth.build_headers(), json=payload)
-                response.raise_for_status()
-                data = response.json()
+                with httpx.Client(timeout=timeout) as client:
+                    response = client.post(
+                        url,
+                        params={"key": self.settings.gemini_api_key},
+                        json=payload,
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+            else:
+                url = self.vertex_auth.build_generate_content_url(self.model_name)
+                with httpx.Client(timeout=timeout) as client:
+                    response = client.post(url, headers=self.vertex_auth.build_headers(), json=payload)
+                    response.raise_for_status()
+                    data = response.json()
+        except httpx.ReadTimeout as exc:
+            raise RuntimeError(
+                f"Gemini timed out after {self.timeout_seconds}s while running model '{self.model_name}'. "
+                "Increase GEMINI_TIMEOUT_SECONDS or use a faster model for large article analyses."
+            ) from exc
 
         return self._extract_output_text(data)
 
