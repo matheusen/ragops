@@ -187,6 +187,18 @@ class OllamaProvider(LLMProvider):
                 f"Modelos locais: {available_label}."
             )
 
+        lowered = message.lower()
+        if "cudamalloc failed" in lowered or "out of memory" in lowered:
+            raise RuntimeError(
+                f"Ollama falhou ao executar '{requested_model}' por falta de VRAM: {message}. "
+                "Feche processos que estejam usando a GPU, tente um modelo menor ou rode o Ollama em CPU."
+            )
+
+        if message:
+            raise RuntimeError(
+                f"Ollama retornou erro {response.status_code} para o modelo '{requested_model}': {message}"
+            )
+
         response.raise_for_status()
 
     @staticmethod

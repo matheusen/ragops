@@ -1,0 +1,26 @@
+[
+  {
+    "query": "Qual artigo descreve chunking multimodal para tabelas e screenshots?",
+    "expected_title_contains": ["RAG Multimodal"],
+    "expected_source_contains": ["RAG Multimodal"],
+    "expected_chunk_kind": "figure",
+    "must_include_terms": ["tabelas", "screenshots"],
+    "collection": "articles",
+    "top_k": 5,
+    "retrieval_policy": "corrective",
+    "exact_match_required": false,
+    "enable_corrective_rag": true
+  },
+  {
+    "query": "Qual artigo fala sobre recall ruim por chunks duplicados?",
+    "expected_title_contains": ["recall do RAG", "chunk"],
+    "expected_source_contains": ["Corrigimos o recall"],
+    "expected_chunk_kind": "text",
+    "must_include_terms": ["duplic", "recall"],
+    "collection": "articles",
+    "top_k": 5,
+    "retrieval_policy": "vector-global",
+    "exact_match_required": false,
+    "enable_corrective_rag": true
+  }
+]

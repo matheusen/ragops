@@ -2,13 +2,19 @@ from __future__ import annotations
 
 import shutil
 import tempfile
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 
 from jira_issue_rag.core.config import Settings, get_settings
 from jira_issue_rag.services.workflow import ValidationWorkflow
-from jira_issue_rag.services.flow_runner import describe_flow, run_flow, write_article_analysis_audit
+from jira_issue_rag.services.flow_runner import (
+    _build_article_runtime_payload,
+    describe_flow,
+    run_flow,
+    write_article_analysis_audit,
+)
 from jira_issue_rag.services.article_store import ArticleStore
 from jira_issue_rag.shared.models import (
     ArticlePromptUploadResponse,
@@ -16,6 +22,8 @@ from jira_issue_rag.shared.models import (
     ArticleIngestResponse,
     ArticleBenchmarkRequest,
     ArticleBenchmarkResponse,
+    ArticleRetrievalEvaluationRequest,
+    ArticleRetrievalEvaluationResponse,
     ArticleRelatedRequest,
     ArticleSearchRequest,
     ArticleSearchResult,
@@ -239,8 +247,18 @@ def analyze_article_upload(
             titles=ingest_titles,
             collection="articles",
         )
+        upload_started = time.perf_counter()
         query_text = (search_query.strip() if search_query and search_query.strip() else effective_title).strip()
+        graph_assessment = store.assess_graph_usefulness(query_text) if query_text else None
+        timings_ms: dict[str, float] = {}
+        warnings: list[str] = []
+        search_started = time.perf_counter()
         article_search = store.search(query=query_text, top_k=5) if query_text else []
+        timings_ms["search"] = round((time.perf_counter() - search_started) * 1000, 2)
+        if any(item.retrieval_mode == "corrective" for item in article_search):
+            warnings.append("Corrective retrieval was triggered for this article query.")
+        if query_text and store.retrieval_requires_human_review(query_text, article_search):
+            warnings.append("Retrieval quality remained weak after routing; human review is recommended.")
 
         prompt_content = combined_text
         if article_search:
@@ -252,6 +270,7 @@ def analyze_article_upload(
                 f"{prompt_content}\n\nContexto adicional recuperado do corpus de artigos:\n{retrieved_context}"
             ).strip()
 
+        prompt_started = time.perf_counter()
         prompt_execution = workflow.execute_prompt(
             PromptExecutionRequest(
                 prompt_name=prompt_name,
@@ -263,6 +282,40 @@ def analyze_article_upload(
                     "source_path": str(saved_paths[0]) if len(saved_paths) == 1 else "",
                 },
             )
+        )
+        timings_ms["prompt"] = round((time.perf_counter() - prompt_started) * 1000, 2)
+        timings_ms["total"] = round((time.perf_counter() - upload_started) * 1000, 2)
+        runtime_payload = _build_article_runtime_payload(
+            article_store=store,
+            query_text=query_text,
+            article_search=article_search,
+            article_request=SimpleNamespace(
+                title=effective_title,
+                content=combined_text,
+                metadata={
+                    "source": str(saved_paths[0]) if len(saved_paths) == 1 else ", ".join(saved_names),
+                    "source_files": saved_names,
+                },
+                prompt_name=prompt_name,
+                collection="articles",
+                retrieval_policy="auto",
+                tenant_id=None,
+                source_tags=[],
+                source_contains=None,
+                exact_match_required=False,
+                enable_corrective_rag=True,
+                top_k=5,
+                related_doc_id=None,
+                related_limit=5,
+                use_small_model_distillation=False,
+            ),
+            graph_assessment=graph_assessment,
+            article_distillation=None,
+            article_benchmark=None,
+            prompt_result=prompt_execution,
+            timings_ms=timings_ms,
+            warnings=warnings,
+            execution_path="run-upload",
         )
 
         audit_path = write_article_analysis_audit(
@@ -278,12 +331,20 @@ def analyze_article_upload(
                 top_k=5,
                 related_doc_id=None,
                 related_limit=5,
+                collection="articles",
+                retrieval_policy="auto",
+                tenant_id=None,
+                source_tags=[],
+                source_contains=None,
+                exact_match_required=False,
+                enable_corrective_rag=True,
+                use_small_model_distillation=False,
             ),
             prompt_result=prompt_execution,
             article_search=article_search,
             related_articles=[],
             query_text=query_text,
-            warnings=[],
+            warnings=warnings,
             runtime_summary={
                 "flow_mode": "article-analysis",
                 "execution_path": "run-upload",
@@ -326,7 +387,9 @@ def analyze_article_upload(
                 ],
                 "ignored_nodes": [],
                 "warnings": [],
+                **runtime_payload,
             },
+            graph_assessment=graph_assessment,
         )
         audit_file = Path(audit_path)
         result_id = f"{audit_file.parent.name}__{audit_file.stem}"
@@ -336,6 +399,8 @@ def analyze_article_upload(
             prompt_execution=prompt_execution,
             article_search=article_search,
             result_id=result_id,
+            runtime=runtime_payload,
+            warnings=warnings,
         )
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
@@ -688,6 +753,26 @@ def benchmark_articles(
 
 
 @router.post(
+    "/articles/evaluate",
+    response_model=ArticleRetrievalEvaluationResponse,
+    tags=["articles"],
+    summary="Avaliar retrieval de artigos com dataset rotulado",
+    description=(
+        "Executa um benchmark reproduzível de retrieval para artigos a partir de um dataset JSON. "
+        "Cada exemplo pode anotar documento esperado, página, tipo de chunk e termos obrigatórios."
+    ),
+)
+def evaluate_articles(
+    request: ArticleRetrievalEvaluationRequest,
+    store: ArticleStore = Depends(get_article_store),
+) -> ArticleRetrievalEvaluationResponse:
+    return store.evaluate_retrieval(
+        dataset_path=request.dataset_path,
+        examples=request.examples,
+    )
+
+
+@router.post(
     "/articles/related/{doc_id}",
     response_model=list[dict],
     tags=["articles"],
@@ -704,5 +789,10 @@ def related_articles(
     request: ArticleRelatedRequest,
     store: ArticleStore = Depends(get_article_store),
 ) -> list[dict]:
-    return store.related_articles(doc_id=doc_id, limit=request.limit)
+    return store.related_articles(
+        doc_id=doc_id,
+        limit=request.limit,
+        tenant_id=request.tenant_id,
+        collection=request.collection,
+    )
 

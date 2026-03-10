@@ -125,7 +125,7 @@ const NODE_CATALOG: CatalogEntry[] = [
     id: "monkeyocr",
     category: "processing",
     label: "MonkeyOCR PDF Parser",
-    description: "Ativa o sidecar MonkeyOCR para PDFs complexos. No article-analysis ele vira a primeira passagem do ArticleStore; no issue-validation ele também é usado para anexos PDF antes de pypdf, Docling e Tesseract.",
+    description: "Ativa o sidecar MonkeyOCR para PDFs complexos. Ele entra no issue-validation para anexos PDF e nos endpoints de upload/ingest de artigos. No /run-flow de article-analysis com texto colado, este nó não participa.",
     tech: ["MonkeyOCR", "PDF SRR", "Sidecar HTTP", "PDF attachments"],
     optional: true,
     serviceFile: "article_store.py / artifacts.py",
@@ -360,6 +360,7 @@ const SCENARIO_UNSUPPORTED_OPTIONAL_NODES: Record<FlowMode, Set<string>> = {
   "issue-validation": new Set([...NON_RUNTIME_OPTIONAL_NODES]),
   "article-analysis": new Set([
     ...NON_RUNTIME_OPTIONAL_NODES,
+    "monkeyocr",
     "normalizer",
     "artifacts",
     "rules",
@@ -981,18 +982,24 @@ function inferFlowMode(nodes: PipelineNode[]): FlowMode {
 function getNodeRuntimeAvailability(nodeId: string, nodes: PipelineNode[]) {
   const flowMode = inferFlowMode(nodes);
 
-  if (SCENARIO_UNSUPPORTED_OPTIONAL_NODES[flowMode].has(nodeId)) {
-    if (nodeId === "ragas") {
-      return {
-        selectable: false,
-        reason: "RAGAS continua restrito à avaliação offline e ainda não altera o /run-flow.",
-      };
-    }
-    if (flowMode === "article-analysis") {
-      return {
-        selectable: false,
-        reason: "Este nó não participa do runtime de article-analysis.",
-      };
+    if (SCENARIO_UNSUPPORTED_OPTIONAL_NODES[flowMode].has(nodeId)) {
+      if (nodeId === "ragas") {
+        return {
+          selectable: false,
+          reason: "RAGAS continua restrito à avaliação offline e ainda não altera o /run-flow.",
+        };
+      }
+      if (nodeId === "monkeyocr" && flowMode === "article-analysis") {
+        return {
+          selectable: false,
+          reason: "MonkeyOCR não participa do /run-flow de article-analysis com texto colado. Ele é usado em anexos PDF de issues e no upload/ingest de artigos.",
+        };
+      }
+      if (flowMode === "article-analysis") {
+        return {
+          selectable: false,
+          reason: "Este nó não participa do runtime de article-analysis.",
+        };
     }
   }
 
@@ -1175,7 +1182,7 @@ function RunFlowPanel({
                 <span className="pc__run-chip pc__run-chip--muted">
                   modo: {formatModeLabel(desc.flow_mode)}
                 </span>
-                {desc.monkeyocr           && <span className="pc__run-chip">MonkeyOCR PDF ✓</span>}
+                {desc.monkeyocr && flowMode !== "article-analysis" && <span className="pc__run-chip">MonkeyOCR PDF ✓</span>}
                 {desc.retrieval.external && <span className="pc__run-chip">Qdrant</span>}
                 {desc.retrieval.graphrag  && <span className="pc__run-chip pc__run-chip--graph">Neo4j GraphRAG</span>}
                 {desc.reranker            && <span className="pc__run-chip">Reranker ✓</span>}

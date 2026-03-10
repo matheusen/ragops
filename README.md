@@ -68,6 +68,8 @@ flowchart LR
   ArticleJudge --> ArticleOut["summary / analysis"]
 ```
 
+![alt text](image.png)
+
 ## Arquitetura Resumida
 
 O sistema segue a ideia de `facts first, judge later`: primeiro estrutura fatos, artefatos, regras e evidencias; depois entrega contexto controlado ao LLM ou provider selecionado. Isso reduz alucinacao, melhora auditabilidade e permite trocar retrieval, provider e modo de execucao sem reescrever a aplicacao inteira.
@@ -137,7 +139,7 @@ Para instalar tudo de uma vez:
 pip install -e ".[providers,retrieval,rerank,parsing,ocr,eval,dev]"
 ```
 
-Se for usar Jira e Qdrant, preencha tambem `JIRA_BASE_URL`, `JIRA_USER_EMAIL`, `JIRA_API_TOKEN`, `QDRANT_URL` e opcionalmente `QDRANT_API_KEY`.
+Se for usar Jira e Qdrant, preencha tambem `JIRA_BASE_URL`, `JIRA_USER_EMAIL`, `JIRA_API_TOKEN`, `QDRANT_URL` e, para instancia remota, `QDRANT_API_KEY`.
 
 O workflow usa LangGraph por padrao. Se quiser desligar e voltar ao fluxo direto, defina `ENABLE_LANGGRAPH=false`.
 
@@ -259,6 +261,8 @@ Os endpoints de artigos aceitam filtros operacionais:
 - `source_contains`
 
 Esses filtros tambem aparecem na auditoria para deixar claro quais chunks realmente entraram no prompt.
+
+Quando `STRICT_ARTICLE_TENANT_ISOLATION=true`, o backend passa a exigir `tenant_id` em toda operacao de artigos para as colecoes listadas em `MULTI_TENANT_ARTICLE_COLLECTIONS`. Se a lista ficar vazia, qualquer colecao de artigos passa a exigir escopo explicito.
 
 ### Benchmarks de retrieval
 
@@ -503,6 +507,8 @@ docker compose up qdrant -d
 QDRANT_URL=http://localhost:6333
 QDRANT_COLLECTION=issue_evidence
 QDRANT_API_KEY=                          # deixe vazio para instancia local sem auth
+REQUIRE_QDRANT_API_KEY_FOR_REMOTE=true  # falha o boot se Qdrant remoto estiver sem auth
+ALLOW_INSECURE_REMOTE_QDRANT=false      # bloqueia Qdrant remoto em HTTP puro
 ALLOW_EXTERNAL_VECTOR_STORE=true         # necessario quando CONFIDENTIALITY_MODE=true
 ```
 
@@ -729,6 +735,8 @@ Copie `.env.example` para `.env` e ajuste conforme necessario. Abaixo um resumo 
 | `QDRANT_URL` | _(vazio)_ | Ex.: `http://localhost:6333` |
 | `QDRANT_COLLECTION` | `issue_evidence` | Nome da colecao |
 | `QDRANT_API_KEY` | _(vazio)_ | Apenas para instancias com auth |
+| `REQUIRE_QDRANT_API_KEY_FOR_REMOTE` | `true` | Exige auth quando `QDRANT_URL` aponta para host remoto |
+| `ALLOW_INSECURE_REMOTE_QDRANT` | `false` | Permite HTTP remoto apenas se voce aceitar o risco explicitamente |
 | `QDRANT_QUANTIZATION_TYPE` | `none` | `scalar`, `binary` ou `none` |
 | `ENABLE_CASCADE_RETRIEVAL` | `false` | Busca N×factor + re-rank |
 | `ALLOW_EXTERNAL_VECTOR_STORE` | `false` | Necessario quando `CONFIDENTIALITY_MODE=true` |

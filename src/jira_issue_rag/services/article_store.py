@@ -19,6 +19,7 @@ no Qdrant.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import time
 import uuid
@@ -37,7 +38,11 @@ from jira_issue_rag.shared.models import (
     ArticleDistillation,
     ArticleEvidencePath,
     ArticleIngestResponse,
+    ArticleRetrievalEvaluationExample,
+    ArticleRetrievalEvaluationExampleResult,
+    ArticleRetrievalEvaluationResponse,
     ArticleSearchResult,
+    EvaluationMetric,
     GraphUsefulnessAssessment,
 )
 
@@ -64,6 +69,7 @@ _ENTITY_PATTERN = re.compile(
     r"\b(?:[A-Z][A-Za-z0-9]+(?:[-/][A-Za-z0-9]+)*|[A-Z]{2,})(?:\s+(?:[A-Z][A-Za-z0-9]+(?:[-/][A-Za-z0-9]+)*|[A-Z]{2,}))*\b"
 )
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+_TOKEN_PATTERN = re.compile(r"[a-z0-9]{3,}")
 _GRAPH_CONNECTORS = {
     "between", "across", "relationship", "connect", "connected", "chain", "hop",
     "bridge", "dependency", "depends", "influence", "influences", "causes",
@@ -84,6 +90,11 @@ class _ChunkRecord:
     chunk_kind: str = "text"
     page_number: int | None = None
     section_title: str | None = None
+    page_span: str | None = None
+    table_title: str | None = None
+    figure_caption: str | None = None
+    local_context: str | None = None
+    global_context: str | None = None
 
 
 @dataclass(frozen=True)
@@ -134,6 +145,21 @@ class ArticleStore:
         self.settings = settings
         self.embeddings = EmbeddingService(settings)
 
+    def _ensure_article_tenant_scope(
+        self,
+        *,
+        collection: str,
+        tenant_id: str | None,
+        operation: str,
+    ) -> None:
+        if not self.settings.article_collection_requires_tenant(collection):
+            return
+        if tenant_id and tenant_id.strip():
+            return
+        raise ValueError(
+            f"tenant_id is required for article {operation} on multi-tenant collection '{collection}'."
+        )
+
     # ── Public API ────────────────────────────────────────────────────────────
 
     def ingest(
@@ -146,6 +172,7 @@ class ArticleStore:
         source_type: str | None = None,
     ) -> list[ArticleIngestResponse]:
         """Ingere uma lista de PDFs (ou txt/md). Retorna um relatório por arquivo."""
+        self._ensure_article_tenant_scope(collection=collection, tenant_id=tenant_id, operation="ingest")
         results: list[ArticleIngestResponse] = []
         for i, raw_path in enumerate(paths):
             title = (titles or [])[i] if titles and i < len(titles) else None
@@ -178,6 +205,7 @@ class ArticleStore:
         enable_corrective_rag: bool = True,
     ) -> list[ArticleSearchResult]:
         """Busca adaptativa: usa retrieval vetorial por padrão e sobe o grafo quando vale a pena."""
+        self._ensure_article_tenant_scope(collection=collection, tenant_id=tenant_id, operation="search")
         assessment = self.assess_graph_usefulness(query)
         filters = _SearchFilters(
             collection=collection,
@@ -213,13 +241,16 @@ class ArticleStore:
         self,
         doc_id: str,
         limit: int = 5,
+        tenant_id: str | None = None,
+        collection: str = ARTICLE_COLLECTION,
     ) -> list[dict[str, Any]]:
         """Retorna artigos relacionados via grafo Neo4j (SHARES_TOPIC).
         Fallback: busca por tópicos do artigo no Qdrant caso Neo4j não esteja ativo.
         """
+        self._ensure_article_tenant_scope(collection=collection, tenant_id=tenant_id, operation="related")
         if self.settings.enable_graphrag:
-            return self._neo4j_related(doc_id, limit=limit)
-        return self._qdrant_related(doc_id, limit=limit)
+            return self._neo4j_related(doc_id, limit=limit, tenant_id=tenant_id, collection=collection)
+        return self._qdrant_related(doc_id, limit=limit, tenant_id=tenant_id, collection=collection)
 
     def benchmark_query_modes(
         self,
@@ -232,6 +263,7 @@ class ArticleStore:
         exact_match_required: bool = False,
         enable_corrective_rag: bool = True,
     ) -> ArticleBenchmarkResponse:
+        self._ensure_article_tenant_scope(collection=collection, tenant_id=tenant_id, operation="benchmark")
         assessment = self.assess_graph_usefulness(query)
         filters = _SearchFilters(
             collection=collection,
@@ -280,6 +312,103 @@ class ArticleStore:
             graph_usefulness=assessment,
             scenarios=scenarios,
             provider_options=self._provider_benchmark_options(),
+        )
+
+    def evaluate_retrieval(
+        self,
+        *,
+        dataset_path: str | None = None,
+        examples: list[ArticleRetrievalEvaluationExample] | None = None,
+    ) -> ArticleRetrievalEvaluationResponse:
+        loaded_examples = list(examples or [])
+        if dataset_path:
+            payload = Path(dataset_path).read_text(encoding="utf-8")
+            loaded_examples = [
+                ArticleRetrievalEvaluationExample.model_validate(item)
+                for item in self._load_json_list(payload)
+            ]
+
+        results: list[ArticleRetrievalEvaluationExampleResult] = []
+        doc_hits = 0
+        page_hits = 0
+        page_annotated = 0
+        chunk_hits = 0
+        chunk_annotated = 0
+        term_hits = 0
+        term_annotated = 0
+        reciprocal_rank_total = 0.0
+        avg_score_total = 0.0
+
+        for example in loaded_examples:
+            self._ensure_article_tenant_scope(
+                collection=example.collection,
+                tenant_id=example.tenant_id,
+                operation="evaluate",
+            )
+            ranked = self.search(
+                query=example.query,
+                top_k=example.top_k,
+                collection=example.collection,
+                retrieval_policy=example.retrieval_policy,
+                tenant_id=example.tenant_id,
+                source_tags=example.source_tags,
+                source_contains=example.source_contains,
+                exact_match_required=example.exact_match_required,
+                enable_corrective_rag=example.enable_corrective_rag,
+            )
+            doc_hit, reciprocal_rank = self._doc_match_metrics(example, ranked)
+            page_hit = self._page_match(example, ranked)
+            chunk_kind_hit = self._chunk_kind_match(example, ranked)
+            must_include_terms_hit = self._required_terms_match(example, ranked)
+            avg_score = round(sum(item.score for item in ranked[: min(5, len(ranked))]) / max(1, min(5, len(ranked))), 4)
+            results.append(
+                ArticleRetrievalEvaluationExampleResult(
+                    query=example.query,
+                    retrieval_policy=example.retrieval_policy,
+                    result_count=len(ranked),
+                    top_doc_ids=[item.doc_id for item in ranked[: example.top_k]],
+                    top_titles=[item.title for item in ranked[: example.top_k]],
+                    top_page_numbers=[item.page_number for item in ranked[: example.top_k] if item.page_number is not None],
+                    top_chunk_kinds=[item.chunk_kind for item in ranked[: example.top_k]],
+                    doc_hit=doc_hit,
+                    page_hit=page_hit,
+                    chunk_kind_hit=chunk_kind_hit,
+                    must_include_terms_hit=must_include_terms_hit,
+                    reciprocal_rank=reciprocal_rank,
+                    avg_score=avg_score,
+                )
+            )
+            doc_hits += int(doc_hit)
+            reciprocal_rank_total += reciprocal_rank
+            avg_score_total += avg_score
+            if example.expected_page_numbers:
+                page_annotated += 1
+                page_hits += int(page_hit)
+            if example.expected_chunk_kind:
+                chunk_annotated += 1
+                chunk_hits += int(chunk_kind_hit)
+            if example.must_include_terms:
+                term_annotated += 1
+                term_hits += int(must_include_terms_hit)
+
+        total = max(1, len(results))
+        metrics = [
+            EvaluationMetric(name="doc_hit_rate", value=doc_hits / total),
+            EvaluationMetric(name="mrr", value=reciprocal_rank_total / total),
+            EvaluationMetric(name="avg_top_score", value=avg_score_total / total),
+        ]
+        if page_annotated:
+            metrics.append(EvaluationMetric(name="page_hit_rate", value=page_hits / page_annotated))
+        if chunk_annotated:
+            metrics.append(EvaluationMetric(name="chunk_kind_hit_rate", value=chunk_hits / chunk_annotated))
+        if term_annotated:
+            metrics.append(EvaluationMetric(name="must_include_terms_hit_rate", value=term_hits / term_annotated))
+
+        return ArticleRetrievalEvaluationResponse(
+            dataset_path=dataset_path,
+            total_examples=len(results),
+            metrics=metrics,
+            examples=results,
         )
 
     def distill_for_small_model(
@@ -340,7 +469,16 @@ class ArticleStore:
             )
 
         temporal_meta = self._extract_temporal_metadata(path=path, title=title, raw_text=raw_text)
-        chunk_records = self._chunk_document(raw_text)
+        raw_chunk_records = self._chunk_document(raw_text)
+        chunk_records, chunk_stats, chunk_warnings = self._optimize_chunk_records(raw_chunk_records)
+        if not chunk_records:
+            return ArticleIngestResponse(
+                doc_id=doc_id, title=title, path=str(path), collection=collection, tenant_id=tenant_id, source_tags=source_tags,
+                chunks_indexed=0, topics=[], ok=False,
+                chunk_stats=chunk_stats,
+                warnings=[*chunk_warnings, "Nenhum chunk válido restou após a validação do documento."],
+                error="Chunking inválido ou texto insuficiente após deduplicação.",
+            )
         chunks = [record.content for record in chunk_records]
         topics_per_chunk = [self._extract_topics(record.content) for record in chunk_records]
         entities_per_chunk = [self._extract_entities(record.content) for record in chunk_records]
@@ -374,6 +512,11 @@ class ArticleStore:
                         "chunk_kind":  record.chunk_kind,
                         "page_number": record.page_number,
                         "section_title": record.section_title,
+                        "page_span":   record.page_span,
+                        "table_title": record.table_title,
+                        "figure_caption": record.figure_caption,
+                        "local_context": record.local_context,
+                        "global_context": record.global_context,
                         "topics":      topics_per_chunk[idx],
                         "entities":    entities_per_chunk[idx],
                         "canonical_title": temporal_meta["canonical_title"],
@@ -410,6 +553,8 @@ class ArticleStore:
             published_at=temporal_meta["published_at"],
             published_year=temporal_meta["published_year"],
             version_label=temporal_meta["version_label"],
+            chunk_stats=chunk_stats,
+            warnings=chunk_warnings,
             ok=True,
         )
 
@@ -419,8 +564,8 @@ class ArticleStore:
         """5-pass extraction — da mais rica para fallback simples.
 
         Pass 0 — MonkeyOCR  (SRR paradigm: melhor para PDFs com tabelas, fórmulas,
-                             multi-coluna, figuras. Requer sidecar local na porta
-                             MONKEYOCR_API_URL, padrão http://localhost:8000)
+                             multi-coluna, figuras. Requer sidecar local na URL
+                             MONKEYOCR_API_URL, padrão http://localhost:8001)
         Pass 1 — Docling    (estrutura + tabelas + colunas + layout awareness)
         Pass 2 — pypdf      (camada de texto nativa, rápido, sem deps pesadas)
         Pass 3 — OCR local via Tesseract  (PDFs escaneados / imagens incorporadas)
@@ -431,7 +576,7 @@ class ArticleStore:
         if suffix == ".pdf":
             # ── Pass 0: MonkeyOCR sidecar (melhor qualidade) ──────────────────
             if self.settings.enable_monkeyocr_pdf_parser:
-                text = ArticleStore._monkeyocr(path)
+                text = self._monkeyocr(path)
                 if text.strip():
                     return text
 
@@ -462,8 +607,7 @@ class ArticleStore:
 
         return ""
 
-    @staticmethod
-    def _monkeyocr(path: Path) -> str:
+    def _monkeyocr(self, path: Path) -> str:
         """MonkeyOCR v1.5 via FastAPI sidecar local.
 
         Usa o paradigma SRR (Structure-Recognition-Relation): detecta primeiro os
@@ -484,13 +628,17 @@ class ArticleStore:
         O markdown é lido do output_dir (mesmo host).
 
         Variável de ambiente:
-            MONKEYOCR_API_URL  (padrão: http://localhost:8000)
+            MONKEYOCR_API_URL  (padrão: http://localhost:8001)
 
         Retorna string vazia se o sidecar não estiver disponível (cascada para
         Docling automaticamente).
         """
         import os
-        base_url = os.environ.get("MONKEYOCR_API_URL", "http://localhost:8000").rstrip("/")
+        base_url = (
+            self.settings.monkeyocr_api_url
+            if self.settings.monkeyocr_api_url
+            else os.environ.get("MONKEYOCR_API_URL", "http://localhost:8001")
+        ).rstrip("/")
         try:
             with open(path, "rb") as fh:
                 resp = httpx.post(
@@ -586,7 +734,90 @@ class ArticleStore:
             buffer = ""
             buffer_section: str | None = None
             for para in [p.strip() for p in _SECTION_BREAK.split(page_text) if p.strip()]:
-                normalized = _MULTISPACE.sub(" ", para).strip()
+                raw_block = para.strip()
+                block_lines = [line.strip() for line in raw_block.splitlines() if line.strip()]
+                if block_lines and cls._looks_like_heading(block_lines[0]) and len(block_lines) > 1:
+                    if buffer and len(buffer) >= min_chars:
+                        records.extend(
+                            cls._split_long_chunk(
+                                buffer,
+                                max_chars=max_chars,
+                                chunk_kind="text",
+                                page_number=page_number,
+                                section_title=buffer_section,
+                                page_span=cls._page_span(page_number),
+                                global_context=cls._build_global_context(page_number, buffer_section),
+                            )
+                        )
+                        buffer = ""
+                    current_section = block_lines[0][:180]
+                    raw_block = "\n".join(block_lines[1:]).strip()
+                    if not raw_block:
+                        continue
+
+                multimodal_segments = cls._split_multimodal_blocks(raw_block)
+                if len(multimodal_segments) > 1:
+                    if buffer and len(buffer) >= min_chars:
+                        records.extend(
+                            cls._split_long_chunk(
+                                buffer,
+                                max_chars=max_chars,
+                                chunk_kind="text",
+                                page_number=page_number,
+                                section_title=buffer_section,
+                                page_span=cls._page_span(page_number),
+                                global_context=cls._build_global_context(page_number, buffer_section),
+                            )
+                        )
+                        buffer = ""
+                    for segment in multimodal_segments:
+                        segment_kind = cls._classify_chunk_kind(segment)
+                        if segment_kind not in {"table", "figure"}:
+                            segment_normalized = _MULTISPACE.sub(" ", segment).strip()
+                            if not segment_normalized:
+                                continue
+                            next_buffer = (buffer + "\n\n" + segment_normalized).strip() if buffer else segment_normalized
+                            if len(next_buffer) <= max_chars:
+                                buffer = next_buffer
+                                buffer_section = current_section
+                                continue
+                            if buffer and len(buffer) >= min_chars:
+                                records.extend(
+                                    cls._split_long_chunk(
+                                        buffer,
+                                        max_chars=max_chars,
+                                        chunk_kind="text",
+                                        page_number=page_number,
+                                        section_title=buffer_section,
+                                        page_span=cls._page_span(page_number),
+                                        global_context=cls._build_global_context(page_number, buffer_section),
+                                    )
+                                )
+                            buffer = segment_normalized
+                            buffer_section = current_section
+                            continue
+
+                        table_title = cls._extract_table_title(segment, current_section) if segment_kind == "table" else None
+                        figure_caption = cls._extract_figure_caption(segment, current_section) if segment_kind == "figure" else None
+                        local_context = table_title or figure_caption or cls._extract_local_context(segment)
+                        global_context = cls._build_global_context(page_number, current_section)
+                        records.extend(
+                            cls._split_long_chunk(
+                                cls._normalize_structured_block(segment),
+                                max_chars=max_chars,
+                                chunk_kind=segment_kind,
+                                page_number=page_number,
+                                section_title=current_section,
+                                page_span=cls._page_span(page_number),
+                                table_title=table_title,
+                                figure_caption=figure_caption,
+                                local_context=local_context,
+                                global_context=global_context,
+                            )
+                        )
+                    continue
+
+                normalized = _MULTISPACE.sub(" ", raw_block).strip()
                 if not normalized:
                     continue
                 if cls._looks_like_heading(normalized):
@@ -598,12 +829,14 @@ class ArticleStore:
                                 chunk_kind="text",
                                 page_number=page_number,
                                 section_title=buffer_section,
+                                page_span=cls._page_span(page_number),
+                                global_context=cls._build_global_context(page_number, buffer_section),
                             )
                         )
                         buffer = ""
                     current_section = normalized[:180]
                     continue
-                chunk_kind = cls._classify_chunk_kind(normalized)
+                chunk_kind = cls._classify_chunk_kind(raw_block)
                 if chunk_kind in {"table", "figure"}:
                     if buffer and len(buffer) >= min_chars:
                         records.extend(
@@ -613,16 +846,28 @@ class ArticleStore:
                                 chunk_kind="text",
                                 page_number=page_number,
                                 section_title=buffer_section,
+                                page_span=cls._page_span(page_number),
+                                global_context=cls._build_global_context(page_number, buffer_section),
                             )
                         )
                         buffer = ""
+                    structured_block = cls._normalize_structured_block(raw_block)
+                    table_title = cls._extract_table_title(structured_block, current_section) if chunk_kind == "table" else None
+                    figure_caption = cls._extract_figure_caption(structured_block, current_section) if chunk_kind == "figure" else None
+                    local_context = table_title or figure_caption or cls._extract_local_context(structured_block)
+                    global_context = cls._build_global_context(page_number, current_section)
                     records.extend(
                         cls._split_long_chunk(
-                            normalized,
+                            structured_block,
                             max_chars=max_chars,
                             chunk_kind=chunk_kind,
                             page_number=page_number,
                             section_title=current_section,
+                            page_span=cls._page_span(page_number),
+                            table_title=table_title,
+                            figure_caption=figure_caption,
+                            local_context=local_context,
+                            global_context=global_context,
                         )
                     )
                     continue
@@ -639,6 +884,8 @@ class ArticleStore:
                             chunk_kind="text",
                             page_number=page_number,
                             section_title=buffer_section,
+                            page_span=cls._page_span(page_number),
+                            global_context=cls._build_global_context(page_number, buffer_section),
                         )
                     )
                 buffer = normalized
@@ -651,9 +898,87 @@ class ArticleStore:
                         chunk_kind="text",
                         page_number=page_number,
                         section_title=buffer_section,
+                        page_span=cls._page_span(page_number),
+                        global_context=cls._build_global_context(page_number, buffer_section),
                     )
                 )
         return records
+
+    @classmethod
+    def _optimize_chunk_records(
+        cls,
+        records: list[_ChunkRecord],
+        *,
+        min_chars: int = 80,
+        max_chars: int = 800,
+    ) -> tuple[list[_ChunkRecord], dict[str, Any], list[str]]:
+        accepted: list[_ChunkRecord] = []
+        exact_duplicates_removed = 0
+        near_duplicates_removed = 0
+        exact_seen: set[tuple[str, int | None, str | None, str]] = set()
+        buckets: dict[tuple[int | None, str | None, str], list[_ChunkRecord]] = {}
+
+        for record in records:
+            normalized = cls._normalize_chunk_text(record.content)
+            if len(normalized) < max(24, min_chars // 2):
+                continue
+            exact_key = (normalized, record.page_number, record.section_title, record.chunk_kind)
+            if exact_key in exact_seen:
+                exact_duplicates_removed += 1
+                continue
+
+            bucket_key = (record.page_number, record.section_title, record.chunk_kind)
+            siblings = buckets.setdefault(bucket_key, [])
+            if any(cls._is_near_duplicate(record, existing) for existing in siblings[-4:]):
+                near_duplicates_removed += 1
+                continue
+
+            exact_seen.add(exact_key)
+            siblings.append(record)
+            accepted.append(record)
+
+        high_overlap_pairs = 0
+        for left, right in zip(accepted, accepted[1:], strict=False):
+            if (
+                left.page_number == right.page_number
+                and left.section_title == right.section_title
+                and left.chunk_kind == right.chunk_kind
+                and cls._overlap_ratio(left.content, right.content) >= 0.72
+            ):
+                high_overlap_pairs += 1
+
+        lengths = [len(item.content) for item in accepted]
+        short_chunks = sum(1 for size in lengths if size < min_chars)
+        long_chunks = sum(1 for size in lengths if size > max_chars)
+        avg_chunk_chars = round(sum(lengths) / max(1, len(lengths)), 2)
+        stats = {
+            "raw_chunk_count": len(records),
+            "deduped_chunk_count": len(accepted),
+            "exact_duplicates_removed": exact_duplicates_removed,
+            "near_duplicates_removed": near_duplicates_removed,
+            "high_overlap_pairs": high_overlap_pairs,
+            "short_chunks": short_chunks,
+            "long_chunks": long_chunks,
+            "avg_chunk_chars": avg_chunk_chars,
+        }
+
+        warnings: list[str] = []
+        removed_ratio = (exact_duplicates_removed + near_duplicates_removed) / max(1, len(records))
+        if removed_ratio >= 0.15:
+            warnings.append(
+                f"Deduplicação removeu {exact_duplicates_removed + near_duplicates_removed} chunks redundantes "
+                f"de {len(records)} gerados."
+            )
+        if high_overlap_pairs >= max(2, len(accepted) // 6):
+            warnings.append(
+                f"Foram detectados {high_overlap_pairs} pares de chunks vizinhos com overlap alto; "
+                "vale revisar o chunking deste documento."
+            )
+        if accepted and avg_chunk_chars < 220:
+            warnings.append(
+                f"O tamanho médio dos chunks ficou baixo ({avg_chunk_chars} chars), o que tende a prejudicar recall."
+            )
+        return accepted, stats, warnings
 
     @classmethod
     def _split_pages(cls, text: str) -> list[tuple[int | None, str]]:
@@ -680,22 +1005,288 @@ class ArticleStore:
         chunk_kind: str,
         page_number: int | None,
         section_title: str | None,
+        page_span: str | None = None,
+        table_title: str | None = None,
+        figure_caption: str | None = None,
+        local_context: str | None = None,
+        global_context: str | None = None,
     ) -> list[_ChunkRecord]:
         if len(text) <= max_chars:
-            return [_ChunkRecord(text, chunk_kind=chunk_kind, page_number=page_number, section_title=section_title)]
+            return [
+                _ChunkRecord(
+                    cls._compose_chunk_text(
+                        text,
+                        chunk_kind=chunk_kind,
+                        table_title=table_title,
+                        figure_caption=figure_caption,
+                        local_context=local_context,
+                        global_context=global_context,
+                    ),
+                    chunk_kind=chunk_kind,
+                    page_number=page_number,
+                    section_title=section_title,
+                    page_span=page_span,
+                    table_title=table_title,
+                    figure_caption=figure_caption,
+                    local_context=local_context,
+                    global_context=global_context,
+                )
+            ]
         records: list[_ChunkRecord] = []
+        if chunk_kind == "table":
+            rows = [line.strip() for line in text.splitlines() if line.strip()]
+            header = local_context or (rows[0] if rows else "")
+            body_rows = rows[1:] if rows and header == rows[0] else rows
+            sub_rows: list[str] = []
+            for row in body_rows:
+                candidate_rows = [*sub_rows, row]
+                candidate_body = "\n".join(([header] if header else []) + candidate_rows).strip()
+                candidate_text = cls._compose_chunk_text(
+                    candidate_body,
+                    chunk_kind=chunk_kind,
+                    table_title=table_title,
+                    figure_caption=figure_caption,
+                    local_context=local_context,
+                    global_context=global_context,
+                )
+                if len(candidate_text) <= max_chars or not sub_rows:
+                    sub_rows = candidate_rows
+                    continue
+                flushed_body = "\n".join(([header] if header else []) + sub_rows).strip()
+                records.append(
+                    _ChunkRecord(
+                        cls._compose_chunk_text(
+                            flushed_body,
+                            chunk_kind=chunk_kind,
+                            table_title=table_title,
+                            figure_caption=figure_caption,
+                            local_context=local_context,
+                            global_context=global_context,
+                        ),
+                        chunk_kind=chunk_kind,
+                        page_number=page_number,
+                        section_title=section_title,
+                        page_span=page_span,
+                        table_title=table_title,
+                        figure_caption=figure_caption,
+                        local_context=local_context,
+                        global_context=global_context,
+                    )
+                )
+                sub_rows = [row]
+            if sub_rows:
+                final_body = "\n".join(([header] if header else []) + sub_rows).strip()
+                records.append(
+                    _ChunkRecord(
+                        cls._compose_chunk_text(
+                            final_body,
+                            chunk_kind=chunk_kind,
+                            table_title=table_title,
+                            figure_caption=figure_caption,
+                            local_context=local_context,
+                            global_context=global_context,
+                        ),
+                        chunk_kind=chunk_kind,
+                        page_number=page_number,
+                        section_title=section_title,
+                        page_span=page_span,
+                        table_title=table_title,
+                        figure_caption=figure_caption,
+                        local_context=local_context,
+                        global_context=global_context,
+                    )
+                )
+            return records
+
         sentences = re.split(r"(?<=[.!?])\s+", text)
         sub = ""
         for sent in sentences:
-            if len(sub) + len(sent) + 1 <= max_chars:
-                sub = (sub + " " + sent).strip() if sub else sent
+            candidate = (sub + " " + sent).strip() if sub else sent
+            candidate_text = cls._compose_chunk_text(
+                candidate,
+                chunk_kind=chunk_kind,
+                table_title=table_title,
+                figure_caption=figure_caption,
+                local_context=local_context,
+                global_context=global_context,
+            )
+            if len(candidate_text) <= max_chars or not sub:
+                sub = candidate
             else:
-                if sub:
-                    records.append(_ChunkRecord(sub, chunk_kind=chunk_kind, page_number=page_number, section_title=section_title))
+                records.append(
+                    _ChunkRecord(
+                        cls._compose_chunk_text(
+                            sub,
+                            chunk_kind=chunk_kind,
+                            table_title=table_title,
+                            figure_caption=figure_caption,
+                            local_context=local_context,
+                            global_context=global_context,
+                        ),
+                        chunk_kind=chunk_kind,
+                        page_number=page_number,
+                        section_title=section_title,
+                        page_span=page_span,
+                        table_title=table_title,
+                        figure_caption=figure_caption,
+                        local_context=local_context,
+                        global_context=global_context,
+                    )
+                )
                 sub = sent
         if sub:
-            records.append(_ChunkRecord(sub, chunk_kind=chunk_kind, page_number=page_number, section_title=section_title))
+            records.append(
+                _ChunkRecord(
+                    cls._compose_chunk_text(
+                        sub,
+                        chunk_kind=chunk_kind,
+                        table_title=table_title,
+                        figure_caption=figure_caption,
+                        local_context=local_context,
+                        global_context=global_context,
+                    ),
+                    chunk_kind=chunk_kind,
+                    page_number=page_number,
+                    section_title=section_title,
+                    page_span=page_span,
+                    table_title=table_title,
+                    figure_caption=figure_caption,
+                    local_context=local_context,
+                    global_context=global_context,
+                )
+            )
         return records
+
+    @staticmethod
+    def _page_span(page_number: int | None) -> str | None:
+        return str(page_number) if page_number is not None else None
+
+    @classmethod
+    def _build_global_context(cls, page_number: int | None, section_title: str | None) -> str | None:
+        parts: list[str] = []
+        if section_title:
+            parts.append(f"section={section_title}")
+        if page_number is not None:
+            parts.append(f"page={page_number}")
+        return " | ".join(parts) if parts else None
+
+    @classmethod
+    def _extract_local_context(cls, text: str) -> str | None:
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if lines:
+            return lines[0][:180]
+        normalized = _MULTISPACE.sub(" ", text).strip()
+        return normalized[:180] if normalized else None
+
+    @classmethod
+    def _split_multimodal_blocks(cls, text: str) -> list[str]:
+        lines = [line.rstrip() for line in text.splitlines() if line.strip()]
+        if not lines:
+            return []
+        markers = ("table ", "tabela ", "figure ", "fig.", "fig ", "screenshot", "captura", "imagem", "diagram", "chart")
+        blocks: list[list[str]] = []
+        current: list[str] = []
+        for line in lines:
+            lowered = cls._normalize_ascii(line)
+            is_marker = lowered.startswith(markers)
+            if is_marker and current:
+                blocks.append(current)
+                current = [line]
+                continue
+            current.append(line)
+        if current:
+            blocks.append(current)
+        return ["\n".join(block).strip() for block in blocks if any(part.strip() for part in block)]
+
+    @staticmethod
+    def _normalize_structured_block(text: str) -> str:
+        lines = [_MULTISPACE.sub(" ", line).strip() for line in text.splitlines() if line.strip()]
+        return "\n".join(lines).strip()
+
+    @classmethod
+    def _extract_table_title(cls, text: str, current_section: str | None) -> str | None:
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        for line in lines[:2]:
+            lowered = cls._normalize_ascii(line)
+            if lowered.startswith(("table ", "tabela ")):
+                return line[:180]
+        if current_section and any(token in cls._normalize_ascii(current_section) for token in ("table", "tabela")):
+            return current_section[:180]
+        if lines:
+            first = lines[0]
+            if len(first) <= 180 and ("|" in first or "\t" in first or len(re.findall(r"\b\d+(?:[.,]\d+)?\b", first)) >= 2):
+                return first[:180]
+        return None
+
+    @classmethod
+    def _extract_figure_caption(cls, text: str, current_section: str | None) -> str | None:
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        for line in lines[:3]:
+            lowered = cls._normalize_ascii(line)
+            if lowered.startswith(("figure ", "fig.", "fig ", "screenshot", "captura", "imagem", "diagram", "chart")):
+                return line[:180]
+        if current_section and any(token in cls._normalize_ascii(current_section) for token in ("figure", "figura", "screenshot", "captura", "imagem")):
+            return current_section[:180]
+        return lines[0][:180] if lines else None
+
+    @staticmethod
+    def _compose_chunk_text(
+        text: str,
+        *,
+        chunk_kind: str,
+        table_title: str | None,
+        figure_caption: str | None,
+        local_context: str | None,
+        global_context: str | None,
+    ) -> str:
+        prefix: list[str] = []
+        used_context_values: set[str] = set()
+        if chunk_kind == "table" and table_title:
+            prefix.append(f"[table_title] {table_title}")
+            used_context_values.add(table_title)
+        elif chunk_kind == "figure" and figure_caption:
+            prefix.append(f"[figure_caption] {figure_caption}")
+            used_context_values.add(figure_caption)
+        if local_context and local_context not in used_context_values:
+            prefix.append(f"[local_context] {local_context}")
+            used_context_values.add(local_context)
+        if global_context:
+            prefix.append(f"[global_context] {global_context}")
+        body = text.strip()
+        return "\n".join([*prefix, body]).strip()
+
+    @classmethod
+    def _normalize_chunk_text(cls, text: str) -> str:
+        normalized = cls._normalize_ascii(text)
+        normalized = _MULTISPACE.sub(" ", normalized).strip()
+        return normalized
+
+    @classmethod
+    def _is_near_duplicate(cls, candidate: _ChunkRecord, existing: _ChunkRecord) -> bool:
+        left = cls._normalize_chunk_text(candidate.content)
+        right = cls._normalize_chunk_text(existing.content)
+        if not left or not right:
+            return False
+        shorter, longer = sorted((left, right), key=len)
+        length_ratio = len(shorter) / max(1, len(longer))
+        if length_ratio >= 0.82 and shorter in longer:
+            return True
+        token_overlap = cls._overlap_ratio(left, right)
+        return length_ratio >= 0.88 and token_overlap >= 0.9
+
+    @classmethod
+    def _overlap_ratio(cls, left: str, right: str) -> float:
+        left_tokens = cls._token_set(left)
+        right_tokens = cls._token_set(right)
+        if not left_tokens or not right_tokens:
+            return 0.0
+        intersection = len(left_tokens & right_tokens)
+        union = len(left_tokens | right_tokens)
+        return intersection / max(1, union)
+
+    @classmethod
+    def _token_set(cls, text: str) -> set[str]:
+        return set(_TOKEN_PATTERN.findall(cls._normalize_ascii(text)))
 
     @classmethod
     def _looks_like_heading(cls, text: str) -> bool:
@@ -1061,6 +1652,74 @@ class ArticleStore:
             "faithfulness_proxy": faithfulness,
         }
 
+    @staticmethod
+    def _load_json_list(payload: str) -> list[dict[str, Any]]:
+        loaded = json.loads(payload)
+        if not isinstance(loaded, list):
+            raise ValueError("Article retrieval dataset must be a JSON list.")
+        return loaded
+
+    @classmethod
+    def _doc_match_metrics(
+        cls,
+        example: ArticleRetrievalEvaluationExample,
+        results: list[ArticleSearchResult],
+    ) -> tuple[bool, float]:
+        for index, item in enumerate(results, start=1):
+            if cls._matches_expected_document(example, item):
+                return True, round(1.0 / index, 4)
+        return False, 0.0
+
+    @classmethod
+    def _matches_expected_document(
+        cls,
+        example: ArticleRetrievalEvaluationExample,
+        result: ArticleSearchResult,
+    ) -> bool:
+        if example.expected_doc_ids and result.doc_id in set(example.expected_doc_ids):
+            return True
+        if example.expected_title_contains:
+            title = cls._normalize_ascii(result.title)
+            if any(cls._normalize_ascii(term) in title for term in example.expected_title_contains):
+                return True
+        if example.expected_source_contains:
+            source_path = cls._normalize_ascii(result.source_path)
+            if any(cls._normalize_ascii(term) in source_path for term in example.expected_source_contains):
+                return True
+        return False
+
+    @classmethod
+    def _page_match(
+        cls,
+        example: ArticleRetrievalEvaluationExample,
+        results: list[ArticleSearchResult],
+    ) -> bool:
+        if not example.expected_page_numbers:
+            return False
+        expected = set(example.expected_page_numbers)
+        return any(item.page_number in expected for item in results if item.page_number is not None)
+
+    @staticmethod
+    def _chunk_kind_match(
+        example: ArticleRetrievalEvaluationExample,
+        results: list[ArticleSearchResult],
+    ) -> bool:
+        if not example.expected_chunk_kind:
+            return False
+        expected = example.expected_chunk_kind.strip().lower()
+        return any(item.chunk_kind.strip().lower() == expected for item in results)
+
+    @classmethod
+    def _required_terms_match(
+        cls,
+        example: ArticleRetrievalEvaluationExample,
+        results: list[ArticleSearchResult],
+    ) -> bool:
+        if not example.must_include_terms:
+            return False
+        haystack = cls._normalize_ascii(" ".join(item.content for item in results[: min(3, len(results))]))
+        return all(cls._normalize_ascii(term) in haystack for term in example.must_include_terms)
+
     def _provider_benchmark_options(self) -> list[dict[str, Any]]:
         options = [
             ("openai", self.settings.openai_model, 900, "$$$", False),
@@ -1258,6 +1917,11 @@ class ArticleStore:
                            c.chunk_kind AS chunk_kind,
                            c.page_number AS page_number,
                            c.section_title AS section_title,
+                           c.page_span AS page_span,
+                           c.table_title AS table_title,
+                           c.figure_caption AS figure_caption,
+                           c.local_context AS local_context,
+                           c.global_context AS global_context,
                            coalesce(c.topics, []) AS topics,
                            coalesce(c.entities, []) AS entities,
                            matched_entities,
@@ -1295,6 +1959,11 @@ class ArticleStore:
                         "chunk_kind": row_data.get("chunk_kind", "text"),
                         "page_number": row_data.get("page_number"),
                         "section_title": row_data.get("section_title"),
+                        "page_span": row_data.get("page_span"),
+                        "table_title": row_data.get("table_title"),
+                        "figure_caption": row_data.get("figure_caption"),
+                        "local_context": row_data.get("local_context"),
+                        "global_context": row_data.get("global_context"),
                         "topics": row_data.get("topics", []),
                         "entities": row_data.get("entities", []),
                         "canonical_title": row_data.get("canonical_title"),
@@ -1387,6 +2056,11 @@ class ArticleStore:
             chunk_kind=payload.get("chunk_kind", "text"),
             page_number=payload.get("page_number"),
             section_title=payload.get("section_title"),
+            page_span=payload.get("page_span"),
+            table_title=payload.get("table_title"),
+            figure_caption=payload.get("figure_caption"),
+            local_context=payload.get("local_context"),
+            global_context=payload.get("global_context"),
             retrieval_mode=retrieval_mode,
             graph_usefulness=assessment,
             evidence_paths=evidence_paths,
@@ -1564,6 +2238,11 @@ class ArticleStore:
                             c.chunk_kind = $chunk_kind,
                             c.page_number = $page_number,
                             c.section_title = $section_title,
+                            c.page_span = $page_span,
+                            c.table_title = $table_title,
+                            c.figure_caption = $figure_caption,
+                            c.local_context = $local_context,
+                            c.global_context = $global_context,
                             c.topics = $topics,
                             c.entities = $entities
                         MERGE (a)-[:HAS_CHUNK]->(c)
@@ -1575,6 +2254,11 @@ class ArticleStore:
                         chunk_kind=chunk.chunk_kind,
                         page_number=chunk.page_number,
                         section_title=chunk.section_title,
+                        page_span=chunk.page_span,
+                        table_title=chunk.table_title,
+                        figure_caption=chunk.figure_caption,
+                        local_context=chunk.local_context,
+                        global_context=chunk.global_context,
                         topics=chunk_topics,
                         entities=chunk_entities,
                     )
@@ -1684,7 +2368,13 @@ class ArticleStore:
         finally:
             driver.close()
 
-    def _neo4j_related(self, doc_id: str, limit: int) -> list[dict[str, Any]]:
+    def _neo4j_related(
+        self,
+        doc_id: str,
+        limit: int,
+        tenant_id: str | None,
+        collection: str,
+    ) -> list[dict[str, Any]]:
         try:
             import neo4j as _neo4j  # type: ignore[import-untyped]
         except ImportError:
@@ -1697,13 +2387,20 @@ class ArticleStore:
                 topic_records = session.run(
                     """
                     MATCH (a:Article {id: $id})-[r:SHARES_TOPIC]->(b:Article)
+                    WHERE coalesce(a.collection, $collection) = $collection
+                      AND coalesce(b.collection, $collection) = $collection
+                      AND ($tenant_id IS NULL OR coalesce(a.tenant_id, '') = $tenant_id)
+                      AND ($tenant_id IS NULL OR coalesce(b.tenant_id, '') = $tenant_id)
                     RETURN b.id AS doc_id, b.title AS title, r.weight AS shared_topics,
                            b.published_at AS published_at, b.published_year AS published_year,
                            b.version_label AS version_label
                     ORDER BY r.weight DESC
                     LIMIT $limit
                     """,
-                    id=doc_id, limit=limit,
+                    id=doc_id,
+                    limit=limit,
+                    tenant_id=tenant_id,
+                    collection=collection,
                 )
                 for rec in topic_records:
                     did = rec["doc_id"]
@@ -1720,12 +2417,19 @@ class ArticleStore:
                 temporal_records = session.run(
                     """
                     MATCH (a:Article {id: $id})-[r:EARLIER_VERSION_OF|LATER_VERSION_OF]->(b:Article)
+                    WHERE coalesce(a.collection, $collection) = $collection
+                      AND coalesce(b.collection, $collection) = $collection
+                      AND ($tenant_id IS NULL OR coalesce(a.tenant_id, '') = $tenant_id)
+                      AND ($tenant_id IS NULL OR coalesce(b.tenant_id, '') = $tenant_id)
                     RETURN b.id AS doc_id, b.title AS title, type(r) AS relation,
                            b.published_at AS published_at, b.published_year AS published_year,
                            b.version_label AS version_label
                     LIMIT $limit
                     """,
-                    id=doc_id, limit=limit,
+                    id=doc_id,
+                    limit=limit,
+                    tenant_id=tenant_id,
+                    collection=collection,
                 )
                 for rec in temporal_records:
                     did = rec["doc_id"]
@@ -1755,16 +2459,25 @@ class ArticleStore:
         )
         return results[:limit]
 
-    def _qdrant_related(self, doc_id: str, limit: int) -> list[dict[str, Any]]:
+    def _qdrant_related(
+        self,
+        doc_id: str,
+        limit: int,
+        tenant_id: str | None,
+        collection: str,
+    ) -> list[dict[str, Any]]:
         """Fallback when Neo4j is off: agrupa por doc_id nos chunks mais similares."""
         if not self._qdrant_available():
             return []
+        must_filters: list[dict[str, Any]] = [{"key": "doc_id", "match": {"value": doc_id}}]
+        if tenant_id:
+            must_filters.append({"key": "tenant_id", "match": {"value": tenant_id}})
         # Busca os chunks do próprio artigo e usa o primeiro como query
         anchor_resp = self._qdrant(
             "POST",
-            f"/collections/{ARTICLE_COLLECTION}/points/query",
+            f"/collections/{collection}/points/query",
             json_body={
-                "filter": {"must": [{"key": "doc_id", "match": {"value": doc_id}}]},
+                "filter": {"must": must_filters},
                 "using":  "dense",
                 "limit":  1,
                 "with_payload": True,
@@ -1777,15 +2490,20 @@ class ArticleStore:
         anchor_vector = pts[0].get("vector", {}).get("dense") or pts[0].get("vector")
         if not anchor_vector:
             return []
+        similarity_filter: dict[str, Any] = {
+            "must_not": [{"key": "doc_id", "match": {"value": doc_id}}],
+        }
+        if tenant_id:
+            similarity_filter["must"] = [{"key": "tenant_id", "match": {"value": tenant_id}}]
         sim_resp = self._qdrant(
             "POST",
-            f"/collections/{ARTICLE_COLLECTION}/points/query",
+            f"/collections/{collection}/points/query",
             json_body={
                 "query":  anchor_vector,
                 "using":  "dense",
                 "limit":  limit * 5,
                 "with_payload": True,
-                "filter": {"must_not": [{"key": "doc_id", "match": {"value": doc_id}}]},
+                "filter": similarity_filter,
             },
         )
         seen: dict[str, float] = {}

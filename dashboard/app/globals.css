@@ -2731,6 +2731,7 @@ button, input, textarea, select { font: inherit; }
   font-size: .68rem; font-weight: 600;
 }
 .ris__chip--ok     { background: #f0fdf4; color: #15803d; }
+.ris__chip--info   { background: #eff6ff; color: #1d4ed8; }
 .ris__chip--warn   { background: #fffbeb; color: #b45309; }
 .ris__chip--danger { background: #fef2f2; color: #b91c1c; }
 .ris__provider { margin-left: auto; font-size: .72rem; color: var(--muted, #94a3b8); font-family: ui-monospace, monospace; }

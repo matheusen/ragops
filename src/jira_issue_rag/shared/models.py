@@ -342,6 +342,8 @@ class ArticlePromptUploadResponse(BaseModel):
     prompt_execution: PromptExecutionResponse
     article_search: list["ArticleSearchResult"] = Field(default_factory=list)
     result_id: str | None = None
+    runtime: dict[str, Any] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -434,6 +436,7 @@ class FlowRunResponse(BaseModel):
     article_graph_assessment: "GraphUsefulnessAssessment | None" = None
     article_distillation: "ArticleDistillation | None" = None
     article_benchmark: "ArticleBenchmarkResponse | None" = None
+    runtime: dict[str, Any] = Field(default_factory=dict)
     dspy_optimization: FlowDSPyOptimizationResult | None = None
     warnings: list[str] = Field(default_factory=list)
 
@@ -469,6 +472,11 @@ class ArticleChunk(BaseModel):
     chunk_kind: str = "text"
     page_number: int | None = None
     section_title: str | None = None
+    page_span: str | None = None
+    table_title: str | None = None
+    figure_caption: str | None = None
+    local_context: str | None = None
+    global_context: str | None = None
 
 
 class ArticleIngestRequest(BaseModel):
@@ -496,6 +504,8 @@ class ArticleIngestResponse(BaseModel):
     published_at: str | None = None
     published_year: int | None = None
     version_label: str | None = None
+    chunk_stats: dict[str, Any] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
     ok: bool = True
     error: str | None = None
 
@@ -555,6 +565,11 @@ class ArticleSearchResult(BaseModel):
     chunk_kind: str = "text"
     page_number: int | None = None
     section_title: str | None = None
+    page_span: str | None = None
+    table_title: str | None = None
+    figure_caption: str | None = None
+    local_context: str | None = None
+    global_context: str | None = None
     retrieval_mode: str = "vector-global"
     graph_usefulness: GraphUsefulnessAssessment | None = None
     evidence_paths: list[ArticleEvidencePath] = Field(default_factory=list)
@@ -562,6 +577,8 @@ class ArticleSearchResult(BaseModel):
 
 class ArticleRelatedRequest(BaseModel):
     limit: int = Field(default=5, ge=1, le=20)
+    collection: str = "articles"
+    tenant_id: str | None = None
 
 
 class ArticleBenchmarkRequest(BaseModel):
@@ -602,3 +619,49 @@ class ArticleBenchmarkResponse(BaseModel):
     graph_usefulness: GraphUsefulnessAssessment
     scenarios: list[ArticleBenchmarkScenarioResult] = Field(default_factory=list)
     provider_options: list[ProviderBenchmarkScenario] = Field(default_factory=list)
+
+
+class ArticleRetrievalEvaluationExample(BaseModel):
+    query: str
+    expected_doc_ids: list[str] = Field(default_factory=list)
+    expected_title_contains: list[str] = Field(default_factory=list)
+    expected_source_contains: list[str] = Field(default_factory=list)
+    expected_page_numbers: list[int] = Field(default_factory=list)
+    expected_chunk_kind: str | None = None
+    must_include_terms: list[str] = Field(default_factory=list)
+    collection: str = "articles"
+    top_k: int = Field(default=8, ge=1, le=50)
+    retrieval_policy: str = "auto"
+    tenant_id: str | None = None
+    source_tags: list[str] = Field(default_factory=list)
+    source_contains: str | None = None
+    exact_match_required: bool = False
+    enable_corrective_rag: bool = True
+
+
+class ArticleRetrievalEvaluationRequest(BaseModel):
+    dataset_path: str | None = None
+    examples: list[ArticleRetrievalEvaluationExample] = Field(default_factory=list)
+
+
+class ArticleRetrievalEvaluationExampleResult(BaseModel):
+    query: str
+    retrieval_policy: str
+    result_count: int = 0
+    top_doc_ids: list[str] = Field(default_factory=list)
+    top_titles: list[str] = Field(default_factory=list)
+    top_page_numbers: list[int] = Field(default_factory=list)
+    top_chunk_kinds: list[str] = Field(default_factory=list)
+    doc_hit: bool = False
+    page_hit: bool = False
+    chunk_kind_hit: bool = False
+    must_include_terms_hit: bool = False
+    reciprocal_rank: float = 0.0
+    avg_score: float = 0.0
+
+
+class ArticleRetrievalEvaluationResponse(BaseModel):
+    dataset_path: str | None = None
+    total_examples: int = 0
+    metrics: list[EvaluationMetric] = Field(default_factory=list)
+    examples: list[ArticleRetrievalEvaluationExampleResult] = Field(default_factory=list)

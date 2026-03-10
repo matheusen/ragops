@@ -1,0 +1,494 @@
+{
+  "run_kind": "article-analysis",
+  "issue": {
+    "issue_key": "ARTICLE-95FA1B",
+    "summary": "Além do RAG Ingênuo_ Um Guia Passo a Passo para Construir um RAG Agente em 2026 _ por VS Krishnan _ Março de 2026 _ Medium.pdf",
+    "description": "[[PAGE_BREAK:1]]\nAlém do RAG Ingênuo: Um Guia Passo a\nPasso para Construir um RAG Agentico em\n2026\nAlém do RAG Ingênuo: Um Guia Passo a Passo para\nConstruir um RAG Agente em 2026\n6 minutos de leitura\n2 dias atrás\nA Geração Aumentada por Recuperação (RAG, na sigla em inglês) tornou-se o padrão de fato\npara fundamentar Grandes Modelos de Linguagem (LLMs, na sigla em inglês) na realidade. Ela\nresolve o problema da alucinação e mantém os dados atualizados. Mas se você tentou migrar\nde um chatbot simples de fim de semana para um agente independente e complexo de nível\nde produção, provavelmente se deparou com dois grandes obstáculos: latência e custo .\nEnviar um manual de 100 páginas para uma janela de contexto a cada consulta do usuário não\né apenas ineficiente; No início de 2026, ainda seria financeiramente insustentável para\naplicativos com alto tráfego. Além disso, um simples loop de “recuperar e gerar” quase\nsempre falha quando confrontado com tarefas de raciocínio em várias etapas.\nA era do \"RAG Ingênuo\" é uma relíquia de 2024. Neste guia, vamos mergulhar nas soluções\nmodernas. Exploraremos como o Context Caching amadureceu para revolucionar a economia\ndo LLM, mostraremos exatamente como implementar RAGs Agentes e Adaptativos em\nPython e veremos como os Hyperbolic Embeddings finalmente saíram do laboratório e\nentraram em produção.\n1. Uma solução para economizar dinheiro: Cache de\ncontexto e de prompts\nSe você estiver criando um aplicativo com um contexto de documento extenso ou exemplos\ndetalhados e esporádicos que recentemente mudaram, você gastará dinheiro recalculando os\nmesmos tokens repetidamente.\nA mecânica: tudo está sem cache KV.\nA inferência LLM ocorre em duas etapas:\n1. Preenchimento automático: O modelo processa sua entrada e calcula vetores de chave-\nvalor (KV). Isso exige alto poder computacional.\n2. Decodificação: O modelo gera tokens de saída um por um.\nO cache de contexto salva esses estados de preenchimento intermediários. Quando uma nova\nsolicitação corresponde a um prefixo em cache, o modelo ignora o cálculo complexo.\nO cenário de 2026\nO armazenamento em cache deixou de ser um recurso beta e agora está integrado\nnativamente em todos os principais provedores. A otimização desse recurso pode levar a uma\nredução de custos de até 90% e uma latência drasticamente menor.\nGoogle Gemini: Oferece recursos de cache implícito e explícito, com um desconto\naproximado de 75% em tokens armazenados em cache e um tempo de vida (TTL) padrão\naltamente personalizável de 1 hora.\nClaude Antrópico: Utiliza cache explícito, tornando as leituras 90% mais baratas com um\nTTL de 5 minutos que é atualizado a cada acesso.\nOpenAI: Utiliza cache automático, oferecendo um desconto de cerca de 50% com um\nTTL dinâmico de 5 a 15 minutos, com base na carga.\nDev Note: Be aware of “side-channel” risks. Because cached prompts return faster, an\nattacker could theoretically time responses to guess what data is in your cache. Ensure your\nMLOps architecture securely separates user contexts.\n2. The Brain: Agentic RAG Explained and Implemented\nStandard RAG is strictly reactive: Query → Lookup → Answer. Agentic RAG is proactive:\nQuery → Plan → Tool Use → Reflect → Answer.\nIn an agentic workflow, the LLM isn’t just a text generator; it’s a router, a planner, and a\nreasoner. It can decide to query a vector DB, rewrite a bad user query, or trigger an external\nAPI.\nHow to Build an Agentic Workflow\nLet’s look at how to actually implement this using modern LlamaIndex concepts. Instead of a\ngeneric example, let’s build a multi-agent MLOps workflow where a top-level agent routes\nqueries to either an infrastructure monitoring tool or a log retrieval tool.\nPython\nimport asyncio\nfrom llama_index.core.agent import FunctionAgent, AgentWorkflow\nfrom llama_index.core.tools import FunctionTool\nfrom llama_index.llms.openai import OpenAI\n# 1. Define your specific tools (Python functions wrapped as tools)\ndef check_triton_latency(model_name: str) -> float:\n    \"\"\"Checks t",
+    "comments": [],
+    "acceptance_criteria": [],
+    "reproduction_steps": [],
+    "expected_behavior": "",
+    "actual_behavior": "",
+    "priority": null,
+    "issue_type": "Article",
+    "status": null,
+    "project": null,
+    "component": null,
+    "service": null,
+    "environment": null,
+    "affected_version": null,
+    "labels": [
+      "article-analysis"
+    ],
+    "issue_links": [],
+    "attachments": [],
+    "changelog": [],
+    "collected_at": "2026-03-10T12:55:13.576032+00:00"
+  },
+  "attachment_facts": {
+    "issue_key": "ARTICLE-95FA1B",
+    "artifacts": [
+      {
+        "artifact_id": "article:d78835596861471e5b7df47da49fddd357976547",
+        "artifact_type": "pdf",
+        "source_path": "C:\\Users\\mengl\\AppData\\Local\\Temp\\ragflow_article_md4toypy\\Além do RAG Ingênuo_ Um Guia Passo a Passo para Construir um RAG Agente em 2026 _ por VS Krishnan _ Março de 2026 _ Medium.pdf",
+        "extracted_text": "[[PAGE_BREAK:1]]\nAlém do RAG Ingênuo: Um Guia Passo a\nPasso para Construir um RAG Agentico em\n2026\nAlém do RAG Ingênuo: Um Guia Passo a Passo para\nConstruir um RAG Agente em 2026\n6 minutos de leitura\n2 dias atrás\nA Geração Aumentada por Recuperação (RAG, na sigla em inglês) tornou-se o padrão de fato\npara fundamentar Grandes Modelos de Linguagem (LLMs, na sigla em inglês) na realidade. Ela\nresolve o problema da alucinação e mantém os dados atualizados. Mas se você tentou migrar\nde um chatbot simples de fim de semana para um agente independente e complexo de nível\nde produção, provavelmente se deparou com dois grandes obstáculos: latência e custo .\nEnviar um manual de 100 páginas para uma janela de contexto a cada consulta do usuário não\né apenas ineficiente; No início de 2026, ainda seria financeiramente insustentável para\naplicativos com alto tráfego. Além disso, um simples loop de “recuperar e gerar” quase\nsempre falha quando confrontado com tarefas de raciocínio em várias etapas.\nA era do \"RAG Ingênuo\" é uma relíquia de 2024. Neste guia, vamos mergulhar nas soluções\nmodernas. Exploraremos como o Context Caching amadureceu para revolucionar a economia\ndo LLM, mostraremos exatamente como implementar RAGs Agentes e Adaptativos em\nPython e veremos como os Hyperbolic Embeddings finalmente saíram do laboratório e\nentraram em produção.\n1. Uma solução para economizar dinheiro: Cache de\ncontexto e de prompts\nSe você estiver criando um aplicativo com um contexto de documento extenso ou exemplos\ndetalhados e esporádicos que recentemente mudaram, você gastará dinheiro recalculando os\nmesmos tokens repetidamente.\nA mecânica: tudo está sem cache KV.\nA inferência LLM ocorre em duas etapas:\n1. Preenchimento automático: O modelo processa sua entrada e calcula vetores de chave-\nvalor (KV). Isso exige alto poder computacional.\n2. Decodificação: O modelo gera tokens de saída um por um.\nO cache de contexto salva esses estados de preenchimento intermediários. Quando uma nova\nsolicitação corresponde a um prefixo em cache, o modelo ignora o cálculo complexo.\nO cenário de 2026\nO armazenamento em cache deixou de ser um recurso beta e agora está integrado\nnativamente em todos os principais provedores. A otimização desse recurso pode levar a uma\nredução de custos de até 90% e uma latência drasticamente menor.\nGoogle Gemini: Oferece recursos de cache implícito e explícito, com um desconto\naproximado de 75% em tokens armazenados em cache e um tempo de vida (TTL) padrão\naltamente personalizável de 1 hora.\nClaude Antrópico: Utiliza cache explícito, tornando as leituras 90% mais baratas com um\nTTL de 5 minutos que é atualizado a cada acesso.\nOpenAI: Utiliza cache automático, oferecendo um desconto de cerca de 50% com um\nTTL dinâmico de 5 a 15 minutos, com base na carga.\nDev Note: Be aware of “side-channel” risks. Because cached prompts return faster, an\nattacker could theoretically time responses to guess what data is in your cache. Ensure your\nMLOps architecture securely separates user contexts.\n2. The Brain: Agentic RAG Explained and Implemented\nStandard RAG is strictly reactive: Query → Lookup → Answer. Agentic RAG is proactive:\nQuery → Plan → Tool Use → Reflect → Answer.\nIn an agentic workflow, the LLM isn’t just a text generator; it’s a router, a planner, and a\nreasoner. It can decide to query a vector DB, rewrite a bad user query, or trigger an external\nAPI.\nHow to Build an Agentic Workflow\nLet’s look at how to actually implement this using modern LlamaIndex concepts. Instead of a\ngeneric example, let’s build a multi-agent MLOps workflow where a top-level agent routes\nqueries to either an infrastructure monitoring tool or a log retrieval tool.\nPython\nimport asyncio\nfrom llama_index.core.agent import FunctionAgent, AgentWorkflow\nfrom llama_index.core.tools import FunctionTool\nfrom llama_index.llms.openai import OpenAI\n# 1. Define your specific tools (Python functions wrapped as tools)\ndef check_triton_latency(model_name: str) -> float:\n    \"\"\"Checks the current inference latency on the Triton Inference Server.\"\"\"\n    # Simulated API call to Triton\n    return 45.2 # milliseconds\ndef retrieve_kubeflow_logs(pipeline_id: str) -> str:\n    \"\"\"Retrieves execution logs from a specific Kubeflow pipeline.\"\"\"\n    # Simulated log retrieval\n    return \"Kubeflow pipeline failed at step 'data_validation': NaN values \ndetected.\"\ntriton_tool = FunctionTool.from_defaults(fn=check_triton_latency)\nkubeflow_tool = FunctionTool.from_defaults(fn=retrieve_kubeflow_logs)\n# 2. Initialize the LLM (acting as the brain)\nllm = OpenAI(model=\"gpt-4o\")\n# 3. Define the specialized agents\ninfra_agent = FunctionAgent(\n    name=\"infra_monitor\",\n    description=\"Monitors server latency and infrastructure health.\",\n    system_prompt=\"You are an MLOps infrastructure monitor. Check server \nlatencies accurately.\",\n    tools=[triton_tool],\n    llm=llm,\n)\nlog_agent = FunctionAgent(\n    name=\"log_retriever\",\n    description=\"Manages log retrieval for machine learning pipelines.\",\n    system_prompt=\"You are a debugging assistant. Look up pipeline execution \nlogs.\",\n    tools=[kubeflow_tool],\n    llm=llm,\n)\n# 4. Create the Agent Workflow\n# The workflow manages the hand-offs between these specialized agents\nworkflow = AgentWorkflow(\n    agents=[infra_agent, log_agent],\n    root_agent=\"log_retriever\" # The entry point for user queries\n)\n# 5. Execute the workflow\nasync def run_agent():\n    query = \"Why did my pipeline 'run_88' fail, and is the Triton server for \n'model_v2' currently overloaded?\"\n    response = await workflow.run(user_msg=query)\n    print(str(response))\n# asyncio.run(run_agent())\nWhy this is powerful: The root agent realizes it needs to answer a two-part question\nspanning entirely different systems. It queries the Kubeflow logs via the log_agent, hands off\nthe infrastructure check to the infra_agent to ping Triton, and synthesizes a complete\ndiagnostic response.\n3. Adaptive RAG: Dynamic Strategy Selection\nNot every query needs a multi-agent loop. Adaptive RAG uses a lightweight “classifier” model\nat the start of the pipeline to route the query to the cheapest, most effective path:\nSimple? → Direct LLM answer.\nSpecific? → Vector Store Retrieval.\nComplex? → Multi-step Agentic Workflow.\nImplementing a Router with LangChain\nUsing structured outputs, you can build a highly accurate conditional router in just a few lines\nof code:\nPython\nfrom typing import Literal\nfrom langchain_core.prompts import ChatPromptTemplate\nfrom langchain_openai import ChatOpenAI\nfrom pydantic import BaseModel\n# 1. Define the routing schema\nclass RouteQuery(BaseModel):\n    \"\"\"Route a user query to the most relevant datasource.\"\"\"\n    datasource: Literal[\"vectorstore\", \"web_search\", \"direct_answer\"]\n# 2. Force the LLM to output ONLY our predefined categories\nllm = ChatOpenAI(model=\"gpt-4o-mini\") # Fast, cheap model for routing\nstructured_llm_router = llm.with_structured_output(RouteQuery)\n# 3. Create the routing logic\nsystem = \"\"\"You are an expert at routing queries.\n- Use 'vectorstore' for specific documentation or internal knowledge.\n- Use 'web_search' for questions requiring recent news or real-time data.\n- Use 'direct_answer' for simple facts or conversational greetings.\"\"\"\nroute_prompt = ChatPromptTemplate.from_messages([\n    (\"system\", system), \n    (\"human\", \"{question}\")\n])\nquestion_router = route_prompt | structured_llm_router\n# 4. Test the router\nresult = question_router.invoke({\"question\": \"What is the latest published \nresearch on Kolmogorov-Arnold Networks?\"})\nprint(result.datasource) \n# Output: web_search\nBy early 2026 standards, Adaptive RAG is mandatory for cost control. It achieves significant\nsavings by reserving heavy compute strictly for complex tasks.\n4. The Frontier: Hypernyms and Hyperbolic Embeddings\nOnce you master agents and routing, the next bottleneck is semantic retrieval.\nMost traditional embeddings exist in Euclidean space (flat geometry). This is great for\nmeasuring simple distance, but human language and complex datasets are hierarchical:\nAlgorithm is a hypernym of Machine Learning.\nMachine Learning is a hypernym of Deep Learning.\nDeep Learning is a hypernym of Vision-Language Models.\nThe Problem with “Flat” Embeddings\nIn flat space, representing expanding parent-child relationships without distorting distances is\nnearly impossible. “Vision-Language Models” might end up just as far from “Deep Learning” as\n“Database” is, losing the nuance of the taxonomy.\nThe Solution: Hyperbolic Geometry\nAs of 2026, research into models utilizing hyperbolic space (think of a saddle shape or a\nPoincaré disk) is finally making its way into specialized vector databases. In hyperbolic space,\nthe amount of “room” increases exponentially as you move away from the center, naturally\nmirroring tree-like data structures.\nWhy this matters for your RAG system:\nBetter Retrieval: A query for broad concepts can perfectly match specific niche sub-\nfields even without shared keywords, because the model inherently understands the\ncategorical hierarchy.\nTaxonomy: It enables “mixed-hop prediction,” allowing the system to understand\nrelationships across vastly different levels of abstraction.\nThis represents the next massive leap in semantic understanding for deep tech applications.\nKeep an eye on vector stores rolling out native hyperbolic support this year.\nSummary\nPara criar aplicações de IA de nível de produção em 2026, é preciso otimizar tanto a máquina\nquanto a lógica:\nOtimize o poder computacional: utilize o cache de contexto para reduzir drasticamente\nos custos com solicitações repetitivas e contextos massivos.\nOtimize a lógica: implemente fluxos de trabalho Agentic para raciocínio complexo e\nRAG adaptativo para rotear consultas de forma inteligente. Não use um canhão para\nmatar uma mosca.\nFique de olho no horizonte: adote incorporações hiperbólicas à medida que seus\ndados se tornam mais estruturados e hierárquicos.\nO futuro da IA   não se resume a modelos maiores; trata-se de arquiteturas mais inteligentes\nque recuperam menos dados, mas compreendem exponencialmente mais.",
+        "facts": {
+          "article_title": "Além do RAG Ingênuo_ Um Guia Passo a Passo para Construir um RAG Agente em 2026 _ por VS Krishnan _ Março de 2026 _ Medium.pdf",
+          "primary_theme": "",
+          "secondary_themes": []
+        },
+        "confidence": 1.0
+      }
+    ],
+    "contradictions": [],
+    "missing_information": []
+  },
+  "rule_evaluation": {
+    "missing_items": [],
+    "contradictions": [],
+    "financial_impact_detected": false,
+    "requires_human_review": false,
+    "results": []
+  },
+  "retrieved": [
+    {
+      "chunk_id": "6901b29f-39ed-5190-b448-b02bfd7c3924",
+      "doc_id": "95fa1b06881b4137",
+      "title": "Além do RAG Ingênuo_ Um Guia Passo a Passo para Construir um RAG Agente em 2026 _ por VS Krishnan _ Março de 2026 _ Medium.pdf",
+      "chunk_index": 0,
+      "content": "[local_context] Passo para Construir um RAG Agentico em\n[global_context] section=Além do RAG Ingênuo: Um Guia Passo a | page=1\nPasso para Construir um RAG Agentico em\n2026\nAlém do RAG Ingênuo: Um Guia Passo a Passo para\nConstruir um RAG Agente em 2026\n6 minutos de leitura\n2 dias atrás\nA Geração Aumentada por Recuperação (RAG, na sigla em inglês) tornou-se o padrão de fato\npara fundamentar Grandes Modelos de Linguagem (LLMs, na sigla em inglês) na realidade. Ela\nresolve o problema da alucinação e mantém os dados atualizados. Mas se você tentou migrar\nde um chatbot simples de fim de semana para um agente independente e complexo de nível\nde produção, provavelmente se deparou com dois grandes obstáculos: latência e custo .",
+      "topics": [
+        "passo",
+        "construir",
+        "context",
+        "agentico",
+        "além",
+        "ingênuo",
+        "guia",
+        "agente"
+      ],
+      "entities": [
+        "Um Guia Passo",
+        "Grandes Modelos",
+        "LLMs"
+      ],
+      "score": 42.8298,
+      "collection": "articles",
+      "tenant_id": null,
+      "source_tags": [],
+      "source_path": "C:\\Users\\mengl\\AppData\\Local\\Temp\\ragflow_article_md4toypy\\Além do RAG Ingênuo_ Um Guia Passo a Passo para Construir um RAG Agente em 2026 _ por VS Krishnan _ Março de 2026 _ Medium.pdf",
+      "canonical_title": "alem do rag ingenuo",
+      "published_at": "2026-03-01",
+      "published_year": 2026,
+      "version_label": null,
+      "chunk_kind": "table",
+      "page_number": 1,
+      "section_title": "Além do RAG Ingênuo: Um Guia Passo a",
+      "page_span": "1",
+      "table_title": null,
+      "figure_caption": null,
+      "local_context": "Passo para Construir um RAG Agentico em",
+      "global_context": "section=Além do RAG Ingênuo: Um Guia Passo a | page=1",
+      "retrieval_mode": "vector-global",
+      "graph_usefulness": {
+        "mode": "vector-global",
+        "score": 0.35,
+        "rationale": "query is broad or single-hop, so hybrid vector search is cheaper and safer",
+        "signals": [
+          "2 named entities in query"
+        ]
+      },
+      "evidence_paths": []
+    },
+    {
+      "chunk_id": "a97707df-7f98-59fa-ba83-de3d0fa0d8fa",
+      "doc_id": "95fa1b06881b4137",
+      "title": "Além do RAG Ingênuo_ Um Guia Passo a Passo para Construir um RAG Agente em 2026 _ por VS Krishnan _ Março de 2026 _ Medium.pdf",
+      "chunk_index": 3,
+      "content": "[local_context] Passo para Construir um RAG Agentico em\n[global_context] section=Além do RAG Ingênuo: Um Guia Passo a | page=1\nPasso para Construir um RAG Agentico em\n2. Decodificação: O modelo gera tokens de saída um por um.\nO cache de contexto salva esses estados de preenchimento intermediários. Quando uma nova\nsolicitação corresponde a um prefixo em cache, o modelo ignora o cálculo complexo.\nO cenário de 2026\nO armazenamento em cache deixou de ser um recurso beta e agora está integrado\nnativamente em todos os principais provedores. A otimização desse recurso pode levar a uma\nredução de custos de até 90% e uma latência drasticamente menor.\nGoogle Gemini: Oferece recursos de cache implícito e explícito, com um desconto",
+      "topics": [
+        "cache",
+        "passo",
+        "context",
+        "construir",
+        "agentico",
+        "modelo",
+        "recurso",
+        "local"
+      ],
+      "entities": [
+        "Google Gemini",
+        "Um Guia Passo"
+      ],
+      "score": 32.2345,
+      "collection": "articles",
+      "tenant_id": null,
+      "source_tags": [],
+      "source_path": "C:\\Users\\mengl\\AppData\\Local\\Temp\\ragflow_article_md4toypy\\Além do RAG Ingênuo_ Um Guia Passo a Passo para Construir um RAG Agente em 2026 _ por VS Krishnan _ Março de 2026 _ Medium.pdf",
+      "canonical_title": "alem do rag ingenuo",
+      "published_at": "2026-03-01",
+      "published_year": 2026,
+      "version_label": null,
+      "chunk_kind": "table",
+      "page_number": 1,
+      "section_title": "Além do RAG Ingênuo: Um Guia Passo a",
+      "page_span": "1",
+      "table_title": null,
+      "figure_caption": null,
+      "local_context": "Passo para Construir um RAG Agentico em",
+      "global_context": "section=Além do RAG Ingênuo: Um Guia Passo a | page=1",
+      "retrieval_mode": "vector-global",
+      "graph_usefulness": {
+        "mode": "vector-global",
+        "score": 0.35,
+        "rationale": "query is broad or single-hop, so hybrid vector search is cheaper and safer",
+        "signals": [
+          "2 named entities in query"
+        ]
+      },
+      "evidence_paths": []
+    },
+    {
+      "chunk_id": "45eb2476-268f-5920-9ce2-46ba4988051e",
+      "doc_id": "95fa1b06881b4137",
+      "title": "Além do RAG Ingênuo_ Um Guia Passo a Passo para Construir um RAG Agente em 2026 _ por VS Krishnan _ Março de 2026 _ Medium.pdf",
+      "chunk_index": 1,
+      "content": "[local_context] Passo para Construir um RAG Agentico em\n[global_context] section=Além do RAG Ingênuo: Um Guia Passo a | page=1\nPasso para Construir um RAG Agentico em\nEnviar um manual de 100 páginas para uma janela de contexto a cada consulta do usuário não\né apenas ineficiente; No início de 2026, ainda seria financeiramente insustentável para\naplicativos com alto tráfego. Além disso, um simples loop de “recuperar e gerar” quase\nsempre falha quando confrontado com tarefas de raciocínio em várias etapas.\nA era do \"RAG Ingênuo\" é uma relíquia de 2024. Neste guia, vamos mergulhar nas soluções\nmodernas. Exploraremos como o Context Caching amadureceu para revolucionar a economia\ndo LLM, mostraremos exatamente como implementar RAGs Agentes e Adaptativos em",
+      "topics": [
+        "context",
+        "passo",
+        "construir",
+        "agentico",
+        "além",
+        "ingênuo",
+        "guia",
+        "como"
+      ],
+      "entities": [
+        "Context Caching",
+        "Um Guia Passo",
+        "RAGs Agentes"
+      ],
+      "score": 30.7674,
+      "collection": "articles",
+      "tenant_id": null,
+      "source_tags": [],
+      "source_path": "C:\\Users\\mengl\\AppData\\Local\\Temp\\ragflow_article_md4toypy\\Além do RAG Ingênuo_ Um Guia Passo a Passo para Construir um RAG Agente em 2026 _ por VS Krishnan _ Março de 2026 _ Medium.pdf",
+      "canonical_title": "alem do rag ingenuo",
+      "published_at": "2026-03-01",
+      "published_year": 2026,
+      "version_label": null,
+      "chunk_kind": "table",
+      "page_number": 1,
+      "section_title": "Além do RAG Ingênuo: Um Guia Passo a",
+      "page_span": "1",
+      "table_title": null,
+      "figure_caption": null,
+      "local_context": "Passo para Construir um RAG Agentico em",
+      "global_context": "section=Além do RAG Ingênuo: Um Guia Passo a | page=1",
+      "retrieval_mode": "vector-global",
+      "graph_usefulness": {
+        "mode": "vector-global",
+        "score": 0.35,
+        "rationale": "query is broad or single-hop, so hybrid vector search is cheaper and safer",
+        "signals": [
+          "2 named entities in query"
+        ]
+      },
+      "evidence_paths": []
+    },
+    {
+      "chunk_id": "52d3c2a1-d40d-5085-8a6b-8528cbaacaa6",
+      "doc_id": "95fa1b06881b4137",
+      "title": "Além do RAG Ingênuo_ Um Guia Passo a Passo para Construir um RAG Agente em 2026 _ por VS Krishnan _ Março de 2026 _ Medium.pdf",
+      "chunk_index": 15,
+      "content": "[local_context] Passo para Construir um RAG Agentico em\n[global_context] section=Além do RAG Ingênuo: Um Guia Passo a | page=1\nPasso para Construir um RAG Agentico em\nThis represents the next massive leap in semantic understanding for deep tech applications.\nKeep an eye on vector stores rolling out native hyperbolic support this year.\nSummary\nPara criar aplicações de IA de nível de produção em 2026, é preciso otimizar tanto a máquina\nquanto a lógica:\nOtimize o poder computacional: utilize o cache de contexto para reduzir drasticamente\nos custos com solicitações repetitivas e contextos massivos.\nOtimize a lógica: implemente fluxos de trabalho Agentic para raciocínio complexo e\nRAG adaptativo para rotear consultas de forma inteligente. Não use um canhão para\nmatar uma mosca.",
+      "topics": [
+        "passo",
+        "context",
+        "construir",
+        "agentico",
+        "lógica",
+        "otimize",
+        "local",
+        "global"
+      ],
+      "entities": [
+        "Um Guia Passo",
+        "Summary Para"
+      ],
+      "score": 28.753,
+      "collection": "articles",
+      "tenant_id": null,
+      "source_tags": [],
+      "source_path": "C:\\Users\\mengl\\AppData\\Local\\Temp\\ragflow_article_md4toypy\\Além do RAG Ingênuo_ Um Guia Passo a Passo para Construir um RAG Agente em 2026 _ por VS Krishnan _ Março de 2026 _ Medium.pdf",
+      "canonical_title": "alem do rag ingenuo",
+      "published_at": "2026-03-01",
+      "published_year": 2026,
+      "version_label": null,
+      "chunk_kind": "table",
+      "page_number": 1,
+      "section_title": "Além do RAG Ingênuo: Um Guia Passo a",
+      "page_span": "1",
+      "table_title": null,
+      "figure_caption": null,
+      "local_context": "Passo para Construir um RAG Agentico em",
+      "global_context": "section=Além do RAG Ingênuo: Um Guia Passo a | page=1",
+      "retrieval_mode": "vector-global",
+      "graph_usefulness": {
+        "mode": "vector-global",
+        "score": 0.35,
+        "rationale": "query is broad or single-hop, so hybrid vector search is cheaper and safer",
+        "signals": [
+          "2 named entities in query"
+        ]
+      },
+      "evidence_paths": []
+    },
+    {
+      "chunk_id": "08e01650-530e-535e-adc3-29e3a9c8b38a",
+      "doc_id": "95fa1b06881b4137",
+      "title": "Além do RAG Ingênuo_ Um Guia Passo a Passo para Construir um RAG Agente em 2026 _ por VS Krishnan _ Março de 2026 _ Medium.pdf",
+      "chunk_index": 4,
+      "content": "[local_context] Passo para Construir um RAG Agentico em\n[global_context] section=Além do RAG Ingênuo: Um Guia Passo a | page=1\nPasso para Construir um RAG Agentico em\naproximado de 75% em tokens armazenados em cache e um tempo de vida (TTL) padrão\naltamente personalizável de 1 hora.\nClaude Antrópico: Utiliza cache explícito, tornando as leituras 90% mais baratas com um\nTTL de 5 minutos que é atualizado a cada acesso.\nOpenAI: Utiliza cache automático, oferecendo um desconto de cerca de 50% com um\nTTL dinâmico de 5 a 15 minutos, com base na carga.\nDev Note: Be aware of “side-channel” risks. Because cached prompts return faster, an\nattacker could theoretically time responses to guess what data is in your cache. Ensure your\nMLOps architecture securely separates user contexts.",
+      "topics": [
+        "cache",
+        "passo",
+        "context",
+        "construir",
+        "agentico",
+        "utiliza",
+        "minutos",
+        "your"
+      ],
+      "entities": [
+        "TTL",
+        "Um Guia Passo",
+        "Dev Note",
+        "OpenAI",
+        "MLOps"
+      ],
+      "score": 25.2186,
+      "collection": "articles",
+      "tenant_id": null,
+      "source_tags": [],
+      "source_path": "C:\\Users\\mengl\\AppData\\Local\\Temp\\ragflow_article_md4toypy\\Além do RAG Ingênuo_ Um Guia Passo a Passo para Construir um RAG Agente em 2026 _ por VS Krishnan _ Março de 2026 _ Medium.pdf",
+      "canonical_title": "alem do rag ingenuo",
+      "published_at": "2026-03-01",
+      "published_year": 2026,
+      "version_label": null,
+      "chunk_kind": "table",
+      "page_number": 1,
+      "section_title": "Além do RAG Ingênuo: Um Guia Passo a",
+      "page_span": "1",
+      "table_title": null,
+      "figure_caption": null,
+      "local_context": "Passo para Construir um RAG Agentico em",
+      "global_context": "section=Além do RAG Ingênuo: Um Guia Passo a | page=1",
+      "retrieval_mode": "vector-global",
+      "graph_usefulness": {
+        "mode": "vector-global",
+        "score": 0.35,
+        "rationale": "query is broad or single-hop, so hybrid vector search is cheaper and safer",
+        "signals": [
+          "2 named entities in query"
+        ]
+      },
+      "evidence_paths": []
+    }
+  ],
+  "distilled": {
+    "key_facts": [],
+    "preserved_quotes": [],
+    "evidence": []
+  },
+  "decision": {
+    "issue_key": "ARTICLE-95FA1B",
+    "classification": "article_analysis",
+    "is_bug": false,
+    "is_complete": true,
+    "ready_for_dev": true,
+    "confidence": 1.0,
+    "missing_items": [],
+    "evidence_used": [
+      "6901b29f-39ed-5190-b448-b02bfd7c3924",
+      "a97707df-7f98-59fa-ba83-de3d0fa0d8fa",
+      "45eb2476-268f-5920-9ce2-46ba4988051e",
+      "52d3c2a1-d40d-5085-8a6b-8528cbaacaa6",
+      "08e01650-530e-535e-adc3-29e3a9c8b38a"
+    ],
+    "contradictions": [],
+    "financial_impact_detected": false,
+    "requires_human_review": false,
+    "rationale": "**Resumo Executivo**\n\nO artigo \"Além do RAG Ingênuo: Um Guia Passo a Passo para Construir um RAG Agente em 2026\" apresenta uma visão geral de como criar aplicativos de IA de nível de produção no ano de 2026. Os autores enfatizam a importância de otimizar tanto a máquina quanto a lógica para alcançar desempenho e eficiência.\n\n**Ideias Centrais**\n\n* O armazenamento em cache é crucial para reduzir custos e latência;\n* A implementação de RAG Agente com contexto e adaptativos melhora significativamente o desempenho;\n* O uso de Hyperbolic Embeddings revoluciona a recuperação semântica;\n\n**Riscos ou Pontos Fracos Identificados**\n\n* Risco de \"side-channel\" (risco de uma suposta ataques baseado em canais separados);\n* Otimização da lógica pode ser complexa e requer conhecimento específico;\n* A implantação de Hyperbolic Embeddings pode exigir grande quantidade de dados.\n\n**Recomendações Práticas e Próximos Passos**\n\n1. **Otimizar o poder computacional**: Use caches para reduzir drasticamente os custos com solicitações repetitivas.\n2. **Implementar RAG Agente**: Peça ajuda ao contexto e aos modelos adaptativos;\n3. **Adotar Hyperbolic Embeddings**: Assista à melhoria no modelo enquanto a implementação avança.\n4. **Fique de olho no horizonte**: mantenha-se atualizado sobre as novidades na área e implante elas quando possível.\n\nEssas são apenas algumas das ideias centrais do artigo, mas espero ter fornecido os detalhes necessários para resumi-lo corretamente!",
+    "provider": "ollama",
+    "model": "llama3.1:latest"
+  },
+  "prompt_execution": {
+    "prompt_name": "article_analysis",
+    "mode": "text",
+    "provider": "ollama",
+    "model": "llama3.1:latest",
+    "output_text": "**Resumo Executivo**\n\nO artigo \"Além do RAG Ingênuo: Um Guia Passo a Passo para Construir um RAG Agente em 2026\" apresenta uma visão geral de como criar aplicativos de IA de nível de produção no ano de 2026. Os autores enfatizam a importância de otimizar tanto a máquina quanto a lógica para alcançar desempenho e eficiência.\n\n**Ideias Centrais**\n\n* O armazenamento em cache é crucial para reduzir custos e latência;\n* A implementação de RAG Agente com contexto e adaptativos melhora significativamente o desempenho;\n* O uso de Hyperbolic Embeddings revoluciona a recuperação semântica;\n\n**Riscos ou Pontos Fracos Identificados**\n\n* Risco de \"side-channel\" (risco de uma suposta ataques baseado em canais separados);\n* Otimização da lógica pode ser complexa e requer conhecimento específico;\n* A implantação de Hyperbolic Embeddings pode exigir grande quantidade de dados.\n\n**Recomendações Práticas e Próximos Passos**\n\n1. **Otimizar o poder computacional**: Use caches para reduzir drasticamente os custos com solicitações repetitivas.\n2. **Implementar RAG Agente**: Peça ajuda ao contexto e aos modelos adaptativos;\n3. **Adotar Hyperbolic Embeddings**: Assista à melhoria no modelo enquanto a implementação avança.\n4. **Fique de olho no horizonte**: mantenha-se atualizado sobre as novidades na área e implante elas quando possível.\n\nEssas são apenas algumas das ideias centrais do artigo, mas espero ter fornecido os detalhes necessários para resumi-lo corretamente!"
+  },
+  "article_run": {
+    "title": "Além do RAG Ingênuo_ Um Guia Passo a Passo para Construir um RAG Agente em 2026 _ por VS Krishnan _ Março de 2026 _ Medium.pdf",
+    "source": "C:\\Users\\mengl\\AppData\\Local\\Temp\\ragflow_article_md4toypy\\Além do RAG Ingênuo_ Um Guia Passo a Passo para Construir um RAG Agente em 2026 _ por VS Krishnan _ Março de 2026 _ Medium.pdf",
+    "prompt_name": "article_analysis",
+    "search_query": "Além do RAG Ingênuo_ Um Guia Passo a Passo para Construir um RAG Agente em 2026 _ por VS Krishnan _ Março de 2026 _ Medium.pdf",
+    "collection": "articles",
+    "retrieval_policy": "auto",
+    "tenant_id": null,
+    "source_tags": [],
+    "source_contains": null,
+    "exact_match_required": false,
+    "enable_corrective_rag": true,
+    "prompt_chunk_ids": [
+      "6901b29f-39ed-5190-b448-b02bfd7c3924",
+      "a97707df-7f98-59fa-ba83-de3d0fa0d8fa",
+      "45eb2476-268f-5920-9ce2-46ba4988051e",
+      "52d3c2a1-d40d-5085-8a6b-8528cbaacaa6",
+      "08e01650-530e-535e-adc3-29e3a9c8b38a"
+    ],
+    "top_k": 5,
+    "related_doc_id": null,
+    "related_limit": 5,
+    "use_small_model_distillation": false,
+    "metadata": {
+      "source": "C:\\Users\\mengl\\AppData\\Local\\Temp\\ragflow_article_md4toypy\\Além do RAG Ingênuo_ Um Guia Passo a Passo para Construir um RAG Agente em 2026 _ por VS Krishnan _ Março de 2026 _ Medium.pdf",
+      "source_files": [
+        "Além do RAG Ingênuo_ Um Guia Passo a Passo para Construir um RAG Agente em 2026 _ por VS Krishnan _ Março de 2026 _ Medium.pdf"
+      ]
+    },
+    "content_excerpt": "[[PAGE_BREAK:1]]\nAlém do RAG Ingênuo: Um Guia Passo a\nPasso para Construir um RAG Agentico em\n2026\nAlém do RAG Ingênuo: Um Guia Passo a Passo para\nConstruir um RAG Agente em 2026\n6 minutos de leitura\n2 dias atrás\nA Geração Aumentada por Recuperação (RAG, na sigla em inglês) tornou-se o padrão de fato\npara fundamentar Grandes Modelos de Linguagem (LLMs, na sigla em inglês) na realidade. Ela\nresolve o problema da alucinação e mantém os dados atualizados. Mas se você tentou migrar\nde um chatbot simples de fim de semana para um agente independente e complexo de nível\nde produção, provavelmente se deparou com dois grandes obstáculos: latência e custo .\nEnviar um manual de 100 páginas para uma janela de contexto a cada consulta do usuário não\né apenas ineficiente; No início de 2026, ainda seria financeiramente insustentável para\naplicativos com alto tráfego. Além disso, um simples loop de “recuperar e gerar” quase\nsempre falha quando confrontado com tarefas de raciocínio em várias etapas.\nA era do \"RAG Ingênuo\" é uma relíquia de 2024. Neste guia, vamos mergulhar nas soluções\nmodernas. Exploraremos como o Context Caching amadureceu para revolucionar a economia\ndo LLM, mostraremos exatamente como implementar RAGs Agentes e Adaptativos em\nPython e veremos como os Hyperbolic Embeddings finalmente saíram do laboratório e\nentraram em produção.\n1. Uma solução para economizar dinheiro: Cache de\ncontexto e de prompts\nSe você estiver criando um aplicativo com um contexto de documento extenso ou exemplos\ndetalhados e esporádicos que recentemente mudaram, você gastará dinheiro recalculando os\nmesmos tokens repetidamente.\nA mecânica: tudo está sem cache KV.\nA inferência LLM ocorre em duas etapas:\n1. Preenchimento automático: O modelo processa sua entrada e calcula vetores de chave-\nvalor (KV). Isso exige alto poder computacional.\n2. Decodificação: O modelo gera tokens de saída um por um.\nO cache de contexto salva esses estados de preenchimento intermediários. Quando uma nova\nsolicitação corresponde a um prefixo em cache, o modelo ignora o cálculo complexo.\nO cenário de 2026\nO armazenamento em cache deixou de ser um recurso beta e agora está integrado\nnativamente em todos os principais provedores. A otimização desse recurso pode levar a uma\nredução de custos de até 90% e uma latência drasticamente menor.\nGoogle Gemini: Oferece recursos de cache implícito e explícito, com um desconto\naproximado de 75% em tokens armazenados em cache e um tempo de vida (TTL) padrão\naltamente personalizável de 1 hora.\nClaude Antrópico: Utiliza cache explícito, tornando as leituras 90% mais baratas com um\nTTL de 5 minutos que é atualizado a cada acesso.\nOpenAI: Utiliza cache automático, oferecendo um desconto de cerca de 50% com um\nTTL dinâmico de 5 a 15 minutos, com base na carga.\nDev Note: Be aware of “side-channel” risks. Because cached prompts return faster, an\nattacker could theoretically time responses to guess what data is in your cache. Ensure your\nMLOps architecture securely separates user contexts.\n2. The Brain: Agentic RAG Explained and Implemented\nStandard RAG is strictly reactive: Query → Lookup → Answer. Agentic RAG is proactive:\nQuery → Plan → Tool Use → Reflect → Answer.\nIn an agentic workflow, the LLM isn’t just a text generator; it’s a router, a planner, and a\nreasoner. It can decide to query a vector DB, rewrite a bad user query, or trigger an external\nAPI.\nHow to Build an Agentic Workflow\nLet’s look at how to actually implement this using modern LlamaIndex concepts. Instead of a\ngeneric example, let’s build a multi-agent MLOps workflow where a top-level agent routes\nqueries to either an infrastructure monitoring tool or a log retrieval tool.\nPython\nimport asyncio\nfrom llama_index.core.agent import FunctionAgent, AgentWorkflow\nfrom llama_index.core.tools import FunctionTool\nfrom llama_index.llms.openai import OpenAI\n# 1. Define your specific tools (Python functions wrapped as tools)\ndef check_triton_latency(model_name: str) -> float:\n    \"\"\"Checks t",
+    "output_text": "**Resumo Executivo**\n\nO artigo \"Além do RAG Ingênuo: Um Guia Passo a Passo para Construir um RAG Agente em 2026\" apresenta uma visão geral de como criar aplicativos de IA de nível de produção no ano de 2026. Os autores enfatizam a importância de otimizar tanto a máquina quanto a lógica para alcançar desempenho e eficiência.\n\n**Ideias Centrais**\n\n* O armazenamento em cache é crucial para reduzir custos e latência;\n* A implementação de RAG Agente com contexto e adaptativos melhora significativamente o desempenho;\n* O uso de Hyperbolic Embeddings revoluciona a recuperação semântica;\n\n**Riscos ou Pontos Fracos Identificados**\n\n* Risco de \"side-channel\" (risco de uma suposta ataques baseado em canais separados);\n* Otimização da lógica pode ser complexa e requer conhecimento específico;\n* A implantação de Hyperbolic Embeddings pode exigir grande quantidade de dados.\n\n**Recomendações Práticas e Próximos Passos**\n\n1. **Otimizar o poder computacional**: Use caches para reduzir drasticamente os custos com solicitações repetitivas.\n2. **Implementar RAG Agente**: Peça ajuda ao contexto e aos modelos adaptativos;\n3. **Adotar Hyperbolic Embeddings**: Assista à melhoria no modelo enquanto a implementação avança.\n4. **Fique de olho no horizonte**: mantenha-se atualizado sobre as novidades na área e implante elas quando possível.\n\nEssas são apenas algumas das ideias centrais do artigo, mas espero ter fornecido os detalhes necessários para resumi-lo corretamente!",
+    "warnings": [],
+    "related_articles": [],
+    "graph_assessment": {
+      "mode": "vector-global",
+      "score": 0.35,
+      "rationale": "query is broad or single-hop, so hybrid vector search is cheaper and safer",
+      "signals": [
+        "2 named entities in query"
+      ]
+    },
+    "distillation": null,
+    "benchmark": null
+  },
+  "runtime": {
+    "flow_mode": "article-analysis",
+    "execution_path": "run-upload",
+    "configured_provider": "ollama",
+    "configured_llm_model": "llama3.1:latest",
+    "embedding_model": "text-embedding-3-large",
+    "retrieval": {
+      "external": true,
+      "graphrag": false,
+      "cascade": false
+    },
+    "agentic": {
+      "planner": false,
+      "query_rewriter": false,
+      "reflection_memory": false,
+      "policy_loop": false,
+      "temporal_graphrag": false
+    },
+    "reranker": false,
+    "distiller": "simple",
+    "planner_mode": "step-plan",
+    "query_rewriter_mode": "metadata-aware",
+    "reflection_mode": "summary-log",
+    "policy_mode": "rule-gated",
+    "temporal_graphrag_mode": "versioned-graph",
+    "confidentiality": true,
+    "langgraph": false,
+    "monkeyocr": false,
+    "dspy_active": false,
+    "ragas_active": false,
+    "supported_runtime_nodes": [
+      "article-upload",
+      "prompt-catalog",
+      "article-search",
+      "qdrant"
+    ],
+    "ignored_nodes": [],
+    "warnings": [],
+    "timings_ms": {
+      "search": 103.86,
+      "prompt": 19930.24,
+      "total": 20034.54
+    },
+    "retrieval_diagnostics": {
+      "query_text": "Além do RAG Ingênuo_ Um Guia Passo a Passo para Construir um RAG Agente em 2026 _ por VS Krishnan _ Março de 2026 _ Medium.pdf",
+      "requested_policy": "auto",
+      "resolved_modes": [
+        "vector-global"
+      ],
+      "search_hits": 5,
+      "top_score": 42.8298,
+      "query_coverage": 0.875,
+      "quality_proxies": {
+        "avg_score": 31.9607,
+        "precision_proxy": 1.0,
+        "recall_proxy": 0.875,
+        "faithfulness_proxy": 1.0
+      },
+      "chunk_kind_distribution": {
+        "table": 5
+      },
+      "page_coverage": [
+        1
+      ],
+      "exact_page_hits": 0,
+      "corrective_hits": 0,
+      "graph_path_count": 0,
+      "multimodal_hits": 5,
+      "human_review_recommended": false,
+      "graph_assessment": {
+        "mode": "vector-global",
+        "score": 0.35,
+        "rationale": "query is broad or single-hop, so hybrid vector search is cheaper and safer",
+        "signals": [
+          "2 named entities in query"
+        ]
+      }
+    },
+    "prompt_diagnostics": {
+      "provider": "ollama",
+      "model": "llama3.1:latest",
+      "prompt_name": "article_analysis",
+      "input_chars": 10078,
+      "output_chars": 1469,
+      "context_augmented": true
+    },
+    "distillation_diagnostics": {
+      "used": false,
+      "mode": "",
+      "key_entities": [],
+      "key_topics": [],
+      "evidence_path_count": 0
+    },
+    "benchmark_summary": null,
+    "provider": "ollama",
+    "llm_model": "llama3.1:latest",
+    "model": "llama3.1:latest",
+    "prompt_name": "article_analysis",
+    "query_text": "Além do RAG Ingênuo_ Um Guia Passo a Passo para Construir um RAG Agente em 2026 _ por VS Krishnan _ Março de 2026 _ Medium.pdf",
+    "collection": "articles",
+    "retrieval_policy": "auto",
+    "tenant_id": null,
+    "source_tags": [],
+    "source_contains": null,
+    "exact_match_required": false,
+    "graph_assessment": {
+      "mode": "vector-global",
+      "score": 0.35,
+      "rationale": "query is broad or single-hop, so hybrid vector search is cheaper and safer",
+      "signals": [
+        "2 named entities in query"
+      ]
+    },
+    "search_hits": 5
+  }
+}

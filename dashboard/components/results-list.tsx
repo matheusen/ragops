@@ -51,6 +51,7 @@ function ConfDot({ value }: { value: number }) {
 
 function AuditCard({ item }: { item: AuditSummary }) {
   const cls = CLS_META[item.classification] ?? { label: item.classification, mod: "", icon: "?", section: "" };
+  const isArticle = item.kind === "article-analysis";
   return (
     <Link key={item.id} href={`/results/${encodeURIComponent(item.id)}`} className="ris__card">
       <div className="ris__card-head">
@@ -65,9 +66,10 @@ function AuditCard({ item }: { item: AuditSummary }) {
       <div className="ris__card-foot">
         <ConfDot value={item.confidence} />
         <div className="ris__chips">
-          {item.is_complete    && <span className="ris__chip ris__chip--ok">Completa</span>}
-          {!item.is_complete   && <span className="ris__chip ris__chip--warn">Incompleta</span>}
-          {item.ready_for_dev  && <span className="ris__chip ris__chip--ok">Pronta p/ dev</span>}
+          {isArticle && <span className="ris__chip ris__chip--info">Análise concluída</span>}
+          {!isArticle && item.is_complete && <span className="ris__chip ris__chip--ok">Completa</span>}
+          {!isArticle && !item.is_complete && <span className="ris__chip ris__chip--warn">Incompleta</span>}
+          {!isArticle && item.ready_for_dev && <span className="ris__chip ris__chip--ok">Pronta p/ dev</span>}
           {item.requires_human_review && <span className="ris__chip ris__chip--danger">Revisão humana</span>}
           {item.financial_impact_detected && <span className="ris__chip ris__chip--danger">Fin. impact</span>}
         </div>
@@ -122,6 +124,7 @@ function TableView({ items }: { items: AuditSummary[] }) {
         <tbody>
           {displayed.map((item) => {
             const cls = CLS_META[item.classification] ?? { label: item.classification, mod: "", icon: "?" };
+            const isArticle = item.kind === "article-analysis";
             return (
               <tr key={item.id} className="ris__tr">
                 <td>
@@ -134,8 +137,8 @@ function TableView({ items }: { items: AuditSummary[] }) {
                   <ConfDot value={item.confidence} />
                 </td>
                 <td className="ris__td-mono">{item.provider}</td>
-                <td className="ris__td-bool">{item.is_complete ? "✅" : "❌"}</td>
-                <td className="ris__td-bool">{item.ready_for_dev ? "✅" : "❌"}</td>
+                <td className="ris__td-bool">{isArticle ? "—" : item.is_complete ? "✅" : "❌"}</td>
+                <td className="ris__td-bool">{isArticle ? "—" : item.ready_for_dev ? "✅" : "❌"}</td>
                 <td className="ris__td-bool">{item.requires_human_review ? "⚠️" : "—"}</td>
                 <td className="ris__td-bool">{item.financial_impact_detected ? "⚠️" : "—"}</td>
                 <td className="ris__td-date">{fmt(item.generated_at)}</td>

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -78,11 +79,15 @@ class Settings(BaseSettings):
     qdrant_url: str | None = Field(default=None, alias="QDRANT_URL")
     qdrant_collection: str = Field(default="issue_evidence", alias="QDRANT_COLLECTION")
     qdrant_api_key: str | None = Field(default=None, alias="QDRANT_API_KEY")
+    require_qdrant_api_key_for_remote: bool = Field(default=True, alias="REQUIRE_QDRANT_API_KEY_FOR_REMOTE")
+    allow_insecure_remote_qdrant: bool = Field(default=False, alias="ALLOW_INSECURE_REMOTE_QDRANT")
     # Qdrant quantization + cascade retrieval (item 13)
     qdrant_quantization_type: str = Field(default="none", alias="QDRANT_QUANTIZATION_TYPE")  # none | scalar | binary
     qdrant_quantization_rescore: bool = Field(default=True, alias="QDRANT_QUANTIZATION_RESCORE")
     qdrant_cascade_overretrieve_factor: int = Field(default=4, alias="QDRANT_CASCADE_OVERRETRIEVE_FACTOR")
     enable_cascade_retrieval: bool = Field(default=False, alias="ENABLE_CASCADE_RETRIEVAL")
+    strict_article_tenant_isolation: bool = Field(default=False, alias="STRICT_ARTICLE_TENANT_ISOLATION")
+    multi_tenant_article_collections_raw: str = Field(default="", alias="MULTI_TENANT_ARTICLE_COLLECTIONS")
 
     # Neo4j GraphRAG (item 12)
     neo4j_url: str | None = Field(default=None, alias="NEO4J_URL")
@@ -118,6 +123,7 @@ class Settings(BaseSettings):
     # Set to a cheaper/faster model (e.g. "openai" with gpt-5-mini) to keep latency low.
     distiller_provider: str = Field(default="", alias="DISTILLER_PROVIDER")
     enable_monkeyocr_pdf_parser: bool = Field(default=False, alias="ENABLE_MONKEYOCR_PDF_PARSER")
+    monkeyocr_api_url: str = Field(default="http://localhost:8001", alias="MONKEYOCR_API_URL")
     enable_docling_pdf_parser: bool = Field(default=False, alias="ENABLE_DOCLING_PDF_PARSER")
     enable_tesseract_pdf_ocr: bool = Field(default=True, alias="ENABLE_TESSERACT_PDF_OCR")
 
@@ -161,14 +167,51 @@ class Settings(BaseSettings):
             return False
         return not self.confidentiality_mode or self.allow_external_vector_store
 
-    def enforce_runtime_policy(self) -> None:
-        if not self.confidentiality_mode:
+    def multi_tenant_article_collections(self) -> set[str]:
+        return {
+            item.strip()
+            for item in self.multi_tenant_article_collections_raw.split(",")
+            if item.strip()
+        }
+
+    def article_collection_requires_tenant(self, collection: str | None) -> bool:
+        if not self.strict_article_tenant_isolation:
+            return False
+        normalized = (collection or "").strip()
+        configured = self.multi_tenant_article_collections()
+        if configured:
+            return normalized in configured
+        return bool(normalized)
+
+    def qdrant_is_remote(self) -> bool:
+        if not self.qdrant_url:
+            return False
+        parsed = urlparse(self.qdrant_url)
+        host = (parsed.hostname or "").strip().lower()
+        return host not in {"", "localhost", "127.0.0.1", "::1"}
+
+    def validate_vector_store_security(self) -> None:
+        if not self.external_vector_store_enabled() or not self.qdrant_url:
             return
-        self.enable_external_retrieval = self.external_vector_store_enabled()
-        if not self.allows_provider(self.default_provider):
-            self.default_provider = "mock"
-        if not self.allows_provider(self.secondary_provider):
-            self.secondary_provider = "mock"
+        parsed = urlparse(self.qdrant_url)
+        if self.qdrant_is_remote():
+            if self.require_qdrant_api_key_for_remote and not self.qdrant_api_key:
+                raise RuntimeError(
+                    "Remote Qdrant requires QDRANT_API_KEY when REQUIRE_QDRANT_API_KEY_FOR_REMOTE=true."
+                )
+            if parsed.scheme == "http" and not self.allow_insecure_remote_qdrant:
+                raise RuntimeError(
+                    "Remote Qdrant over plain HTTP is blocked. Use HTTPS or set ALLOW_INSECURE_REMOTE_QDRANT=true."
+                )
+
+    def enforce_runtime_policy(self) -> None:
+        self.validate_vector_store_security()
+        if self.confidentiality_mode:
+            self.enable_external_retrieval = self.external_vector_store_enabled()
+            if not self.allows_provider(self.default_provider):
+                self.default_provider = "mock"
+            if not self.allows_provider(self.secondary_provider):
+                self.secondary_provider = "mock"
 
 
 def get_settings() -> Settings:

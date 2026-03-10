@@ -18,6 +18,8 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import time
+from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
 
@@ -285,8 +287,10 @@ _TEMPORAL_GRAPH_VARIANTS: dict[str, dict[str, Any]] = {
 
 _FLOW_MODE_VARIANTS: dict[str, str] = {
     "issue validation": "issue-validation",
+    "issue-validation": "issue-validation",
     "jira issue triage": "issue-validation",
     "article analysis": "article-analysis",
+    "article-analysis": "article-analysis",
 }
 
 _EXPLORATORY_ONLY_NODES = {"ragas"}
@@ -296,6 +300,7 @@ _SCENARIO_IGNORED_NODES: dict[str, set[str]] = {
     "article-analysis": {
         "dspy",
         *tuple(_EXPLORATORY_ONLY_NODES),
+        "monkeyocr",
         "normalizer",
         "artifacts",
         "rules",
@@ -449,12 +454,15 @@ def run_flow(
             raise ValueError("Flow mode 'article-analysis' requires the 'article' payload.")
         article_store = ArticleStore(settings=settings)
         article_request = request.article
+        flow_started = time.perf_counter()
         query_text = (
             article_request.search_query
             or article_request.title
             or article_request.content[:280]
         ).strip()
         graph_assessment = article_store.assess_graph_usefulness(query_text) if query_text else None
+        timings_ms: dict[str, float] = {}
+        search_started = time.perf_counter()
         article_search = article_store.search(
             query=query_text,
             top_k=article_request.top_k,
@@ -466,6 +474,7 @@ def run_flow(
             exact_match_required=article_request.exact_match_required,
             enable_corrective_rag=article_request.enable_corrective_rag,
         ) if query_text else []
+        timings_ms["search"] = round((time.perf_counter() - search_started) * 1000, 2)
         if any(item.retrieval_mode == "corrective" for item in article_search):
             warnings.append("Corrective retrieval was triggered for this article query.")
         if query_text and article_store.retrieval_requires_human_review(
@@ -477,7 +486,10 @@ def run_flow(
         related_articles = article_store.related_articles(
             doc_id=article_request.related_doc_id,
             limit=article_request.related_limit,
+            tenant_id=article_request.tenant_id,
+            collection=article_request.collection,
         ) if article_request.related_doc_id else []
+        benchmark_started = time.perf_counter()
         article_benchmark = article_store.benchmark_query_modes(
             query=query_text,
             top_k=min(article_request.top_k, 4),
@@ -488,6 +500,8 @@ def run_flow(
             exact_match_required=article_request.exact_match_required,
             enable_corrective_rag=article_request.enable_corrective_rag,
         ) if query_text else None
+        timings_ms["benchmark"] = round((time.perf_counter() - benchmark_started) * 1000, 2)
+        distill_started = time.perf_counter()
         article_distillation = (
             article_store.distill_for_small_model(
                 query=query_text,
@@ -497,6 +511,7 @@ def run_flow(
             if query_text and article_search and article_request.use_small_model_distillation
             else None
         )
+        timings_ms["distill"] = round((time.perf_counter() - distill_started) * 1000, 2)
 
         prompt_content = article_request.content.strip()
         if article_distillation is not None:
@@ -512,6 +527,7 @@ def run_flow(
                 f"{prompt_content}\n\nContexto adicional recuperado do corpus de artigos:\n{retrieved_context}"
             ).strip()
 
+        prompt_started = time.perf_counter()
         prompt_result = workflow.execute_prompt(
             PromptExecutionRequest(
                 prompt_name=article_request.prompt_name,
@@ -521,6 +537,21 @@ def run_flow(
                 metadata=article_request.metadata,
             )
         )
+        timings_ms["prompt"] = round((time.perf_counter() - prompt_started) * 1000, 2)
+        timings_ms["total"] = round((time.perf_counter() - flow_started) * 1000, 2)
+        article_runtime = _build_article_runtime_payload(
+            article_store=article_store,
+            query_text=query_text,
+            article_search=article_search,
+            article_request=article_request,
+            graph_assessment=graph_assessment,
+            article_distillation=article_distillation,
+            article_benchmark=article_benchmark,
+            prompt_result=prompt_result,
+            timings_ms=timings_ms,
+            warnings=warnings,
+            execution_path="run-flow",
+        )
         write_article_analysis_audit(
             settings=settings,
             article_request=article_request,
@@ -529,7 +560,7 @@ def run_flow(
             related_articles=related_articles,
             query_text=query_text,
             warnings=_dedupe_warnings(warnings),
-            runtime_summary=runtime_summary,
+            runtime_summary={**runtime_summary, **article_runtime},
             graph_assessment=graph_assessment,
             article_distillation=article_distillation,
             article_benchmark=article_benchmark,
@@ -542,6 +573,7 @@ def run_flow(
             article_graph_assessment=graph_assessment,
             article_distillation=article_distillation,
             article_benchmark=article_benchmark,
+            runtime=article_runtime,
             dspy_optimization=dspy_result,
             warnings=_dedupe_warnings(warnings),
         )
@@ -670,6 +702,92 @@ def _dedupe_warnings(warnings: list[str]) -> list[str]:
         seen.add(warning)
         unique.append(warning)
     return unique
+
+
+def _build_article_runtime_payload(
+    *,
+    article_store: ArticleStore,
+    query_text: str,
+    article_search: list[Any],
+    article_request: Any,
+    graph_assessment: Any | None,
+    article_distillation: Any | None,
+    article_benchmark: Any | None,
+    prompt_result: Any,
+    timings_ms: dict[str, float],
+    warnings: list[str],
+    execution_path: str,
+) -> dict[str, Any]:
+    quality = article_store._quality_proxies(query_text, article_search) if query_text else {
+        "avg_score": 0.0,
+        "precision_proxy": 0.0,
+        "recall_proxy": 0.0,
+        "faithfulness_proxy": 0.0,
+    }
+    coverage = article_store._query_coverage(query_text, article_search) if query_text else 0.0
+    chunk_kind_distribution = dict(Counter(item.chunk_kind for item in article_search))
+    pages = sorted({item.page_number for item in article_search if item.page_number is not None})
+    retrieval_modes = sorted({item.retrieval_mode for item in article_search if item.retrieval_mode})
+    exact_hits = sum(1 for item in article_search if item.retrieval_mode == "exact-page")
+    corrective_hits = sum(1 for item in article_search if item.retrieval_mode == "corrective")
+    graph_paths = sum(len(getattr(item, "evidence_paths", [])) for item in article_search)
+    multimodal_hits = sum(1 for item in article_search if item.chunk_kind in {"table", "figure"})
+    top_item = article_search[0] if article_search else None
+    benchmark_summary = None
+    if article_benchmark is not None and getattr(article_benchmark, "scenarios", None):
+        ranked_scenarios = sorted(
+            article_benchmark.scenarios,
+            key=lambda item: (item.recall_proxy, item.precision_proxy, item.avg_score),
+            reverse=True,
+        )
+        best = ranked_scenarios[0]
+        benchmark_summary = {
+            "recommended_mode": getattr(article_benchmark, "recommended_mode", ""),
+            "best_mode_by_proxy": best.mode,
+            "best_recall_proxy": best.recall_proxy,
+            "best_precision_proxy": best.precision_proxy,
+        }
+
+    return {
+        "execution_path": execution_path,
+        "timings_ms": timings_ms,
+        "warnings": _dedupe_warnings(warnings),
+        "retrieval_diagnostics": {
+            "query_text": query_text,
+            "requested_policy": article_request.retrieval_policy,
+            "resolved_modes": retrieval_modes,
+            "search_hits": len(article_search),
+            "top_score": getattr(top_item, "score", 0.0) if top_item is not None else 0.0,
+            "query_coverage": coverage,
+            "quality_proxies": quality,
+            "chunk_kind_distribution": chunk_kind_distribution,
+            "page_coverage": pages,
+            "exact_page_hits": exact_hits,
+            "corrective_hits": corrective_hits,
+            "graph_path_count": graph_paths,
+            "multimodal_hits": multimodal_hits,
+            "human_review_recommended": bool(
+                "human review is recommended." in " ".join(warnings).lower()
+            ),
+            "graph_assessment": graph_assessment.model_dump(mode="json") if hasattr(graph_assessment, "model_dump") else graph_assessment,
+        },
+        "prompt_diagnostics": {
+            "provider": prompt_result.provider,
+            "model": prompt_result.model,
+            "prompt_name": prompt_result.prompt_name,
+            "input_chars": len(article_request.content or ""),
+            "output_chars": len(prompt_result.output_text or ""),
+            "context_augmented": bool(article_search),
+        },
+        "distillation_diagnostics": {
+            "used": article_distillation is not None,
+            "mode": getattr(article_distillation, "mode", ""),
+            "key_entities": getattr(article_distillation, "key_entities", []) if article_distillation is not None else [],
+            "key_topics": getattr(article_distillation, "key_topics", []) if article_distillation is not None else [],
+            "evidence_path_count": len(getattr(article_distillation, "evidence_paths", [])) if article_distillation is not None else 0,
+        },
+        "benchmark_summary": benchmark_summary,
+    }
 
 
 def _write_dspy_history(
@@ -1000,9 +1118,13 @@ def _build_describe_warnings(
             "Related-issue graph traversal will be skipped."
         )
 
-    if configured_settings.enable_monkeyocr_pdf_parser:
+    if configured_settings.enable_monkeyocr_pdf_parser and flow_mode == "issue-validation":
         warnings.append(
             "MonkeyOCR is enabled in the flow. PDF parsing will try the local sidecar first and silently fall back if it is unavailable."
+        )
+    elif configured_settings.enable_monkeyocr_pdf_parser and flow_mode == "article-analysis":
+        warnings.append(
+            "MonkeyOCR does not affect text-only article-analysis in /run-flow. It is used for PDF attachments in issue-validation and for article PDF upload/ingest endpoints."
         )
 
     if ignored_nodes:

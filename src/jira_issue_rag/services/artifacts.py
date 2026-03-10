@@ -255,9 +255,12 @@ class ArtifactPipeline:
         # 4th pass: sidecar .txt
         return self._extract_sidecar_text(path)
 
-    @staticmethod
-    def _extract_pdf_monkeyocr(path: Path) -> str:
-        base_url = os.environ.get("MONKEYOCR_API_URL", "http://localhost:8000").rstrip("/")
+    def _extract_pdf_monkeyocr(self, path: Path) -> str:
+        base_url = (
+            self.settings.monkeyocr_api_url
+            if self.settings and self.settings.monkeyocr_api_url
+            else os.environ.get("MONKEYOCR_API_URL", "http://localhost:8001")
+        ).rstrip("/")
         try:
             with open(path, "rb") as fh:
                 resp = httpx.post(
