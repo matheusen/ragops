@@ -39,11 +39,21 @@ export default async function ResultCanvasPage({ params }: Props) {
       )}
       <RuntimeTechniquesPanel audit={audit} />
       <ArticleSummaryBoard
+        title={audit.article_run?.title ?? audit.issue.summary}
+        summary={audit.knowledge_map.summary}
+        centralIdeas={audit.article_run?.central_ideas ?? []}
+        topics={audit.knowledge_map.topics.map((topic) => topic.label).slice(0, 8)}
+        warnings={audit.article_run?.warnings ?? []}
+        metadata={audit.article_run?.metadata ?? {}}
         articleCards={audit.knowledge_map.article_cards}
         themeClusters={audit.knowledge_map.theme_clusters}
+        relatedItems={audit.knowledge_map.related_audits}
       />
       <RelatedResultsBoard
         currentId={audit.result_meta.id}
+        currentTitle={audit.article_run?.title ?? audit.issue.summary}
+        currentSummary={audit.knowledge_map.summary}
+        currentTopics={audit.knowledge_map.topics.map((topic) => topic.label).slice(0, 5)}
         items={audit.knowledge_map.related_audits}
       />
       {!audit.article_run && <EvidenceCards audit={audit} />}

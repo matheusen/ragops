@@ -265,6 +265,11 @@ def analyze_article_upload(
         graph_assessment = store.assess_graph_usefulness(query_text) if query_text else None
         timings_ms: dict[str, float] = {}
         warnings: list[str] = []
+        missing_extractions = len(saved_names) - len(source_documents)
+        if missing_extractions > 0:
+            warnings.append(
+                f"{missing_extractions} file(s) were uploaded but did not produce extracted text for the article corpus."
+            )
         search_started = time.perf_counter()
         retrieval_top_k = min(max(6, len(saved_names) // 6), 10)
         article_search = store.search(query=query_text, top_k=retrieval_top_k) if query_text else []

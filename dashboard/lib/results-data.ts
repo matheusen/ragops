@@ -145,6 +145,7 @@ export interface ResultArticleAnalysisView {
   prompt_name: string;
   provider: string;
   model: string;
+  metadata: Record<string, unknown>;
   search_query: string;
   content_excerpt: string;
   executive_summary: string;
@@ -1037,6 +1038,7 @@ function buildArticleAnalysisView(audit: RawAudit): ResultArticleAnalysisView | 
     prompt_name: audit.prompt_execution?.prompt_name || audit.article_run?.prompt_name || "article_analysis",
     provider: audit.prompt_execution?.provider || audit.decision?.provider || "unknown",
     model: audit.prompt_execution?.model || audit.decision?.model || "unknown",
+    metadata: asRecord(audit.article_run?.metadata) ?? {},
     search_query: String(audit.article_run?.search_query || ""),
     content_excerpt: contentExcerpt,
     executive_summary: resolveArticleSummary(parsed.executiveSummary, contentExcerpt, looksLikeArticleUpload),
