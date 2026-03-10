@@ -363,9 +363,17 @@ class FlowArticleRunRequest(BaseModel):
     prompt_name: str = "article_analysis"
     provider: str | None = None
     search_query: str | None = None
+    collection: str = "articles"
+    retrieval_policy: str = "auto"
+    tenant_id: str | None = None
+    source_tags: list[str] = Field(default_factory=list)
+    source_contains: str | None = None
+    exact_match_required: bool = False
+    enable_corrective_rag: bool = True
     top_k: int = Field(default=5, ge=1, le=12)
     related_doc_id: str | None = None
     related_limit: int = Field(default=5, ge=1, le=20)
+    use_small_model_distillation: bool = True
 
 
 class FlowRunRequest(BaseModel):
@@ -423,6 +431,9 @@ class FlowRunResponse(BaseModel):
     prompt_execution: PromptExecutionResponse | None = None
     article_search: list["ArticleSearchResult"] = Field(default_factory=list)
     related_articles: list[dict[str, Any]] = Field(default_factory=list)
+    article_graph_assessment: "GraphUsefulnessAssessment | None" = None
+    article_distillation: "ArticleDistillation | None" = None
+    article_benchmark: "ArticleBenchmarkResponse | None" = None
     dspy_optimization: FlowDSPyOptimizationResult | None = None
     warnings: list[str] = Field(default_factory=list)
 
@@ -455,6 +466,9 @@ class ArticleChunk(BaseModel):
     chunk_index: int
     content: str
     topics: list[str] = Field(default_factory=list)
+    chunk_kind: str = "text"
+    page_number: int | None = None
+    section_title: str | None = None
 
 
 class ArticleIngestRequest(BaseModel):
@@ -464,12 +478,18 @@ class ArticleIngestRequest(BaseModel):
         description="Títulos opcionais, um por arquivo. Se omitido, usa o nome do arquivo.",
     )
     collection: str = Field(default="articles", description="Coleção Qdrant alvo.")
+    tenant_id: str | None = None
+    source_tags: list[str] = Field(default_factory=list)
+    source_type: str | None = None
 
 
 class ArticleIngestResponse(BaseModel):
     doc_id: str
     title: str
     path: str
+    collection: str = "articles"
+    tenant_id: str | None = None
+    source_tags: list[str] = Field(default_factory=list)
     chunks_indexed: int
     topics: list[str] = Field(default_factory=list)
     canonical_title: str | None = None
@@ -484,6 +504,35 @@ class ArticleSearchRequest(BaseModel):
     query: str
     top_k: int = Field(default=8, ge=1, le=50)
     collection: str = "articles"
+    retrieval_policy: str = "auto"
+    tenant_id: str | None = None
+    source_tags: list[str] = Field(default_factory=list)
+    source_contains: str | None = None
+    exact_match_required: bool = False
+    enable_corrective_rag: bool = True
+
+
+class GraphUsefulnessAssessment(BaseModel):
+    mode: Literal["vector-global", "graph-local", "graph-multi-hop", "graph-bridge"]
+    score: float = 0.0
+    rationale: str = ""
+    signals: list[str] = Field(default_factory=list)
+
+
+class ArticleEvidencePath(BaseModel):
+    path_id: str
+    relation: str
+    nodes: list[str] = Field(default_factory=list)
+    score: float = 0.0
+    summary: str = ""
+
+
+class ArticleDistillation(BaseModel):
+    mode: str
+    context_text: str
+    key_entities: list[str] = Field(default_factory=list)
+    key_topics: list[str] = Field(default_factory=list)
+    evidence_paths: list[ArticleEvidencePath] = Field(default_factory=list)
 
 
 class ArticleSearchResult(BaseModel):
@@ -493,13 +542,63 @@ class ArticleSearchResult(BaseModel):
     chunk_index: int
     content: str
     topics: list[str] = Field(default_factory=list)
+    entities: list[str] = Field(default_factory=list)
     score: float
+    collection: str = "articles"
+    tenant_id: str | None = None
+    source_tags: list[str] = Field(default_factory=list)
     source_path: str = ""
     canonical_title: str | None = None
     published_at: str | None = None
     published_year: int | None = None
     version_label: str | None = None
+    chunk_kind: str = "text"
+    page_number: int | None = None
+    section_title: str | None = None
+    retrieval_mode: str = "vector-global"
+    graph_usefulness: GraphUsefulnessAssessment | None = None
+    evidence_paths: list[ArticleEvidencePath] = Field(default_factory=list)
 
 
 class ArticleRelatedRequest(BaseModel):
     limit: int = Field(default=5, ge=1, le=20)
+
+
+class ArticleBenchmarkRequest(BaseModel):
+    query: str
+    top_k: int = Field(default=6, ge=1, le=20)
+    collection: str = "articles"
+    tenant_id: str | None = None
+    source_tags: list[str] = Field(default_factory=list)
+    source_contains: str | None = None
+    exact_match_required: bool = False
+    enable_corrective_rag: bool = True
+
+
+class ArticleBenchmarkScenarioResult(BaseModel):
+    mode: str
+    retrieval_mode: str
+    latency_ms: float = 0.0
+    result_count: int = 0
+    avg_score: float = 0.0
+    precision_proxy: float = 0.0
+    recall_proxy: float = 0.0
+    faithfulness_proxy: float = 0.0
+    top_doc_ids: list[str] = Field(default_factory=list)
+    top_titles: list[str] = Field(default_factory=list)
+
+
+class ProviderBenchmarkScenario(BaseModel):
+    provider: str
+    model: str
+    estimated_latency_ms: int = 0
+    estimated_relative_cost: str = ""
+    local: bool = False
+
+
+class ArticleBenchmarkResponse(BaseModel):
+    query: str
+    recommended_mode: str
+    graph_usefulness: GraphUsefulnessAssessment
+    scenarios: list[ArticleBenchmarkScenarioResult] = Field(default_factory=list)
+    provider_options: list[ProviderBenchmarkScenario] = Field(default_factory=list)

@@ -34,6 +34,19 @@ Em termos praticos, o flow existe para:
 - ligar ou desligar planner, query rewriter, reflection memory, policy loop, reranker, distiller e GraphRAG
 - salvar configuracoes recorrentes da pipeline para replay e comparacao
 
+No modo `article-analysis`, o `/flow` agora tambem expone controles operacionais de retrieval:
+
+- `collection`: escolhe a colecao logica do corpus de artigos
+- `retrieval_policy`: `auto`, `vector-global`, `graph-local`, `graph-bridge`, `graph-multi-hop`, `exact-page` ou `corrective`
+- `tenant_id`: isola retrieval por tenant quando o corpus e multi-tenant
+- `source_tags` e `source_contains`: filtram por classe de documento, origem ou tema
+- `top_k`: controla quantos chunks entram no contexto
+- `exact_match_required`: forca fallback lexical/page-level para consultas de alta precisao
+- `enable_corrective_rag`: permite uma segunda passagem com reescrita e troca de modo quando o retrieval inicial vem fraco
+- `use_small_model_distillation`: resume o contexto recuperado antes de enviar ao provider
+
+Esses campos sao enviados para `POST /api/v1/run-flow` e gravados na auditoria do `article-analysis`.
+
 Nem todo no do canvas tem o mesmo peso hoje. O runtime principal ja respeita de forma forte retrieval, graph, reranking, distillation, LangGraph e `flow-mode`. Alguns elementos continuam mais proximos de laboratorio, como partes da avaliacao offline.
 
 ```mermaid
@@ -145,22 +158,9 @@ Execute a partir da raiz do repositório com o venv ativo:
 ```powershell
 .\.venv\Scripts\Activate.ps1
 python -m uvicorn jira_issue_rag.main:app --reload --host 0.0.0.0 --port 8000
-C:\Users\mengl\Documents\GitHub\ragops\.venv\Scripts\python.exe -m uvicorn jira_issue_rag.main:app --reload --host 0.0.0.0 --port 8000
+```
 
-```Check status with docker compose ps
-Pull an Ollama model with docker exec -it ragops-ollama ollama pull llama3.1:8b
-Open Qdrant at http://localhost:6333/dashboard and Neo4j at http://localhost:7474
-
-curl.exe -i -sS -X POST "http://localhost:8000/api/v1/validate/upload" `
-  -F "issue_key=PAY-1421" `
-  -F "summary=upload test" `
-  -F "description=test" `
-  -F "issue_type=Bug" `
-  -F "provider=mock" `
-  -F "files=@examples/input/PAY-1421/payment_logs.txt"
-
-
-Se o PowerShell ainda estiver a usar outro Python instalado na máquina, rode directamente com o interpreter da venv:
+Se o PowerShell ainda estiver a usar outro Python instalado na maquina, rode directamente com o interpreter da venv:
 
 ```powershell
 .\.venv\Scripts\python.exe -m uvicorn jira_issue_rag.main:app --reload --host 0.0.0.0 --port 8000
@@ -170,6 +170,18 @@ A API sobe em `http://localhost:8000`. Documentacao interativa disponivel em:
 
 - Swagger UI: `http://localhost:8000/docs`
 - Redoc: `http://localhost:8000/redoc`
+
+Smoke test util para validar upload sem depender do dashboard:
+
+```powershell
+curl.exe -i -sS -X POST "http://localhost:8000/api/v1/validate/upload" `
+  -F "issue_key=PAY-1421" `
+  -F "summary=upload test" `
+  -F "description=test" `
+  -F "issue_type=Bug" `
+  -F "provider=mock" `
+  -F "files=@examples/input/PAY-1421/payment_logs.txt"
+```
 
 ## Rodar Dashboard
 
@@ -190,6 +202,83 @@ MONGODB_URI=mongodb://localhost:27017
 ```
 
 Os overrides ficam em `ragflow.settings` e os flows salvos em `ragflow.flows`. Se o Mongo nao estiver disponivel, o app cai para fallback local em `.env` e arquivo JSON.
+
+## Retrieval de Artigos
+
+O dominio de artigos deixou de ser apenas "vector search simples". O backend agora tem uma politica explicita de retrieval para consultas de `article-analysis`.
+
+### Politicas de retrieval
+
+- `auto`: escolhe o modo com base na heuristica de `graph usefulness`
+- `vector-global`: dense+sparse retrieval hibrido no Qdrant
+- `graph-local`: expansao local por entidades no Neo4j
+- `graph-bridge`: usa grafo quando a query pede conexao entre entidades/chunks
+- `graph-multi-hop`: sobe o grafo para consultas de cadeia, conflito, timeline ou agregacao
+- `exact-page`: fallback sem vetor para consultas que exigem trecho literal, pagina, secao, tabela ou figura
+- `corrective`: reexecuta retrieval com variantes da query e combina `exact + graph + hybrid`
+
+### Chunking orientado a documento
+
+Na ingestao de artigos o pipeline agora anota metadados de chunk:
+
+- `chunk_kind`: `text`, `table` ou `figure`
+- `page_number`
+- `section_title`
+
+Isso melhora retrieval para PDFs tecnicos, especialmente em consultas sobre tabelas, screenshots, seccoes especificas e evidencias page-level.
+
+### Corrective RAG
+
+Quando o retrieval inicial vem fraco, o sistema pode:
+
+1. reescrever a query
+2. tentar `exact-page`
+3. tentar `graph` e `hybrid`
+4. mesclar os melhores candidatos
+5. marcar warning de `human review recommended` se a cobertura continuar baixa
+
+### Colecoes recomendadas
+
+Para artigos, o mais seguro e separar o corpus por finalidade em vez de jogar tudo em `articles`:
+
+- `core-rag`
+- `agentic`
+- `doc-intel`
+- `runtime-local`
+- `off-topic`
+
+Com isso voce evita misturar notas tecnicas realmente uteis com artigos laterais que poluem recall.
+
+### Seguranca e filtros
+
+Os endpoints de artigos aceitam filtros operacionais:
+
+- `collection`
+- `tenant_id`
+- `source_tags`
+- `source_contains`
+
+Esses filtros tambem aparecem na auditoria para deixar claro quais chunks realmente entraram no prompt.
+
+### Benchmarks de retrieval
+
+`POST /api/v1/articles/benchmark` agora compara:
+
+- `dense`
+- `hybrid`
+- `graph`
+- `exact-page`
+- `adaptive`
+- `corrective`
+
+O retorno inclui proxies operacionais para:
+
+- `avg_score`
+- `precision_proxy`
+- `recall_proxy`
+- `faithfulness_proxy`
+
+Tambem devolve opcoes de provider com latencia/custo relativo estimado para ajudar a escolher entre OpenAI, Gemini, Ollama, oLLM e Mock.
 
 ## Testes
 

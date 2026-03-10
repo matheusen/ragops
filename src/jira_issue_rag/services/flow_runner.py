@@ -454,17 +454,56 @@ def run_flow(
             or article_request.title
             or article_request.content[:280]
         ).strip()
+        graph_assessment = article_store.assess_graph_usefulness(query_text) if query_text else None
         article_search = article_store.search(
             query=query_text,
             top_k=article_request.top_k,
+            collection=article_request.collection,
+            retrieval_policy=article_request.retrieval_policy,
+            tenant_id=article_request.tenant_id,
+            source_tags=article_request.source_tags,
+            source_contains=article_request.source_contains,
+            exact_match_required=article_request.exact_match_required,
+            enable_corrective_rag=article_request.enable_corrective_rag,
         ) if query_text else []
+        if any(item.retrieval_mode == "corrective" for item in article_search):
+            warnings.append("Corrective retrieval was triggered for this article query.")
+        if query_text and article_store.retrieval_requires_human_review(
+            query_text,
+            article_search,
+            exact_match_required=article_request.exact_match_required,
+        ):
+            warnings.append("Retrieval quality remained weak after routing; human review is recommended.")
         related_articles = article_store.related_articles(
             doc_id=article_request.related_doc_id,
             limit=article_request.related_limit,
         ) if article_request.related_doc_id else []
+        article_benchmark = article_store.benchmark_query_modes(
+            query=query_text,
+            top_k=min(article_request.top_k, 4),
+            collection=article_request.collection,
+            tenant_id=article_request.tenant_id,
+            source_tags=article_request.source_tags,
+            source_contains=article_request.source_contains,
+            exact_match_required=article_request.exact_match_required,
+            enable_corrective_rag=article_request.enable_corrective_rag,
+        ) if query_text else None
+        article_distillation = (
+            article_store.distill_for_small_model(
+                query=query_text,
+                results=article_search,
+                assessment=graph_assessment,
+            )
+            if query_text and article_search and article_request.use_small_model_distillation
+            else None
+        )
 
         prompt_content = article_request.content.strip()
-        if article_search:
+        if article_distillation is not None:
+            prompt_content = (
+                f"{prompt_content}\n\nContexto grafo-destilado para modelo menor:\n{article_distillation.context_text}"
+            ).strip()
+        elif article_search:
             retrieved_context = "\n\n".join(
                 f"[{item.title} #{item.chunk_index}] {item.content[:480]}"
                 for item in article_search[:article_request.top_k]
@@ -491,12 +530,18 @@ def run_flow(
             query_text=query_text,
             warnings=_dedupe_warnings(warnings),
             runtime_summary=runtime_summary,
+            graph_assessment=graph_assessment,
+            article_distillation=article_distillation,
+            article_benchmark=article_benchmark,
         )
         return FlowRunResponse(
             flow_mode=flow_mode,
             prompt_execution=prompt_result,
             article_search=article_search,
             related_articles=related_articles,
+            article_graph_assessment=graph_assessment,
+            article_distillation=article_distillation,
+            article_benchmark=article_benchmark,
             dspy_optimization=dspy_result,
             warnings=_dedupe_warnings(warnings),
         )
@@ -663,6 +708,9 @@ def write_article_analysis_audit(
     query_text: str,
     warnings: list[str],
     runtime_summary: dict[str, Any] | None = None,
+    graph_assessment: Any | None = None,
+    article_distillation: Any | None = None,
+    article_benchmark: Any | None = None,
 ) -> str:
     source = str(
         article_request.metadata.get("source")
@@ -684,6 +732,13 @@ def write_article_analysis_audit(
             "model": prompt_result.model,
             "prompt_name": prompt_result.prompt_name,
             "query_text": query_text,
+            "collection": article_request.collection,
+            "retrieval_policy": article_request.retrieval_policy,
+            "tenant_id": article_request.tenant_id,
+            "source_tags": article_request.source_tags,
+            "source_contains": article_request.source_contains,
+            "exact_match_required": article_request.exact_match_required,
+            "graph_assessment": graph_assessment.model_dump(mode="json") if hasattr(graph_assessment, "model_dump") else graph_assessment,
             "search_hits": len(article_search),
             "warnings": _dedupe_warnings([*warnings, *runtime_payload.get("warnings", [])] if isinstance(runtime_payload.get("warnings"), list) else warnings),
         }
@@ -770,14 +825,26 @@ def write_article_analysis_audit(
                 "source": source,
                 "prompt_name": article_request.prompt_name,
                 "search_query": query_text,
+                "collection": article_request.collection,
+                "retrieval_policy": article_request.retrieval_policy,
+                "tenant_id": article_request.tenant_id,
+                "source_tags": article_request.source_tags,
+                "source_contains": article_request.source_contains,
+                "exact_match_required": article_request.exact_match_required,
+                "enable_corrective_rag": article_request.enable_corrective_rag,
+                "prompt_chunk_ids": [item.chunk_id for item in article_search],
                 "top_k": article_request.top_k,
                 "related_doc_id": article_request.related_doc_id,
                 "related_limit": article_request.related_limit,
+                "use_small_model_distillation": article_request.use_small_model_distillation,
                 "metadata": article_request.metadata,
                 "content_excerpt": article_request.content[:4000],
                 "output_text": prompt_result.output_text,
                 "warnings": warnings,
                 "related_articles": related_articles,
+                "graph_assessment": graph_assessment.model_dump(mode="json") if hasattr(graph_assessment, "model_dump") else graph_assessment,
+                "distillation": article_distillation.model_dump(mode="json") if hasattr(article_distillation, "model_dump") else article_distillation,
+                "benchmark": article_benchmark.model_dump(mode="json") if hasattr(article_benchmark, "model_dump") else article_benchmark,
             },
             "runtime": {
                 **runtime_payload,

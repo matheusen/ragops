@@ -20,15 +20,26 @@ from __future__ import annotations
 
 import hashlib
 import re
+import time
 import uuid
 import unicodedata
+from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 import httpx
 
 from jira_issue_rag.services.embeddings import EmbeddingService
-from jira_issue_rag.shared.models import ArticleIngestResponse, ArticleSearchResult
+from jira_issue_rag.shared.models import (
+    ArticleBenchmarkResponse,
+    ArticleBenchmarkScenarioResult,
+    ArticleDistillation,
+    ArticleEvidencePath,
+    ArticleIngestResponse,
+    ArticleSearchResult,
+    GraphUsefulnessAssessment,
+)
 
 if TYPE_CHECKING:
     from jira_issue_rag.core.config import Settings
@@ -48,6 +59,39 @@ _MONTH_YEAR = re.compile(r"\b([a-z]+)\s+de\s+(20\d{2})\b")
 _YEAR_ONLY = re.compile(r"\b(19\d{2}|20\d{2})\b")
 _VERSION_PATTERN = re.compile(r"\b(?:v|ver(?:sion)?)[\s._-]*(\d+(?:\.\d+)*)\b")
 _MULTISPACE = re.compile(r"\s+")
+_PAGE_BREAK = re.compile(r"\[\[PAGE_BREAK:(\d+)]]")
+_ENTITY_PATTERN = re.compile(
+    r"\b(?:[A-Z][A-Za-z0-9]+(?:[-/][A-Za-z0-9]+)*|[A-Z]{2,})(?:\s+(?:[A-Z][A-Za-z0-9]+(?:[-/][A-Za-z0-9]+)*|[A-Z]{2,}))*\b"
+)
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+_GRAPH_CONNECTORS = {
+    "between", "across", "relationship", "connect", "connected", "chain", "hop",
+    "bridge", "dependency", "depends", "influence", "influences", "causes",
+    "compare", "versus", "timeline", "version", "conflict", "hidden", "rule",
+    "exception", "aggregate", "count", "sum", "network", "path",
+}
+_NON_ENTITY_TERMS = {
+    "GraphRAG", "RAG", "LLM", "PDF", "API", "JSON", "GitHub", "Medium",
+    "Why", "The", "This", "That", "And", "Pressione", "Leia", "Conclusion",
+    "Introducao", "Artigo", "Documento", "Mas", "Sem", "Ele", "Ela", "Cinco",
+    "Existe", "Veja", "Leitura", "Pressione Enter",
+}
+
+
+@dataclass(frozen=True)
+class _ChunkRecord:
+    content: str
+    chunk_kind: str = "text"
+    page_number: int | None = None
+    section_title: str | None = None
+
+
+@dataclass(frozen=True)
+class _SearchFilters:
+    collection: str
+    tenant_id: str | None = None
+    source_tags: tuple[str, ...] = ()
+    source_contains: str | None = None
 
 # ── Stopwords PT/EN mínimas para extração de tópicos ─────────────────────────
 _STOPWORDS = {
@@ -97,12 +141,24 @@ class ArticleStore:
         paths: list[str],
         titles: list[str] | None = None,
         collection: str = ARTICLE_COLLECTION,
+        tenant_id: str | None = None,
+        source_tags: list[str] | None = None,
+        source_type: str | None = None,
     ) -> list[ArticleIngestResponse]:
         """Ingere uma lista de PDFs (ou txt/md). Retorna um relatório por arquivo."""
         results: list[ArticleIngestResponse] = []
         for i, raw_path in enumerate(paths):
             title = (titles or [])[i] if titles and i < len(titles) else None
-            results.append(self._ingest_one(Path(raw_path), title=title, collection=collection))
+            results.append(
+                self._ingest_one(
+                    Path(raw_path),
+                    title=title,
+                    collection=collection,
+                    tenant_id=tenant_id,
+                    source_tags=source_tags or [],
+                    source_type=source_type,
+                )
+            )
         # Após ingerir todos, recalcula arestas SHARES_TOPIC no Neo4j
         if self.settings.enable_graphrag:
             self._refresh_shared_topics_edges(collection=collection)
@@ -114,51 +170,43 @@ class ArticleStore:
         query: str,
         top_k: int = 8,
         collection: str = ARTICLE_COLLECTION,
+        retrieval_policy: str = "auto",
+        tenant_id: str | None = None,
+        source_tags: list[str] | None = None,
+        source_contains: str | None = None,
+        exact_match_required: bool = False,
+        enable_corrective_rag: bool = True,
     ) -> list[ArticleSearchResult]:
-        """Busca semântica híbrida (BM25 + dense) nos artigos indexados."""
-        if not self._qdrant_available():
-            return []
-        self._ensure_collection(collection)
-        dense_vector, _ = self.embeddings.embed_text(query)
-        sparse_payload_body = self._build_sparse_vector(query)
-
-        fused: dict[str, dict[str, Any]] = {}
-        for (mode, payload) in [
-            ("sparse", {"query": sparse_payload_body, "using": "text",  "limit": top_k * 2, "with_payload": True}),
-            ("dense",  {"query": dense_vector,         "using": "dense", "limit": top_k * 2, "with_payload": True}),
-        ]:
-            resp = self._qdrant(
-                "POST",
-                f"/collections/{collection}/points/query",
-                json_body=payload,
+        """Busca adaptativa: usa retrieval vetorial por padrão e sobe o grafo quando vale a pena."""
+        assessment = self.assess_graph_usefulness(query)
+        filters = _SearchFilters(
+            collection=collection,
+            tenant_id=tenant_id,
+            source_tags=tuple(sorted(set(source_tags or []))),
+            source_contains=source_contains.strip() if source_contains else None,
+        )
+        resolved_policy = self._resolve_retrieval_policy(
+            query=query,
+            requested_policy=retrieval_policy,
+            assessment=assessment,
+            exact_match_required=exact_match_required,
+        )
+        results = self._run_search_policy(
+            query=query,
+            top_k=top_k,
+            filters=filters,
+            assessment=assessment,
+            policy=resolved_policy,
+        )
+        if enable_corrective_rag and self._needs_corrective_pass(query, results, exact_match_required=exact_match_required):
+            corrected = self._run_corrective_search(
+                query=query,
+                top_k=top_k,
+                filters=filters,
+                assessment=assessment,
             )
-            for pt in self._qdrant_points(resp):
-                pid   = str(pt.get("id"))
-                score = float(pt.get("score", 0.0))
-                pl    = pt.get("payload", {})
-                if pid not in fused:
-                    fused[pid] = {"payload": pl, "sparse": 0.0, "dense": 0.0}
-                fused[pid][mode] = score
-
-        results: list[ArticleSearchResult] = []
-        for pid, data in fused.items():
-            final = round(0.5 * data["sparse"] + 0.5 * data["dense"], 4)
-            pl = data["payload"]
-            results.append(ArticleSearchResult(
-                chunk_id=pid,
-                doc_id=pl.get("doc_id", ""),
-                title=pl.get("title", ""),
-                chunk_index=int(pl.get("chunk_index", 0)),
-                content=pl.get("content", ""),
-                topics=pl.get("topics", []),
-                score=final,
-                source_path=pl.get("source_path", ""),
-                canonical_title=pl.get("canonical_title"),
-                published_at=pl.get("published_at"),
-                published_year=pl.get("published_year"),
-                version_label=pl.get("version_label"),
-            ))
-        results.sort(key=lambda r: r.score, reverse=True)
+            if corrected:
+                return corrected[:top_k]
         return results[:top_k]
 
     def related_articles(
@@ -173,6 +221,101 @@ class ArticleStore:
             return self._neo4j_related(doc_id, limit=limit)
         return self._qdrant_related(doc_id, limit=limit)
 
+    def benchmark_query_modes(
+        self,
+        query: str,
+        top_k: int = 6,
+        collection: str = ARTICLE_COLLECTION,
+        tenant_id: str | None = None,
+        source_tags: list[str] | None = None,
+        source_contains: str | None = None,
+        exact_match_required: bool = False,
+        enable_corrective_rag: bool = True,
+    ) -> ArticleBenchmarkResponse:
+        assessment = self.assess_graph_usefulness(query)
+        filters = _SearchFilters(
+            collection=collection,
+            tenant_id=tenant_id,
+            source_tags=tuple(sorted(set(source_tags or []))),
+            source_contains=source_contains.strip() if source_contains else None,
+        )
+        scenarios: list[ArticleBenchmarkScenarioResult] = []
+        for label, runner in [
+            ("dense", lambda: self._search_dense_only(query, top_k=top_k, filters=filters, assessment=assessment)),
+            ("hybrid", lambda: self._search_qdrant(query, top_k=top_k, filters=filters, assessment=assessment)),
+            ("graph", lambda: self._search_graph_entities(query, top_k=top_k, filters=filters, assessment=assessment)),
+            ("exact-page", lambda: self._search_exact_page(query, top_k=top_k, filters=filters, assessment=assessment)),
+            ("adaptive", lambda: self.search(query, top_k=top_k, collection=collection, tenant_id=tenant_id, source_tags=source_tags, source_contains=source_contains, exact_match_required=exact_match_required, enable_corrective_rag=False)),
+            ("corrective", lambda: self._run_corrective_search(query=query, top_k=top_k, filters=filters, assessment=assessment) if enable_corrective_rag else []),
+        ]:
+            started = time.perf_counter()
+            try:
+                results = runner()
+            except Exception:
+                results = []
+            elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
+            metrics = self._quality_proxies(query, results)
+            scenarios.append(
+                ArticleBenchmarkScenarioResult(
+                    mode=label,
+                    retrieval_mode=(results[0].retrieval_mode if results else label),
+                    latency_ms=elapsed_ms,
+                    result_count=len(results),
+                    avg_score=metrics["avg_score"],
+                    precision_proxy=metrics["precision_proxy"],
+                    recall_proxy=metrics["recall_proxy"],
+                    faithfulness_proxy=metrics["faithfulness_proxy"],
+                    top_doc_ids=[item.doc_id for item in results[:top_k]],
+                    top_titles=[item.title for item in results[:top_k]],
+                )
+            )
+        return ArticleBenchmarkResponse(
+            query=query,
+            recommended_mode=self._resolve_retrieval_policy(
+                query=query,
+                requested_policy="auto",
+                assessment=assessment,
+                exact_match_required=exact_match_required,
+            ),
+            graph_usefulness=assessment,
+            scenarios=scenarios,
+            provider_options=self._provider_benchmark_options(),
+        )
+
+    def distill_for_small_model(
+        self,
+        query: str,
+        results: list[ArticleSearchResult],
+        assessment: GraphUsefulnessAssessment | None = None,
+    ) -> ArticleDistillation:
+        effective_assessment = assessment or self.assess_graph_usefulness(query)
+        top_results = results[:4]
+        key_entities = sorted({entity for item in top_results for entity in item.entities})[:10]
+        key_topics = sorted({topic for item in top_results for topic in item.topics})[:10]
+        evidence_paths = [path for item in top_results for path in item.evidence_paths][:4]
+        bullets = [
+            f"- Query intent: {effective_assessment.mode} ({effective_assessment.rationale})",
+        ]
+        if key_entities:
+            bullets.append(f"- Entities: {', '.join(key_entities[:8])}")
+        if key_topics:
+            bullets.append(f"- Topics: {', '.join(key_topics[:8])}")
+        for item in top_results:
+            snippet = " ".join(item.content.split())[:260]
+            bullets.append(
+                f"- Evidence [{item.title} #{item.chunk_index}] score={item.score:.3f}: {snippet}"
+            )
+        if evidence_paths:
+            for path in evidence_paths[:3]:
+                bullets.append(f"- Path {path.relation}: {' -> '.join(path.nodes[:6])}")
+        return ArticleDistillation(
+            mode="small-model-graph-distilled",
+            context_text="\n".join(bullets).strip(),
+            key_entities=key_entities,
+            key_topics=key_topics,
+            evidence_paths=evidence_paths,
+        )
+
     # ── Ingestão individual ───────────────────────────────────────────────────
 
     def _ingest_one(
@@ -180,22 +323,29 @@ class ArticleStore:
         path: Path,
         title: str | None,
         collection: str,
+        tenant_id: str | None = None,
+        source_tags: list[str] | None = None,
+        source_type: str | None = None,
     ) -> ArticleIngestResponse:
         doc_id = self._doc_id(path)
         title  = title or path.stem.replace("_", " ").replace("-", " ").title()
+        source_tags = sorted(set(source_tags or []))
 
         raw_text = self._extract_text(path)
         if not raw_text.strip():
             return ArticleIngestResponse(
-                doc_id=doc_id, title=title, path=str(path),
+                doc_id=doc_id, title=title, path=str(path), collection=collection, tenant_id=tenant_id, source_tags=source_tags,
                 chunks_indexed=0, topics=[], ok=False,
                 error="Não foi possível extrair texto do arquivo.",
             )
 
         temporal_meta = self._extract_temporal_metadata(path=path, title=title, raw_text=raw_text)
-        chunks = self._chunk(raw_text)
-        topics_per_chunk = [self._extract_topics(c) for c in chunks]
+        chunk_records = self._chunk_document(raw_text)
+        chunks = [record.content for record in chunk_records]
+        topics_per_chunk = [self._extract_topics(record.content) for record in chunk_records]
+        entities_per_chunk = [self._extract_entities(record.content) for record in chunk_records]
         all_topics = sorted({t for ts in topics_per_chunk for t in ts})
+        all_entities = sorted({entity for es in entities_per_chunk for entity in es})
 
         # ── Qdrant ─────────────────────────────────────────────────────
         indexed = 0
@@ -204,20 +354,28 @@ class ArticleStore:
             texts         = chunks
             dense_vectors, _ = self.embeddings.embed_texts(texts)
             points: list[dict[str, Any]] = []
-            for idx, (chunk, dense) in enumerate(zip(chunks, dense_vectors, strict=False)):
+            for idx, (record, dense) in enumerate(zip(chunk_records, dense_vectors, strict=False)):
                 chunk_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{doc_id}:chunk:{idx}"))
-                sparse   = self._build_sparse_vector(chunk)
+                sparse   = self._build_sparse_vector(record.content)
                 points.append({
                     "id": chunk_id,
                     "vector": {"dense": dense, "text": sparse},
                     "payload": {
                         "doc_type":    "article",
                         "doc_id":      doc_id,
+                        "collection":  collection,
+                        "tenant_id":   tenant_id,
+                        "source_tags": source_tags,
+                        "source_type": source_type or path.suffix.lower().lstrip("."),
                         "title":       title,
                         "source_path": str(path),
                         "chunk_index": idx,
-                        "content":     chunk,
+                        "content":     record.content,
+                        "chunk_kind":  record.chunk_kind,
+                        "page_number": record.page_number,
+                        "section_title": record.section_title,
                         "topics":      topics_per_chunk[idx],
+                        "entities":    entities_per_chunk[idx],
                         "canonical_title": temporal_meta["canonical_title"],
                         "published_at": temporal_meta["published_at"],
                         "published_year": temporal_meta["published_year"],
@@ -236,13 +394,18 @@ class ArticleStore:
             self._neo4j_index_article(
                 doc_id=doc_id, title=title, path=str(path),
                 topics=all_topics, chunk_count=len(chunks),
+                chunks=chunk_records,
+                entities_per_chunk=entities_per_chunk,
                 temporal_meta=temporal_meta,
+                collection=collection,
+                tenant_id=tenant_id,
+                source_tags=source_tags,
             )
 
         return ArticleIngestResponse(
-            doc_id=doc_id, title=title, path=str(path),
+            doc_id=doc_id, title=title, path=str(path), collection=collection, tenant_id=tenant_id, source_tags=source_tags,
             chunks_indexed=indexed,
-            topics=all_topics,
+            topics=sorted(set([*all_topics, *all_entities[:8]])),
             canonical_title=temporal_meta["canonical_title"],
             published_at=temporal_meta["published_at"],
             published_year=temporal_meta["published_year"],
@@ -272,20 +435,22 @@ class ArticleStore:
                 if text.strip():
                     return text
 
-            # ── Pass 1: Docling ───────────────────────────────────────────────
-            text = ArticleStore._docling(path)
-            if text.strip():
-                return text
-
-            # ── Pass 2: pypdf (text-layer) ────────────────────────────────────
+            # ── Pass 1: pypdf (mais estável para born-digital PDFs) ───────────
             text = ArticleStore._pypdf(path)
             if text.strip():
                 return text
 
+            # ── Pass 2: Docling ───────────────────────────────────────────────
+            if self.settings.enable_docling_pdf_parser:
+                text = ArticleStore._docling(path)
+                if text.strip():
+                    return text
+
             # ── Pass 3: OCR (Tesseract via pdf2image) ─────────────────────────
-            text = ArticleStore._ocr_tesseract(path)
-            if text.strip():
-                return text
+            if self.settings.enable_tesseract_pdf_ocr:
+                text = ArticleStore._ocr_tesseract(path)
+                if text.strip():
+                    return text
 
         if suffix in {".txt", ".md"}:
             return path.read_text(encoding="utf-8", errors="replace")
@@ -385,7 +550,10 @@ class ArticleStore:
         try:
             from pypdf import PdfReader  # type: ignore[import-untyped]
             reader = PdfReader(str(path))
-            parts = [page.extract_text() or "" for page in reader.pages]
+            parts = [
+                f"[[PAGE_BREAK:{index + 1}]]\n{page.extract_text() or ''}"
+                for index, page in enumerate(reader.pages)
+            ]
             return "\n\n".join(parts).strip()
         except Exception:
             return ""
@@ -401,46 +569,161 @@ class ArticleStore:
             from pdf2image import convert_from_path  # type: ignore[import-untyped]
             images = convert_from_path(str(path), dpi=300)
             parts = [
-                pytesseract.image_to_string(img, lang="por+eng")
-                for img in images
+                f"[[PAGE_BREAK:{index + 1}]]\n{pytesseract.image_to_string(img, lang='por+eng')}"
+                for index, img in enumerate(images)
             ]
             return "\n\n".join(parts).strip()
         except Exception:
             return ""
 
-    @staticmethod
-    def _chunk(text: str, max_chars: int = 800, min_chars: int = 80) -> list[str]:
-        """Divide em parágrafos; junta os muito curtos, parte os muito longos."""
-        raw_paragraphs = [p.strip() for p in _SECTION_BREAK.split(text) if p.strip()]
-        chunks: list[str] = []
-        buffer = ""
-        for para in raw_paragraphs:
-            if len(buffer) + len(para) + 2 <= max_chars:
-                buffer = (buffer + "\n\n" + para).strip() if buffer else para
-            else:
+    @classmethod
+    def _chunk_document(cls, text: str, max_chars: int = 800, min_chars: int = 80) -> list[_ChunkRecord]:
+        """Chunking orientado a página/seção com heurísticas de tabela/figura."""
+        pages = cls._split_pages(text)
+        records: list[_ChunkRecord] = []
+        for page_number, page_text in pages:
+            current_section: str | None = None
+            buffer = ""
+            buffer_section: str | None = None
+            for para in [p.strip() for p in _SECTION_BREAK.split(page_text) if p.strip()]:
+                normalized = _MULTISPACE.sub(" ", para).strip()
+                if not normalized:
+                    continue
+                if cls._looks_like_heading(normalized):
+                    if buffer and len(buffer) >= min_chars:
+                        records.extend(
+                            cls._split_long_chunk(
+                                buffer,
+                                max_chars=max_chars,
+                                chunk_kind="text",
+                                page_number=page_number,
+                                section_title=buffer_section,
+                            )
+                        )
+                        buffer = ""
+                    current_section = normalized[:180]
+                    continue
+                chunk_kind = cls._classify_chunk_kind(normalized)
+                if chunk_kind in {"table", "figure"}:
+                    if buffer and len(buffer) >= min_chars:
+                        records.extend(
+                            cls._split_long_chunk(
+                                buffer,
+                                max_chars=max_chars,
+                                chunk_kind="text",
+                                page_number=page_number,
+                                section_title=buffer_section,
+                            )
+                        )
+                        buffer = ""
+                    records.extend(
+                        cls._split_long_chunk(
+                            normalized,
+                            max_chars=max_chars,
+                            chunk_kind=chunk_kind,
+                            page_number=page_number,
+                            section_title=current_section,
+                        )
+                    )
+                    continue
+                next_buffer = (buffer + "\n\n" + normalized).strip() if buffer else normalized
+                if len(next_buffer) <= max_chars:
+                    buffer = next_buffer
+                    buffer_section = current_section
+                    continue
                 if buffer and len(buffer) >= min_chars:
-                    chunks.append(buffer)
-                buffer = para
-        if buffer and len(buffer) >= min_chars:
-            chunks.append(buffer)
-        # Long paragraphs: split by sentence
-        final: list[str] = []
-        for chunk in chunks:
-            if len(chunk) <= max_chars:
-                final.append(chunk)
-                continue
-            sentences = re.split(r"(?<=[.!?])\s+", chunk)
-            sub = ""
-            for sent in sentences:
-                if len(sub) + len(sent) + 1 <= max_chars:
-                    sub = (sub + " " + sent).strip() if sub else sent
-                else:
-                    if sub:
-                        final.append(sub)
-                    sub = sent
-            if sub:
-                final.append(sub)
-        return final
+                    records.extend(
+                        cls._split_long_chunk(
+                            buffer,
+                            max_chars=max_chars,
+                            chunk_kind="text",
+                            page_number=page_number,
+                            section_title=buffer_section,
+                        )
+                    )
+                buffer = normalized
+                buffer_section = current_section
+            if buffer and len(buffer) >= min_chars:
+                records.extend(
+                    cls._split_long_chunk(
+                        buffer,
+                        max_chars=max_chars,
+                        chunk_kind="text",
+                        page_number=page_number,
+                        section_title=buffer_section,
+                    )
+                )
+        return records
+
+    @classmethod
+    def _split_pages(cls, text: str) -> list[tuple[int | None, str]]:
+        if not _PAGE_BREAK.search(text):
+            return [(None, text)]
+        pages: list[tuple[int | None, str]] = []
+        parts = _PAGE_BREAK.split(text)
+        prefix = parts[0].strip()
+        if prefix:
+            pages.append((None, prefix))
+        for idx in range(1, len(parts), 2):
+            page_number = int(parts[idx])
+            page_text = parts[idx + 1].strip() if idx + 1 < len(parts) else ""
+            if page_text:
+                pages.append((page_number, page_text))
+        return pages or [(None, text)]
+
+    @classmethod
+    def _split_long_chunk(
+        cls,
+        text: str,
+        *,
+        max_chars: int,
+        chunk_kind: str,
+        page_number: int | None,
+        section_title: str | None,
+    ) -> list[_ChunkRecord]:
+        if len(text) <= max_chars:
+            return [_ChunkRecord(text, chunk_kind=chunk_kind, page_number=page_number, section_title=section_title)]
+        records: list[_ChunkRecord] = []
+        sentences = re.split(r"(?<=[.!?])\s+", text)
+        sub = ""
+        for sent in sentences:
+            if len(sub) + len(sent) + 1 <= max_chars:
+                sub = (sub + " " + sent).strip() if sub else sent
+            else:
+                if sub:
+                    records.append(_ChunkRecord(sub, chunk_kind=chunk_kind, page_number=page_number, section_title=section_title))
+                sub = sent
+        if sub:
+            records.append(_ChunkRecord(sub, chunk_kind=chunk_kind, page_number=page_number, section_title=section_title))
+        return records
+
+    @classmethod
+    def _looks_like_heading(cls, text: str) -> bool:
+        if len(text) > 120 or len(text.split()) > 14:
+            return False
+        if text.endswith((".", "!", "?", ";", ":")):
+            return False
+        lowered = cls._normalize_ascii(text)
+        return bool(
+            re.match(r"^(section|secao|capitulo|chapter|parte|part|appendix|anexo|\d+(\.\d+){0,3})\b", lowered)
+            or (text == text.upper() and len(text) > 6)
+            or sum(ch.isupper() for ch in text) >= max(2, len(text.split()) // 2)
+        )
+
+    @classmethod
+    def _classify_chunk_kind(cls, text: str) -> str:
+        lowered = cls._normalize_ascii(text)
+        if (
+            text.count("|") >= 4
+            or text.count("\t") >= 2
+            or len(re.findall(r"\b\d+(?:[.,]\d+)?\b", text)) >= 6
+            or "table" in lowered
+            or "tabela" in lowered
+        ):
+            return "table"
+        if any(term in lowered for term in ("figure", "fig.", "screenshot", "captura", "imagem", "diagram", "chart")):
+            return "figure"
+        return "text"
 
     @staticmethod
     def _extract_topics(text: str, top_n: int = 8) -> list[str]:
@@ -452,6 +735,76 @@ class ArticleStore:
                 freq[tok] = freq.get(tok, 0) + 1
         ranked = sorted(freq, key=lambda k: freq[k], reverse=True)
         return ranked[:top_n]
+
+    @classmethod
+    def _extract_entities(cls, text: str, top_n: int = 10) -> list[str]:
+        candidates: Counter[str] = Counter()
+        for match in _ENTITY_PATTERN.finditer(text):
+            entity = " ".join(match.group(0).split())
+            if len(entity) < 3 or entity in _NON_ENTITY_TERMS:
+                continue
+            parts = entity.split()
+            if len(parts) == 1:
+                token = parts[0]
+                if token[1:].islower() and not token.isupper():
+                    continue
+            elif any(part in _NON_ENTITY_TERMS for part in parts):
+                continue
+            normalized = cls._normalize_ascii(entity)
+            if normalized in _STOPWORDS or normalized.isdigit():
+                continue
+            candidates[entity] += 1
+        ranked = sorted(
+            candidates.items(),
+            key=lambda item: (-item[1], -len(item[0]), item[0]),
+        )
+        return [entity for entity, _ in ranked[:top_n]]
+
+    @classmethod
+    def assess_graph_usefulness(cls, query: str) -> GraphUsefulnessAssessment:
+        entities = cls._extract_entities(query, top_n=8)
+        lowered = cls._normalize_ascii(query)
+        signals: list[str] = []
+        score = 0.0
+        connector_hits = sorted(token for token in _GRAPH_CONNECTORS if token in lowered)
+        if len(entities) >= 2:
+            score += 0.35
+            signals.append(f"{len(entities)} named entities in query")
+        if len(entities) >= 3:
+            score += 0.15
+        if connector_hits:
+            score += min(0.35, 0.08 * len(connector_hits))
+            signals.append("graph-oriented connectors: " + ", ".join(connector_hits[:5]))
+        if "multi-hop" in lowered or "multi hop" in lowered:
+            score += 0.2
+            signals.append("explicit multi-hop reasoning requested")
+        if any(term in lowered for term in ("version", "versao", "versoes", "timeline", "before", "after", "conflict", "conflit", "contradict")):
+            score += 0.15
+            signals.append("temporal or conflict reasoning requested")
+        if any(term in lowered for term in ("count", "sum", "aggregate", "across", "all", "evidenc", "dispers", "hidden", "oculta")):
+            score += 0.1
+            signals.append("aggregation or corpus-wide reasoning requested")
+        score = min(score, 1.0)
+        if score >= 0.8:
+            mode = "graph-multi-hop"
+            rationale = "query likely needs chained evidence across multiple entities"
+        elif score >= 0.6:
+            mode = "graph-bridge"
+            rationale = "query benefits from relation-aware bridging between entities and chunks"
+        elif score >= 0.4:
+            mode = "graph-local"
+            rationale = "query has enough explicit entities for graph-local expansion"
+        else:
+            mode = "vector-global"
+            rationale = "query is broad or single-hop, so hybrid vector search is cheaper and safer"
+        if not signals:
+            signals.append("no strong multi-hop signal detected")
+        return GraphUsefulnessAssessment(
+            mode=mode,
+            score=round(score, 4),
+            rationale=rationale,
+            signals=signals,
+        )
 
     @staticmethod
     def _doc_id(path: Path) -> str:
@@ -530,6 +883,515 @@ class ArticleStore:
         normalized = _MULTISPACE.sub(" ", normalized).strip()
         return normalized
 
+    def retrieval_requires_human_review(
+        self,
+        query: str,
+        results: list[ArticleSearchResult],
+        *,
+        exact_match_required: bool = False,
+    ) -> bool:
+        return self._needs_corrective_pass(query, results, exact_match_required=exact_match_required)
+
+    @classmethod
+    def _resolve_retrieval_policy(
+        cls,
+        *,
+        query: str,
+        requested_policy: str,
+        assessment: GraphUsefulnessAssessment,
+        exact_match_required: bool,
+    ) -> str:
+        policy = (requested_policy or "auto").strip().lower()
+        if policy in {"adaptive", "auto"}:
+            if exact_match_required or cls._looks_like_exact_query(query):
+                return "exact-page"
+            return assessment.mode
+        if policy in {"vector", "vector-global", "hybrid"}:
+            return "vector-global"
+        if policy in {"graph", "graph-local", "graph-bridge", "graph-multi-hop"}:
+            return policy
+        if policy in {"exact", "exact-page", "page-level"}:
+            return "exact-page"
+        if policy == "corrective":
+            return "corrective"
+        return assessment.mode
+
+    @classmethod
+    def _looks_like_exact_query(cls, query: str) -> bool:
+        lowered = cls._normalize_ascii(query)
+        if "\"" in query or "'" in query:
+            return True
+        return any(
+            term in lowered
+            for term in (
+                "exact", "literal", "verbatim", "page ", "pagina ", "section", "secao",
+                "table", "tabela", "figure", "figura", "screenshot", "quote", "trecho exato",
+            )
+        ) or bool(re.search(r"\b[A-Z]{2,}-\d{2,}\b", query))
+
+    @classmethod
+    def _rewrite_query_variants(cls, query: str) -> list[str]:
+        variants = [query.strip()]
+        entities = cls._extract_entities(query, top_n=5)
+        if entities:
+            variants.append(" ".join(entities))
+            variants.append(f"exact evidence for {' '.join(entities[:3])}")
+        keywords = cls._extract_topics(query, top_n=6)
+        if keywords:
+            variants.append(" ".join(keywords))
+        return list(dict.fromkeys(variant for variant in variants if variant))
+
+    @classmethod
+    def _needs_corrective_pass(
+        cls,
+        query: str,
+        results: list[ArticleSearchResult],
+        *,
+        exact_match_required: bool,
+    ) -> bool:
+        if not results:
+            return True
+        top_score = results[0].score
+        if exact_match_required and (results[0].retrieval_mode != "exact-page" or top_score < 0.7):
+            return True
+        entity_hits = cls._extract_entities(query, top_n=5)
+        coverage = cls._query_coverage(query, results)
+        if top_score < 0.28:
+            return True
+        if len(results) >= 2 and abs(results[0].score - results[1].score) < 0.03 and coverage < 0.45:
+            return True
+        if entity_hits and coverage < 0.35:
+            return True
+        return False
+
+    @classmethod
+    def _query_terms(cls, query: str) -> list[str]:
+        tokens = re.findall(r"[a-zA-Z0-9_.:/-]{3,}", cls._normalize_ascii(query))
+        return list(dict.fromkeys(token for token in tokens if token not in _STOPWORDS))
+
+    @classmethod
+    def _query_coverage(cls, query: str, results: list[ArticleSearchResult]) -> float:
+        terms = cls._query_terms(query)[:8]
+        if not terms or not results:
+            return 0.0
+        corpus = cls._normalize_ascii(" ".join(item.content for item in results[:3]))
+        matched = sum(1 for term in terms if term in corpus)
+        return round(matched / max(1, len(terms)), 4)
+
+    def _run_search_policy(
+        self,
+        *,
+        query: str,
+        top_k: int,
+        filters: _SearchFilters,
+        assessment: GraphUsefulnessAssessment,
+        policy: str,
+    ) -> list[ArticleSearchResult]:
+        if policy == "exact-page":
+            return self._search_exact_page(query, top_k=top_k, filters=filters, assessment=assessment)
+        if policy == "vector-global":
+            vector_results = self._search_qdrant(query, top_k=top_k, filters=filters, assessment=assessment)
+            if vector_results or not self.settings.enable_graphrag:
+                return vector_results
+            return self._search_graph_entities(query, top_k=top_k, filters=filters, assessment=assessment)
+        if policy == "corrective":
+            return self._run_corrective_search(query=query, top_k=top_k, filters=filters, assessment=assessment)
+
+        graph_results = self._search_graph_entities(query, top_k=top_k, filters=filters, assessment=assessment)
+        vector_results = self._search_qdrant(query, top_k=max(top_k, 4), filters=filters, assessment=assessment)
+        if not graph_results:
+            return vector_results[:top_k]
+        return self._merge_ranked_results(
+            graph_results,
+            vector_results,
+            top_k=top_k,
+            retrieval_mode=policy,
+            assessment=assessment,
+        )
+
+    def _run_corrective_search(
+        self,
+        *,
+        query: str,
+        top_k: int,
+        filters: _SearchFilters,
+        assessment: GraphUsefulnessAssessment,
+    ) -> list[ArticleSearchResult]:
+        merged: list[ArticleSearchResult] = []
+        for variant in self._rewrite_query_variants(query):
+            exact_results = self._search_exact_page(variant, top_k=max(top_k, 3), filters=filters, assessment=assessment)
+            vector_results = self._search_qdrant(variant, top_k=max(top_k, 4), filters=filters, assessment=assessment)
+            graph_results = self._search_graph_entities(variant, top_k=max(top_k, 3), filters=filters, assessment=assessment)
+            variant_results = self._merge_ranked_results(
+                exact_results + graph_results,
+                vector_results,
+                top_k=max(top_k, 6),
+                retrieval_mode="corrective",
+                assessment=assessment,
+            )
+            merged = self._merge_ranked_results(
+                merged,
+                variant_results,
+                top_k=max(top_k, 8),
+                retrieval_mode="corrective",
+                assessment=assessment,
+            )
+        return merged[:top_k]
+
+    def _quality_proxies(self, query: str, results: list[ArticleSearchResult]) -> dict[str, float]:
+        if not results:
+            return {
+                "avg_score": 0.0,
+                "precision_proxy": 0.0,
+                "recall_proxy": 0.0,
+                "faithfulness_proxy": 0.0,
+            }
+        top = results[: min(5, len(results))]
+        avg_score = round(sum(item.score for item in top) / len(top), 4)
+        coverage = self._query_coverage(query, top)
+        faithfulness = round(
+            sum(1 for item in top if coverage > 0 and self._normalize_ascii(query[:80]).split(" ")[0] in self._normalize_ascii(item.content))
+            / len(top),
+            4,
+        )
+        return {
+            "avg_score": avg_score,
+            "precision_proxy": min(1.0, round(avg_score, 4)),
+            "recall_proxy": coverage,
+            "faithfulness_proxy": faithfulness,
+        }
+
+    def _provider_benchmark_options(self) -> list[dict[str, Any]]:
+        options = [
+            ("openai", self.settings.openai_model, 900, "$$$", False),
+            ("gemini", self.settings.gemini_model, 700, "$$", False),
+            ("ollama", self.settings.ollama_model, 1400, "$", True),
+            ("ollm", self.settings.ollm_model, 1800, "$", True),
+            ("mock", self.settings.primary_model, 50, "free", True),
+        ]
+        return [
+            {
+                "provider": provider,
+                "model": model,
+                "estimated_latency_ms": latency,
+                "estimated_relative_cost": cost,
+                "local": local,
+            }
+            for provider, model, latency, cost, local in options
+        ]
+
+    # ── Retrieval helpers ────────────────────────────────────────────────────
+
+    def _search_qdrant(
+        self,
+        query: str,
+        *,
+        top_k: int,
+        filters: _SearchFilters,
+        assessment: GraphUsefulnessAssessment,
+    ) -> list[ArticleSearchResult]:
+        if not self._qdrant_available():
+            return []
+        self._ensure_collection(filters.collection)
+        dense_vector, _ = self.embeddings.embed_text(query)
+        sparse_payload_body = self._build_sparse_vector(query)
+
+        fused: dict[str, dict[str, Any]] = {}
+        for mode, payload in [
+            ("sparse", {"query": sparse_payload_body, "using": "text", "limit": top_k * 6, "with_payload": True}),
+            ("dense", {"query": dense_vector, "using": "dense", "limit": top_k * 6, "with_payload": True}),
+        ]:
+            resp = self._qdrant(
+                "POST",
+                f"/collections/{filters.collection}/points/query",
+                json_body=payload,
+            )
+            for pt in self._qdrant_points(resp):
+                pid = str(pt.get("id"))
+                score = float(pt.get("score", 0.0))
+                payload_body = pt.get("payload", {})
+                if not self._payload_matches_filters(payload_body, filters):
+                    continue
+                if pid not in fused:
+                    fused[pid] = {"payload": payload_body, "sparse": 0.0, "dense": 0.0}
+                fused[pid][mode] = score
+
+        results: list[ArticleSearchResult] = []
+        for pid, data in fused.items():
+            final = round(0.5 * data["sparse"] + 0.5 * data["dense"], 4)
+            results.append(
+                self._result_from_payload(
+                    chunk_id=pid,
+                    payload=data["payload"],
+                    score=final,
+                    retrieval_mode="vector-global",
+                    assessment=assessment,
+                    evidence_paths=[],
+                )
+            )
+        results.sort(key=lambda item: item.score, reverse=True)
+        return results[:top_k]
+
+    def _search_dense_only(
+        self,
+        query: str,
+        *,
+        top_k: int,
+        filters: _SearchFilters,
+        assessment: GraphUsefulnessAssessment,
+    ) -> list[ArticleSearchResult]:
+        if not self._qdrant_available():
+            return []
+        self._ensure_collection(filters.collection)
+        dense_vector, _ = self.embeddings.embed_text(query)
+        resp = self._qdrant(
+            "POST",
+            f"/collections/{filters.collection}/points/query",
+            json_body={"query": dense_vector, "using": "dense", "limit": top_k * 6, "with_payload": True},
+        )
+        results: list[ArticleSearchResult] = []
+        for pt in self._qdrant_points(resp):
+            payload = pt.get("payload", {})
+            if not self._payload_matches_filters(payload, filters):
+                continue
+            results.append(
+                self._result_from_payload(
+                    chunk_id=str(pt.get("id")),
+                    payload=payload,
+                    score=round(float(pt.get("score", 0.0)), 4),
+                    retrieval_mode="dense",
+                    assessment=assessment,
+                    evidence_paths=[],
+                )
+            )
+        results.sort(key=lambda item: item.score, reverse=True)
+        return results[:top_k]
+
+    def _search_exact_page(
+        self,
+        query: str,
+        *,
+        top_k: int,
+        filters: _SearchFilters,
+        assessment: GraphUsefulnessAssessment,
+    ) -> list[ArticleSearchResult]:
+        points = self._scroll_collection_points(filters.collection, limit=max(250, top_k * 80))
+        phrases = [phrase.strip().lower() for phrase in re.findall(r"\"([^\"]+)\"", query) if phrase.strip()]
+        terms = self._query_terms(query)[:10]
+        results: list[ArticleSearchResult] = []
+        for pt in points:
+            payload = pt.get("payload", {})
+            if not self._payload_matches_filters(payload, filters):
+                continue
+            haystack = self._normalize_ascii(
+                f"{payload.get('title', '')}\n{payload.get('section_title', '')}\n{payload.get('content', '')}"
+            )
+            phrase_hits = sum(1 for phrase in phrases if self._normalize_ascii(phrase) in haystack)
+            term_hits = sum(1 for term in terms if term in haystack)
+            if not phrase_hits and not term_hits:
+                continue
+            exactness = min(1.0, 0.52 * phrase_hits + 0.08 * term_hits + (0.1 if payload.get("page_number") else 0.0))
+            results.append(
+                self._result_from_payload(
+                    chunk_id=str(pt.get("id")),
+                    payload=payload,
+                    score=round(exactness, 4),
+                    retrieval_mode="exact-page",
+                    assessment=assessment,
+                    evidence_paths=[],
+                )
+            )
+        results.sort(key=lambda item: item.score, reverse=True)
+        return results[:top_k]
+
+    def _search_graph_entities(
+        self,
+        query: str,
+        *,
+        top_k: int,
+        filters: _SearchFilters,
+        assessment: GraphUsefulnessAssessment,
+    ) -> list[ArticleSearchResult]:
+        if not self.settings.enable_graphrag or not self.settings.neo4j_url:
+            return []
+        entities = self._extract_entities(query, top_n=8)
+        if not entities:
+            return []
+        try:
+            import neo4j as _neo4j  # type: ignore[import-untyped]
+        except ImportError:
+            return []
+
+        entity_keys = [self._normalize_ascii(entity) for entity in entities]
+        try:
+            driver = _neo4j.GraphDatabase.driver(
+                self.settings.neo4j_url,
+                auth=(self.settings.neo4j_user, self.settings.neo4j_password),
+            )
+        except Exception:
+            return []
+        records: list[dict[str, Any]] = []
+        try:
+            with driver.session(database=self.settings.neo4j_database) as session:
+                rows = session.run(
+                    """
+                    MATCH (e:Entity)
+                    WHERE e.key IN $entity_keys
+                    MATCH (e)<-[:MENTIONS_ENTITY]-(s:Sentence)<-[:HAS_SENTENCE]-(c:Chunk)<-[:HAS_CHUNK]-(a:Article)
+                    WITH a, c,
+                         collect(DISTINCT e.name) AS matched_entities,
+                         collect(DISTINCT s.text)[0..2] AS matched_sentences,
+                         count(DISTINCT e) AS entity_hits
+                    RETURN a.id AS doc_id,
+                           a.title AS title,
+                           a.path AS source_path,
+                           a.collection AS collection,
+                           a.tenant_id AS tenant_id,
+                           coalesce(a.source_tags, []) AS source_tags,
+                           a.canonical_title AS canonical_title,
+                           a.published_at AS published_at,
+                           a.published_year AS published_year,
+                           a.version_label AS version_label,
+                           c.id AS chunk_id,
+                           c.chunk_index AS chunk_index,
+                           c.content AS content,
+                           c.chunk_kind AS chunk_kind,
+                           c.page_number AS page_number,
+                           c.section_title AS section_title,
+                           coalesce(c.topics, []) AS topics,
+                           coalesce(c.entities, []) AS entities,
+                           matched_entities,
+                           matched_sentences,
+                           entity_hits
+                    ORDER BY entity_hits DESC, c.chunk_index ASC
+                    LIMIT $limit
+                    """,
+                    entity_keys=entity_keys,
+                    limit=max(top_k * 2, 6),
+                )
+                for row in rows:
+                    row_data = dict(row)
+                    matched_entities = list(row_data.get("matched_entities") or [])
+                    chunk_entities = list(row_data.get("entities") or [])
+                    bridge_entities = [entity for entity in chunk_entities if entity not in matched_entities][:1]
+                    path_nodes = [*matched_entities[:2], *bridge_entities, row_data.get("title", "")]
+                    summary_text = " | ".join((row_data.get("matched_sentences") or [])[:2])
+                    path = ArticleEvidencePath(
+                        path_id=f"path:{row_data.get('chunk_id')}",
+                        relation=assessment.mode,
+                        nodes=[node for node in path_nodes if node],
+                        score=float(row_data.get("entity_hits", 0.0)),
+                        summary=summary_text[:320],
+                    )
+                    payload = {
+                        "doc_id": row_data.get("doc_id", ""),
+                        "collection": row_data.get("collection", filters.collection),
+                        "tenant_id": row_data.get("tenant_id"),
+                        "source_tags": row_data.get("source_tags", []),
+                        "title": row_data.get("title", ""),
+                        "source_path": row_data.get("source_path", ""),
+                        "chunk_index": row_data.get("chunk_index", 0),
+                        "content": row_data.get("content", ""),
+                        "chunk_kind": row_data.get("chunk_kind", "text"),
+                        "page_number": row_data.get("page_number"),
+                        "section_title": row_data.get("section_title"),
+                        "topics": row_data.get("topics", []),
+                        "entities": row_data.get("entities", []),
+                        "canonical_title": row_data.get("canonical_title"),
+                        "published_at": row_data.get("published_at"),
+                        "published_year": row_data.get("published_year"),
+                        "version_label": row_data.get("version_label"),
+                    }
+                    records.append(
+                        self._result_from_payload(
+                            chunk_id=row_data.get("chunk_id", ""),
+                            payload=payload,
+                            score=round(float(row_data.get("entity_hits", 0.0)) + 0.25, 4),
+                            retrieval_mode=assessment.mode,
+                            assessment=assessment,
+                            evidence_paths=[path],
+                        )
+                    )
+        except Exception:
+            return []
+        finally:
+            driver.close()
+        records = [record for record in records if self._payload_matches_filters(record.model_dump(mode="json"), filters)]
+        records.sort(key=lambda item: item.score, reverse=True)
+        return records[:top_k]
+
+    def _merge_ranked_results(
+        self,
+        primary: list[ArticleSearchResult],
+        secondary: list[ArticleSearchResult],
+        *,
+        top_k: int,
+        retrieval_mode: str,
+        assessment: GraphUsefulnessAssessment,
+    ) -> list[ArticleSearchResult]:
+        merged: dict[str, ArticleSearchResult] = {}
+        for item in [*primary, *secondary]:
+            existing = merged.get(item.chunk_id)
+            if existing is None:
+                merged[item.chunk_id] = item.model_copy(
+                    update={
+                        "retrieval_mode": retrieval_mode,
+                        "graph_usefulness": assessment,
+                    }
+                )
+                continue
+            combined_paths = [*existing.evidence_paths, *item.evidence_paths]
+            combined_entities = sorted(set([*existing.entities, *item.entities]))
+            combined_topics = sorted(set([*existing.topics, *item.topics]))
+            merged[item.chunk_id] = existing.model_copy(
+                update={
+                    "score": round(max(existing.score, item.score) + 0.08, 4),
+                    "entities": combined_entities,
+                    "topics": combined_topics,
+                    "evidence_paths": combined_paths[:4],
+                    "retrieval_mode": retrieval_mode,
+                    "graph_usefulness": assessment,
+                }
+            )
+        results = list(merged.values())
+        results.sort(key=lambda item: item.score, reverse=True)
+        return results[:top_k]
+
+    @staticmethod
+    def _result_from_payload(
+        *,
+        chunk_id: str,
+        payload: dict[str, Any],
+        score: float,
+        retrieval_mode: str,
+        assessment: GraphUsefulnessAssessment,
+        evidence_paths: list[ArticleEvidencePath],
+    ) -> ArticleSearchResult:
+        return ArticleSearchResult(
+            chunk_id=chunk_id,
+            doc_id=payload.get("doc_id", ""),
+            title=payload.get("title", ""),
+            chunk_index=int(payload.get("chunk_index", 0)),
+            content=payload.get("content", ""),
+            topics=list(payload.get("topics", [])),
+            entities=list(payload.get("entities", [])),
+            score=score,
+            collection=payload.get("collection", ARTICLE_COLLECTION),
+            tenant_id=payload.get("tenant_id"),
+            source_tags=list(payload.get("source_tags", [])),
+            source_path=payload.get("source_path", ""),
+            canonical_title=payload.get("canonical_title"),
+            published_at=payload.get("published_at"),
+            published_year=payload.get("published_year"),
+            version_label=payload.get("version_label"),
+            chunk_kind=payload.get("chunk_kind", "text"),
+            page_number=payload.get("page_number"),
+            section_title=payload.get("section_title"),
+            retrieval_mode=retrieval_mode,
+            graph_usefulness=assessment,
+            evidence_paths=evidence_paths,
+        )
+
     # ── Qdrant helpers ────────────────────────────────────────────────────────
 
     def _qdrant_available(self) -> bool:
@@ -580,6 +1442,46 @@ class ArticleStore:
             return result
         return []
 
+    def _scroll_collection_points(self, collection: str, limit: int = 500) -> list[dict[str, Any]]:
+        if not self._qdrant_available():
+            return []
+        self._ensure_collection(collection)
+        gathered: list[dict[str, Any]] = []
+        offset: Any | None = None
+        remaining = limit
+        while remaining > 0:
+            batch_size = min(100, remaining)
+            body: dict[str, Any] = {"limit": batch_size, "with_payload": True}
+            if offset is not None:
+                body["offset"] = offset
+            resp = self._qdrant("POST", f"/collections/{collection}/points/scroll", json_body=body)
+            result = resp.get("result") or {}
+            points = result.get("points") or []
+            if not points:
+                break
+            gathered.extend(points)
+            remaining -= len(points)
+            offset = result.get("next_page_offset")
+            if offset is None:
+                break
+        return gathered[:limit]
+
+    @classmethod
+    def _payload_matches_filters(cls, payload: dict[str, Any], filters: _SearchFilters) -> bool:
+        if filters.tenant_id and payload.get("tenant_id") != filters.tenant_id:
+            return False
+        if filters.source_tags:
+            payload_tags = {str(tag) for tag in payload.get("source_tags", [])}
+            if not set(filters.source_tags).issubset(payload_tags):
+                return False
+        if filters.source_contains:
+            haystack = cls._normalize_ascii(
+                f"{payload.get('source_path', '')} {payload.get('title', '')} {payload.get('section_title', '')}"
+            )
+            if cls._normalize_ascii(filters.source_contains) not in haystack:
+                return False
+        return True
+
     # ── Neo4j helpers ─────────────────────────────────────────────────────────
 
     def _neo4j_index_article(
@@ -589,7 +1491,12 @@ class ArticleStore:
         path: str,
         topics: list[str],
         chunk_count: int,
+        chunks: list[_ChunkRecord],
+        entities_per_chunk: list[list[str]],
         temporal_meta: dict[str, Any],
+        collection: str,
+        tenant_id: str | None,
+        source_tags: list[str],
     ) -> None:
         try:
             import neo4j as _neo4j  # type: ignore[import-untyped]
@@ -604,6 +1511,9 @@ class ArticleStore:
                     MERGE (a:Article {id: $id})
                     SET a.title        = $title,
                         a.path         = $path,
+                        a.collection   = $collection,
+                        a.tenant_id    = $tenant_id,
+                        a.source_tags  = $source_tags,
                         a.chunk_count  = $chunk_count,
                         a.canonical_title = $canonical_title,
                         a.published_at = $published_at,
@@ -614,12 +1524,22 @@ class ArticleStore:
                     id=doc_id,
                     title=title,
                     path=path,
+                    collection=collection,
+                    tenant_id=tenant_id,
+                    source_tags=source_tags,
                     chunk_count=chunk_count,
                     canonical_title=temporal_meta.get("canonical_title"),
                     published_at=temporal_meta.get("published_at"),
                     published_year=temporal_meta.get("published_year"),
                     version_label=temporal_meta.get("version_label"),
                     version_number=temporal_meta.get("version_number"),
+                )
+                session.run(
+                    """
+                    MATCH (a:Article {id: $doc_id})-[r:HAS_CHUNK]->(:Chunk)
+                    DELETE r
+                    """,
+                    doc_id=doc_id,
                 )
                 for topic in topics:
                     session.run(
@@ -631,6 +1551,66 @@ class ArticleStore:
                         """,
                         name=topic, doc_id=doc_id,
                     )
+                for idx, chunk in enumerate(chunks):
+                    chunk_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{doc_id}:chunk:{idx}"))
+                    chunk_entities = entities_per_chunk[idx] if idx < len(entities_per_chunk) else []
+                    chunk_topics = self._extract_topics(chunk.content)
+                    session.run(
+                        """
+                        MATCH (a:Article {id: $doc_id})
+                        MERGE (c:Chunk {id: $chunk_id})
+                        SET c.content = $content,
+                            c.chunk_index = $chunk_index,
+                            c.chunk_kind = $chunk_kind,
+                            c.page_number = $page_number,
+                            c.section_title = $section_title,
+                            c.topics = $topics,
+                            c.entities = $entities
+                        MERGE (a)-[:HAS_CHUNK]->(c)
+                        """,
+                        doc_id=doc_id,
+                        chunk_id=chunk_id,
+                        content=chunk.content,
+                        chunk_index=idx,
+                        chunk_kind=chunk.chunk_kind,
+                        page_number=chunk.page_number,
+                        section_title=chunk.section_title,
+                        topics=chunk_topics,
+                        entities=chunk_entities,
+                    )
+                    sentences = [sentence.strip() for sentence in _SENTENCE_SPLIT.split(chunk.content) if sentence.strip()]
+                    for sent_idx, sentence in enumerate(sentences):
+                        sentence_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{chunk_id}:sentence:{sent_idx}"))
+                        sentence_entities = self._extract_entities(sentence)
+                        session.run(
+                            """
+                            MATCH (c:Chunk {id: $chunk_id})
+                            MERGE (s:Sentence {id: $sentence_id})
+                            SET s.text = $text,
+                                s.sentence_index = $sentence_index
+                            MERGE (c)-[:HAS_SENTENCE]->(s)
+                            """,
+                            chunk_id=chunk_id,
+                            sentence_id=sentence_id,
+                            text=sentence,
+                            sentence_index=sent_idx,
+                        )
+                        for entity in sentence_entities:
+                            session.run(
+                                """
+                                MATCH (s:Sentence {id: $sentence_id})
+                                MERGE (e:Entity {key: $key})
+                                SET e.name = $name
+                                MERGE (s)-[:MENTIONS_ENTITY]->(e)
+                                WITH e
+                                MATCH (a:Article {id: $doc_id})
+                                MERGE (a)-[:HAS_ENTITY]->(e)
+                                """,
+                                sentence_id=sentence_id,
+                                doc_id=doc_id,
+                                key=self._normalize_ascii(entity),
+                                name=entity,
+                            )
         finally:
             driver.close()
 
@@ -690,13 +1670,16 @@ class ArticleStore:
                     """
                     MATCH (a:Article)-[:HAS_TOPIC]->(t:Topic)<-[:HAS_TOPIC]-(b:Article)
                     WHERE id(a) < id(b)
+                      AND coalesce(a.collection, $collection) = $collection
+                      AND coalesce(b.collection, $collection) = $collection
                     WITH a, b, count(t) AS shared_topics
                     WHERE shared_topics >= 2
                     MERGE (a)-[r:SHARES_TOPIC]->(b)
                     SET r.weight = shared_topics
                     MERGE (b)-[r2:SHARES_TOPIC]->(a)
                     SET r2.weight = shared_topics
-                    """
+                    """,
+                    collection=collection,
                 )
         finally:
             driver.close()

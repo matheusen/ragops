@@ -14,6 +14,8 @@ from jira_issue_rag.shared.models import (
     ArticlePromptUploadResponse,
     ArticleIngestRequest,
     ArticleIngestResponse,
+    ArticleBenchmarkRequest,
+    ArticleBenchmarkResponse,
     ArticleRelatedRequest,
     ArticleSearchRequest,
     ArticleSearchResult,
@@ -622,6 +624,9 @@ def ingest_articles(
         paths=request.paths,
         titles=request.titles,
         collection=request.collection,
+        tenant_id=request.tenant_id,
+        source_tags=request.source_tags,
+        source_type=request.source_type,
     )
 
 
@@ -646,6 +651,39 @@ def search_articles(
         query=request.query,
         top_k=request.top_k,
         collection=request.collection,
+        retrieval_policy=request.retrieval_policy,
+        tenant_id=request.tenant_id,
+        source_tags=request.source_tags,
+        source_contains=request.source_contains,
+        exact_match_required=request.exact_match_required,
+        enable_corrective_rag=request.enable_corrective_rag,
+    )
+
+
+@router.post(
+    "/articles/benchmark",
+    response_model=ArticleBenchmarkResponse,
+    tags=["articles"],
+    summary="Comparar modos de retrieval para artigos",
+    description=(
+        "Executa um benchmark operacional leve entre modos de retrieval para a query enviada. "
+        "Retorna a recomendação do graph gate, tempos aproximados e os top docs por cenário "
+        "para ajudar a decidir quando vale usar GraphRAG em vez de retrieval vetorial simples."
+    ),
+)
+def benchmark_articles(
+    request: ArticleBenchmarkRequest,
+    store: ArticleStore = Depends(get_article_store),
+) -> ArticleBenchmarkResponse:
+    return store.benchmark_query_modes(
+        query=request.query,
+        top_k=request.top_k,
+        collection=request.collection,
+        tenant_id=request.tenant_id,
+        source_tags=request.source_tags,
+        source_contains=request.source_contains,
+        exact_match_required=request.exact_match_required,
+        enable_corrective_rag=request.enable_corrective_rag,
     )
 
 

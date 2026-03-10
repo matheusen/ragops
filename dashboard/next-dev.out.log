@@ -3,11 +3,26 @@
 > next dev
 
 ▲ Next.js 16.1.6 (Turbopack)
-- Local:         http://localhost:3001
-- Network:       http://192.168.100.87:3001
+- Local:         http://localhost:3000
+- Network:       http://192.168.100.87:3000
 
 ✓ Starting...
-  Suggestion: If you intended to restart next dev, terminate the other process, and then try again.
-[?25h
-
-C:\Users\mengl\Documents\GitHub\ragops\dashboard>
+Creating turbopack project {
+  dir: 'C:\\Users\\mengl\\Documents\\GitHub\\ragops\\dashboard',
+  testMode: true
+}
+✓ Ready in 1356ms
+ GET /flow 200 in 3.0s (compile: 2.2s, render: 768ms)
+ GET /run 200 in 650ms (compile: 389ms, render: 260ms)
+ GET / 200 in 884ms (compile: 461ms, render: 423ms)
+ GET /api/backend/api/v1/prompts 502 in 5.1min (compile: 1069ms, render: 5.1min)
+ GET /run 200 in 93ms (compile: 8ms, render: 85ms)
+ GET /api/backend/api/v1/prompts 200 in 105ms (compile: 34ms, render: 71ms)
+ GET /flow 200 in 448ms (compile: 6ms, render: 442ms)
+ GET /flow 200 in 440ms (compile: 6ms, render: 434ms)
+✓ Compiled in 99ms
+✓ Compiled in 46ms
+ GET /flow 200 in 375ms (compile: 8ms, render: 367ms)
+ POST /api/backend/api/v1/articles/analyze-upload 500 in 41s (compile: 35ms, render: 41s)
+✓ Compiled in 101ms
+ GET /flow 200 in 591ms (compile: 44ms, render: 548ms)

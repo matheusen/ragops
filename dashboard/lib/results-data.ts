@@ -76,7 +76,49 @@ export interface ResultArticleContextHit {
   excerpt: string;
   score: number;
   topics: string[];
+  entities: string[];
+  retrieval_mode: string;
+  evidence_paths: ResultArticleEvidencePath[];
   source_name: string;
+}
+
+export interface ResultGraphAssessment {
+  mode: string;
+  score: number;
+  rationale: string;
+  signals: string[];
+}
+
+export interface ResultArticleEvidencePath {
+  path_id: string;
+  relation: string;
+  nodes: string[];
+  score: number;
+  summary: string;
+}
+
+export interface ResultArticleDistillation {
+  mode: string;
+  context_text: string;
+  key_entities: string[];
+  key_topics: string[];
+  evidence_paths: ResultArticleEvidencePath[];
+}
+
+export interface ResultArticleBenchmarkScenario {
+  mode: string;
+  retrieval_mode: string;
+  latency_ms: number;
+  result_count: number;
+  top_doc_ids: string[];
+  top_titles: string[];
+}
+
+export interface ResultArticleBenchmark {
+  query: string;
+  recommended_mode: string;
+  graph_usefulness: ResultGraphAssessment | null;
+  scenarios: ResultArticleBenchmarkScenario[];
 }
 
 export interface ResultArticleAnalysisView {
@@ -95,6 +137,9 @@ export interface ResultArticleAnalysisView {
   warnings: string[];
   retrieved_contexts: ResultArticleContextHit[];
   related_articles: Array<Record<string, unknown>>;
+  graph_assessment: ResultGraphAssessment | null;
+  distillation: ResultArticleDistillation | null;
+  benchmark: ResultArticleBenchmark | null;
 }
 
 export interface ResultTechniqueItem {
@@ -223,6 +268,9 @@ type RawAudit = {
     output_text?: string;
     warnings?: string[];
     related_articles?: Array<Record<string, unknown>>;
+    graph_assessment?: Record<string, unknown> | null;
+    distillation?: Record<string, unknown> | null;
+    benchmark?: Record<string, unknown> | null;
   } | null;
   runtime?: Record<string, unknown>;
   run_kind?: string;
@@ -835,6 +883,10 @@ function buildArticleAnalysisView(audit: RawAudit): ResultArticleAnalysisView | 
   const parsed = parseArticleOutput(outputText);
   const source = String(audit.article_run?.source || audit.attachment_facts?.artifacts?.[0]?.source_path || "");
   const title = String(audit.article_run?.title || audit.issue.summary || "Article analysis");
+  const runtimeGraphAssessment = asRecord(asRecord(audit.runtime)?.graph_assessment);
+  const graphAssessment = normalizeGraphAssessment(audit.article_run?.graph_assessment ?? runtimeGraphAssessment);
+  const distillation = normalizeArticleDistillation(audit.article_run?.distillation);
+  const benchmark = normalizeArticleBenchmark(audit.article_run?.benchmark);
   const contentExcerpt = String(
     audit.article_run?.content_excerpt
     || audit.attachment_facts?.artifacts?.[0]?.extracted_text
@@ -849,6 +901,13 @@ function buildArticleAnalysisView(audit: RawAudit): ResultArticleAnalysisView | 
     topics: Array.isArray((item.metadata as Record<string, unknown> | undefined)?.topics)
       ? ((item.metadata as Record<string, unknown>).topics as unknown[]).filter((topic): topic is string => typeof topic === "string")
       : [],
+    entities: Array.isArray((item.metadata as Record<string, unknown> | undefined)?.entities)
+      ? ((item.metadata as Record<string, unknown>).entities as unknown[]).filter((entity): entity is string => typeof entity === "string")
+      : [],
+    retrieval_mode: typeof (item.metadata as Record<string, unknown> | undefined)?.retrieval_mode === "string"
+      ? String((item.metadata as Record<string, unknown> | undefined)?.retrieval_mode)
+      : "vector-global",
+    evidence_paths: normalizeEvidencePaths((item.metadata as Record<string, unknown> | undefined)?.evidence_paths),
     source_name: path.basename(String(item.source || item.evidence_id)),
   }));
 
@@ -868,6 +927,89 @@ function buildArticleAnalysisView(audit: RawAudit): ResultArticleAnalysisView | 
     warnings: audit.article_run?.warnings ?? [],
     retrieved_contexts: contexts,
     related_articles: audit.article_run?.related_articles ?? [],
+    graph_assessment: graphAssessment,
+    distillation,
+    benchmark,
+  };
+}
+
+function normalizeGraphAssessment(value: unknown): ResultGraphAssessment | null {
+  const record = asRecord(value);
+  if (!record) {
+    return null;
+  }
+  return {
+    mode: readString(record.mode),
+    score: Number.isFinite(readNumber(record.score)) ? readNumber(record.score) : 0,
+    rationale: readString(record.rationale),
+    signals: readStringArray(record.signals),
+  };
+}
+
+function normalizeEvidencePaths(value: unknown): ResultArticleEvidencePath[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((entry) => {
+      const record = asRecord(entry);
+      if (!record) {
+        return null;
+      }
+      return {
+        path_id: readString(record.path_id),
+        relation: readString(record.relation),
+        nodes: readStringArray(record.nodes),
+        score: Number.isFinite(readNumber(record.score)) ? readNumber(record.score) : 0,
+        summary: readString(record.summary),
+      };
+    })
+    .filter((item): item is ResultArticleEvidencePath => item !== null);
+}
+
+function normalizeArticleDistillation(value: unknown): ResultArticleDistillation | null {
+  const record = asRecord(value);
+  if (!record) {
+    return null;
+  }
+  return {
+    mode: readString(record.mode),
+    context_text: readString(record.context_text),
+    key_entities: readStringArray(record.key_entities),
+    key_topics: readStringArray(record.key_topics),
+    evidence_paths: normalizeEvidencePaths(record.evidence_paths),
+  };
+}
+
+function normalizeArticleBenchmark(value: unknown): ResultArticleBenchmark | null {
+  const record = asRecord(value);
+  if (!record) {
+    return null;
+  }
+  const scenarios = Array.isArray(record.scenarios)
+    ? record.scenarios
+      .map((entry) => {
+        const scenario = asRecord(entry);
+        if (!scenario) {
+          return null;
+        }
+        return {
+          mode: readString(scenario.mode),
+          retrieval_mode: readString(scenario.retrieval_mode),
+          latency_ms: Number.isFinite(readNumber(scenario.latency_ms)) ? readNumber(scenario.latency_ms) : 0,
+          result_count: Number.isFinite(readNumber(scenario.result_count)) ? readNumber(scenario.result_count) : 0,
+          top_doc_ids: readStringArray(scenario.top_doc_ids),
+          top_titles: readStringArray(scenario.top_titles),
+        };
+      })
+      .filter((item): item is ResultArticleBenchmarkScenario => item !== null)
+    : [];
+
+  return {
+    query: readString(record.query),
+    recommended_mode: readString(record.recommended_mode),
+    graph_usefulness: normalizeGraphAssessment(record.graph_usefulness),
+    scenarios,
   };
 }
 

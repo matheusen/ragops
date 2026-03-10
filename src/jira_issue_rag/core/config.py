@@ -5,8 +5,15 @@ from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pymongo import MongoClient
-from pymongo.errors import PyMongoError
+
+try:
+    from pymongo import MongoClient
+    from pymongo.errors import PyMongoError
+except ImportError:  # pragma: no cover - optional dependency
+    MongoClient = None
+
+    class PyMongoError(Exception):
+        pass
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -189,7 +196,7 @@ def _load_settings() -> Settings:
 
 def _read_mongo_settings_overrides() -> dict[str, str]:
     uri = _resolve_mongodb_uri()
-    if not uri:
+    if not uri or MongoClient is None:
         return {}
 
     try:

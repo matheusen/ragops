@@ -795,6 +795,45 @@ type RunPromptResult = {
   output_text: string;
 };
 
+type GraphUsefulnessAssessment = {
+  mode: "vector-global" | "graph-local" | "graph-multi-hop" | "graph-bridge";
+  score: number;
+  rationale: string;
+  signals: string[];
+};
+
+type ArticleEvidencePath = {
+  path_id: string;
+  relation: string;
+  nodes: string[];
+  score: number;
+  summary: string;
+};
+
+type ArticleDistillation = {
+  mode: string;
+  context_text: string;
+  key_entities: string[];
+  key_topics: string[];
+  evidence_paths: ArticleEvidencePath[];
+};
+
+type ArticleBenchmarkScenario = {
+  mode: string;
+  retrieval_mode: string;
+  latency_ms: number;
+  result_count: number;
+  top_doc_ids: string[];
+  top_titles: string[];
+};
+
+type ArticleBenchmarkResult = {
+  query: string;
+  recommended_mode: string;
+  graph_usefulness: GraphUsefulnessAssessment | null;
+  scenarios: ArticleBenchmarkScenario[];
+};
+
 type ArticleSearchHit = {
   chunk_id: string;
   doc_id: string;
@@ -802,8 +841,12 @@ type ArticleSearchHit = {
   chunk_index: number;
   content: string;
   topics: string[];
+  entities?: string[];
   score: number;
   source_path: string;
+  retrieval_mode?: string;
+  graph_usefulness?: GraphUsefulnessAssessment | null;
+  evidence_paths?: ArticleEvidencePath[];
 };
 
 type DSPyOptimizationResult = {
@@ -823,6 +866,9 @@ type FlowRunResponse = {
   prompt_execution: RunPromptResult | null;
   article_search: ArticleSearchHit[];
   related_articles: Array<Record<string, unknown>>;
+  article_graph_assessment: GraphUsefulnessAssessment | null;
+  article_distillation: ArticleDistillation | null;
+  article_benchmark: ArticleBenchmarkResult | null;
   dspy_optimization: DSPyOptimizationResult | null;
   warnings: string[];
 };
@@ -882,6 +928,15 @@ function normalizeFlowRunResponse(raw: unknown, fallbackMode: string): FlowRunRe
     prompt_execution: (data.prompt_execution && typeof data.prompt_execution === "object") ? data.prompt_execution as RunPromptResult : null,
     article_search: Array.isArray(data.article_search) ? data.article_search as ArticleSearchHit[] : [],
     related_articles: Array.isArray(data.related_articles) ? data.related_articles as Array<Record<string, unknown>> : [],
+    article_graph_assessment: (data.article_graph_assessment && typeof data.article_graph_assessment === "object")
+      ? data.article_graph_assessment as GraphUsefulnessAssessment
+      : null,
+    article_distillation: (data.article_distillation && typeof data.article_distillation === "object")
+      ? data.article_distillation as ArticleDistillation
+      : null,
+    article_benchmark: (data.article_benchmark && typeof data.article_benchmark === "object")
+      ? data.article_benchmark as ArticleBenchmarkResult
+      : null,
     dspy_optimization: (data.dspy_optimization && typeof data.dspy_optimization === "object") ? data.dspy_optimization as DSPyOptimizationResult : null,
     warnings: Array.isArray(data.warnings) ? data.warnings.filter((value): value is string => typeof value === "string") : [],
   };
@@ -904,6 +959,18 @@ function formatModeLabel(mode?: string | null) {
     .split("-")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function formatPercent(value?: number | null) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `${Math.round(value * 100)}%`
+    : "n/a";
+}
+
+function formatLatency(value?: number | null) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `${Math.round(value)} ms`
+    : "n/a";
 }
 
 function inferFlowMode(nodes: PipelineNode[]): FlowMode {
@@ -978,6 +1045,15 @@ function RunFlowPanel({
   const [articleContent, setArticleContent] = useState("");
   const [articleSource, setArticleSource] = useState("");
   const [articleSearchQuery, setArticleSearchQuery] = useState("");
+  const [articleCollection, setArticleCollection] = useState("articles");
+  const [articleRetrievalPolicy, setArticleRetrievalPolicy] = useState("auto");
+  const [articleTenantId, setArticleTenantId] = useState("");
+  const [articleSourceTags, setArticleSourceTags] = useState("");
+  const [articleSourceContains, setArticleSourceContains] = useState("");
+  const [articleTopK, setArticleTopK] = useState(5);
+  const [exactMatchRequired, setExactMatchRequired] = useState(false);
+  const [enableCorrectiveRag, setEnableCorrectiveRag] = useState(true);
+  const [useSmallModelDistillation, setUseSmallModelDistillation] = useState(true);
   const [desc,         setDesc]         = useState<FlowDescription | null>(null);
   const [descLoading,  setDescLoading]  = useState(false);
   const [descError,    setDescError]    = useState<string | null>(null);
@@ -1027,7 +1103,19 @@ function RunFlowPanel({
               title: articleTitle.trim(),
               content: articleContent.trim(),
               metadata: articleSource.trim() ? { source: articleSource.trim() } : {},
+              collection: articleCollection.trim() || "articles",
+              retrieval_policy: articleRetrievalPolicy,
+              tenant_id: articleTenantId.trim() || undefined,
+              source_tags: articleSourceTags
+                .split(",")
+                .map((tag) => tag.trim())
+                .filter(Boolean),
+              source_contains: articleSourceContains.trim() || undefined,
+              exact_match_required: exactMatchRequired,
+              enable_corrective_rag: enableCorrectiveRag,
               search_query: articleSearchQuery.trim() || undefined,
+              top_k: articleTopK,
+              use_small_model_distillation: useSmallModelDistillation,
             },
           }
         : {
@@ -1158,6 +1246,95 @@ function RunFlowPanel({
                     value={articleSearchQuery}
                     onChange={(e) => setArticleSearchQuery(e.target.value)}
                   />
+                  <div className="pc__modal-grid" style={{ marginTop: ".85rem" }}>
+                    <div>
+                      <label className="pc__modal-label">Collection</label>
+                      <input
+                        className="pc__modal-input"
+                        placeholder="Ex: core-rag"
+                        value={articleCollection}
+                        onChange={(e) => setArticleCollection(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="pc__modal-label">Retrieval policy</label>
+                      <select
+                        className="pc__modal-input"
+                        value={articleRetrievalPolicy}
+                        onChange={(e) => setArticleRetrievalPolicy(e.target.value)}
+                      >
+                        <option value="auto">Auto</option>
+                        <option value="vector-global">Vector global</option>
+                        <option value="graph-local">Graph local</option>
+                        <option value="graph-bridge">Graph bridge</option>
+                        <option value="graph-multi-hop">Graph multi-hop</option>
+                        <option value="exact-page">Exact page</option>
+                        <option value="corrective">Corrective</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="pc__modal-grid" style={{ marginTop: ".75rem" }}>
+                    <div>
+                      <label className="pc__modal-label">Tenant ID</label>
+                      <input
+                        className="pc__modal-input"
+                        placeholder="Ex: acme-prod"
+                        value={articleTenantId}
+                        onChange={(e) => setArticleTenantId(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="pc__modal-label">Top K</label>
+                      <input
+                        className="pc__modal-input"
+                        type="number"
+                        min={1}
+                        max={12}
+                        value={articleTopK}
+                        onChange={(e) => setArticleTopK(Math.max(1, Math.min(12, Number(e.target.value) || 1)))}
+                      />
+                    </div>
+                  </div>
+                  <label className="pc__modal-label" style={{ marginTop: ".75rem" }}>Source tags</label>
+                  <input
+                    className="pc__modal-input"
+                    placeholder="Ex: rag,agentic,medium"
+                    value={articleSourceTags}
+                    onChange={(e) => setArticleSourceTags(e.target.value)}
+                  />
+                  <label className="pc__modal-label" style={{ marginTop: ".75rem" }}>Source contains</label>
+                  <input
+                    className="pc__modal-input"
+                    placeholder="Ex: medium or graph praxis"
+                    value={articleSourceContains}
+                    onChange={(e) => setArticleSourceContains(e.target.value)}
+                  />
+                  <div className="pc__modal-grid pc__modal-grid--checks" style={{ marginTop: ".85rem" }}>
+                    <label className="pc__modal-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={exactMatchRequired}
+                        onChange={(e) => setExactMatchRequired(e.target.checked)}
+                      />
+                      <span>Forçar fallback exact/page-level</span>
+                    </label>
+                    <label className="pc__modal-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={enableCorrectiveRag}
+                        onChange={(e) => setEnableCorrectiveRag(e.target.checked)}
+                      />
+                      <span>Permitir corrective RAG</span>
+                    </label>
+                  </div>
+                  <label className="pc__modal-checkbox" style={{ marginTop: ".85rem" }}>
+                    <input
+                      type="checkbox"
+                      checked={useSmallModelDistillation}
+                      onChange={(e) => setUseSmallModelDistillation(e.target.checked)}
+                    />
+                    <span>Usar contexto grafo-destilado para modelos menores</span>
+                  </label>
                 </>
               ) : (
                 <>
@@ -1246,21 +1423,140 @@ function RunFlowPanel({
                     <span className="pc__run-chip pc__run-chip--muted">
                       modo: {result.prompt_execution.mode}
                     </span>
+                    <span className="pc__run-chip pc__run-chip--muted">
+                      collection: {articleCollection}
+                    </span>
+                    <span className="pc__run-chip pc__run-chip--muted">
+                      policy: {formatModeLabel(articleRetrievalPolicy)}
+                    </span>
+                    {articleTenantId.trim() && (
+                      <span className="pc__run-chip pc__run-chip--muted">
+                        tenant: {articleTenantId.trim()}
+                      </span>
+                    )}
                   </div>
                   <div className="pc__rr-section">
                     <div className="pc__rr-label">Saída do prompt</div>
                     <p className="pc__rr-text">{result.prompt_execution.output_text}</p>
                   </div>
+                  {result.article_graph_assessment && (
+                    <div className="pc__rr-section">
+                      <div className="pc__rr-label">Graph usefulness gate</div>
+                      <div className="pc__rr-chips">
+                        <span className="pc__run-chip pc__run-chip--graph">
+                          {formatModeLabel(result.article_graph_assessment.mode)}
+                        </span>
+                        <span className="pc__run-chip">
+                          score {formatPercent(result.article_graph_assessment.score)}
+                        </span>
+                        {result.article_graph_assessment.signals.map((signal) => (
+                          <span key={signal} className="pc__run-chip pc__run-chip--muted">
+                            {signal}
+                          </span>
+                        ))}
+                      </div>
+                      {result.article_graph_assessment.rationale && (
+                        <p className="pc__rr-text">{result.article_graph_assessment.rationale}</p>
+                      )}
+                    </div>
+                  )}
+                  {result.article_distillation && (
+                    <div className="pc__rr-section">
+                      <div className="pc__rr-label">Small-model distillation</div>
+                      <div className="pc__rr-chips">
+                        <span className="pc__run-chip pc__run-chip--provider">
+                          {result.article_distillation.mode}
+                        </span>
+                        {result.article_distillation.key_entities.map((entity) => (
+                          <span key={entity} className="pc__run-chip">{entity}</span>
+                        ))}
+                        {result.article_distillation.key_topics.map((topic) => (
+                          <span key={topic} className="pc__run-chip pc__run-chip--muted">{topic}</span>
+                        ))}
+                      </div>
+                      <pre className="pc__rr-pre">{result.article_distillation.context_text}</pre>
+                      {result.article_distillation.evidence_paths.length > 0 && (
+                        <ul className="pc__rr-list pc__rr-list--compact">
+                          {result.article_distillation.evidence_paths.map((path) => (
+                            <li key={path.path_id}>
+                              {path.summary || `${path.relation}: ${path.nodes.join(" -> ")}`} ({formatPercent(path.score)})
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                  {result.article_benchmark && (
+                    <div className="pc__rr-section">
+                      <div className="pc__rr-label">Graph benchmark</div>
+                      <div className="pc__rr-chips">
+                        <span className="pc__run-chip pc__run-chip--graph">
+                          recomendado: {formatModeLabel(result.article_benchmark.recommended_mode)}
+                        </span>
+                        {result.article_benchmark.query && (
+                          <span className="pc__run-chip pc__run-chip--muted">
+                            query: {result.article_benchmark.query}
+                          </span>
+                        )}
+                      </div>
+                      <div className="pc__rr-stack">
+                        {result.article_benchmark.scenarios.map((scenario) => (
+                          <article key={`${scenario.mode}-${scenario.retrieval_mode}`} className="pc__rr-card">
+                            <div className="pc__rr-item-head">
+                              <strong>{formatModeLabel(scenario.mode)}</strong>
+                              <span>{formatLatency(scenario.latency_ms)} · {scenario.result_count} hits</span>
+                            </div>
+                            <div className="pc__rr-chips">
+                              <span className="pc__run-chip">{formatModeLabel(scenario.retrieval_mode)}</span>
+                              {scenario.top_titles.slice(0, 3).map((title) => (
+                                <span key={title} className="pc__run-chip pc__run-chip--muted">{title}</span>
+                              ))}
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {result.article_search.length > 0 && (
                     <div className="pc__rr-section">
                       <div className="pc__rr-label">Contexto recuperado de artigos</div>
-                      <ul className="pc__rr-list">
+                      <div className="pc__rr-stack">
                         {result.article_search.map((item) => (
-                          <li key={item.chunk_id}>
-                            {item.title} #{item.chunk_index} ({Math.round(item.score * 100)}%) - {item.content.slice(0, 160)}
-                          </li>
+                          <article key={item.chunk_id} className="pc__rr-card">
+                            <div className="pc__rr-item-head">
+                              <strong>{item.title} #{item.chunk_index}</strong>
+                              <span>{formatPercent(item.score)}</span>
+                            </div>
+                            <p className="pc__rr-text">{item.content.slice(0, 240)}</p>
+                            <div className="pc__rr-chips">
+                              {item.retrieval_mode && (
+                                <span className="pc__run-chip pc__run-chip--graph">
+                                  {formatModeLabel(item.retrieval_mode)}
+                                </span>
+                              )}
+                              {item.topics.map((topic) => (
+                                <span key={`${item.chunk_id}-${topic}`} className="pc__run-chip pc__run-chip--muted">
+                                  {topic}
+                                </span>
+                              ))}
+                              {(item.entities ?? []).map((entity) => (
+                                <span key={`${item.chunk_id}-${entity}`} className="pc__run-chip">
+                                  {entity}
+                                </span>
+                              ))}
+                            </div>
+                            {(item.evidence_paths?.length ?? 0) > 0 && (
+                              <ul className="pc__rr-list pc__rr-list--compact">
+                                {item.evidence_paths?.map((path) => (
+                                  <li key={path.path_id}>
+                                    {path.summary || `${path.relation}: ${path.nodes.join(" -> ")}`}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </article>
                         ))}
-                      </ul>
+                      </div>
                     </div>
                   )}
                 </>

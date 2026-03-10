@@ -13,6 +13,13 @@ export function ArticleAnalysisReport({ audit }: ArticleAnalysisReportProps) {
   const sourceName = view.source
     ? view.source.replace(/\\/g, "/").split("/").pop() || view.source
     : "conteudo manual";
+  const graphAssessment = view.graph_assessment ?? view.benchmark?.graph_usefulness ?? null;
+
+  const formatPercent = (value: number) => `${Math.round(value * 100)}%`;
+  const formatModeLabel = (value: string) => value
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 
   return (
     <section className="aar">
@@ -29,6 +36,7 @@ export function ArticleAnalysisReport({ audit }: ArticleAnalysisReportProps) {
           <span className="aar__chip">{view.model}</span>
           <span className="aar__chip">{view.prompt_name}</span>
           <span className="aar__chip">{sourceName}</span>
+          {graphAssessment?.mode && <span className="aar__chip">{formatModeLabel(graphAssessment.mode)}</span>}
         </div>
       </div>
 
@@ -70,6 +78,43 @@ export function ArticleAnalysisReport({ audit }: ArticleAnalysisReportProps) {
             <p className="aar__empty">Nao houve proximos passos estruturados na resposta.</p>
           )}
         </article>
+
+        {graphAssessment && (
+          <article className="aar__card">
+            <div className="aar__label">Graph usefulness gate</div>
+            <div className="aar__chips">
+              <span className="aar__chip aar__chip--accent">{formatModeLabel(graphAssessment.mode)}</span>
+              <span className="aar__chip">score {formatPercent(graphAssessment.score)}</span>
+              {graphAssessment.signals.map((signal) => <span key={signal} className="aar__chip">{signal}</span>)}
+            </div>
+            <p className="aar__summary aar__summary--sm">
+              {graphAssessment.rationale || "Sem racional adicional salvo para o gate de grafo."}
+            </p>
+          </article>
+        )}
+
+        {view.benchmark && (
+          <article className="aar__card">
+            <div className="aar__label">Benchmark de retrieval</div>
+            <div className="aar__chips">
+              <span className="aar__chip aar__chip--accent">
+                recomendado: {formatModeLabel(view.benchmark.recommended_mode)}
+              </span>
+              {view.benchmark.query && <span className="aar__chip">query: {view.benchmark.query}</span>}
+            </div>
+            {view.benchmark.scenarios.length > 0 ? (
+              <ul className="aar__list">
+                {view.benchmark.scenarios.map((scenario) => (
+                  <li key={`${scenario.mode}-${scenario.retrieval_mode}`}>
+                    {formatModeLabel(scenario.mode)} | {Math.round(scenario.latency_ms)} ms | {scenario.result_count} hits
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="aar__empty">Nenhum cenario de benchmark foi salvo.</p>
+            )}
+          </article>
+        )}
       </div>
 
       <div className="aar__split">
@@ -83,6 +128,27 @@ export function ArticleAnalysisReport({ audit }: ArticleAnalysisReportProps) {
           <pre className="aar__raw">{view.raw_output || audit.decision?.rationale || "Sem resposta textual salva."}</pre>
         </article>
       </div>
+
+      {view.distillation && (
+        <article className="aar__card">
+          <div className="aar__label">Small-model distillation</div>
+          <div className="aar__chips">
+            <span className="aar__chip aar__chip--accent">{view.distillation.mode}</span>
+            {view.distillation.key_entities.map((entity) => <span key={entity} className="aar__chip">{entity}</span>)}
+            {view.distillation.key_topics.map((topic) => <span key={topic} className="aar__chip">{topic}</span>)}
+          </div>
+          <pre className="aar__raw">{view.distillation.context_text}</pre>
+          {view.distillation.evidence_paths.length > 0 && (
+            <ul className="aar__list">
+              {view.distillation.evidence_paths.map((path) => (
+                <li key={path.path_id}>
+                  {path.summary || `${path.relation}: ${path.nodes.join(" -> ")}`}
+                </li>
+              ))}
+            </ul>
+          )}
+        </article>
+      )}
 
       {(view.search_query || view.retrieved_contexts.length > 0) && (
         <div className="aar__context">
@@ -98,10 +164,21 @@ export function ArticleAnalysisReport({ audit }: ArticleAnalysisReportProps) {
                   <span>{Math.round(item.score * 100)} pts</span>
                 </div>
                 <p>{item.excerpt}</p>
-                {item.topics.length > 0 && (
+                {(item.topics.length > 0 || item.entities.length > 0 || item.retrieval_mode) && (
                   <div className="aar__chips">
                     {item.topics.map((topic) => <span key={`${item.id}-${topic}`} className="aar__chip">{topic}</span>)}
+                    {item.entities.map((entity) => <span key={`${item.id}-${entity}`} className="aar__chip">{entity}</span>)}
+                    {item.retrieval_mode && <span className="aar__chip aar__chip--accent">{formatModeLabel(item.retrieval_mode)}</span>}
                   </div>
+                )}
+                {item.evidence_paths.length > 0 && (
+                  <ul className="aar__list">
+                    {item.evidence_paths.map((path) => (
+                      <li key={path.path_id}>
+                        {path.summary || `${path.relation}: ${path.nodes.join(" -> ")}`}
+                      </li>
+                    ))}
+                  </ul>
                 )}
               </article>
             ))}

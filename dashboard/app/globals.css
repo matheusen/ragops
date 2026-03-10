@@ -2174,10 +2174,35 @@ button, input, textarea, select { font: inherit; }
   min-height: 72px;
   font-family: inherit;
 }
+.pc__modal-checkbox {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  font-size: .8rem;
+  color: var(--text);
+}
+.pc__modal-checkbox input {
+  accent-color: var(--primary);
+}
+.pc__modal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .75rem;
+}
+.pc__modal-grid--checks {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
 .pc__run-error {
   margin-top: .6rem; font-size: .8rem; color: #ef4444;
   background: #fef2f2; border: 1px solid #fecaca;
   border-radius: 6px; padding: .4rem .7rem;
+}
+
+@media (max-width: 760px) {
+  .pc__modal-grid,
+  .pc__modal-grid--checks {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Result display */
@@ -2190,14 +2215,49 @@ button, input, textarea, select { font: inherit; }
 .pc__rr-conf  { font-size: .82rem; font-weight: 600; color: var(--muted); }
 .pc__rr-chips { display: flex; flex-wrap: wrap; gap: .3rem; }
 .pc__rr-section { display: flex; flex-direction: column; gap: .3rem; }
+.pc__rr-stack { display: flex; flex-direction: column; gap: .6rem; }
+.pc__rr-card {
+  display: flex;
+  flex-direction: column;
+  gap: .45rem;
+  padding: .7rem .8rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+}
+.pc__rr-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  flex-wrap: wrap;
+  font-size: .8rem;
+  color: var(--muted);
+}
 .pc__rr-label {
   font-size: .68rem; font-weight: 700; letter-spacing: .06em;
   text-transform: uppercase; color: var(--muted);
 }
 .pc__rr-text { font-size: .82rem; line-height: 1.6; color: var(--text); margin: 0; }
+.pc__rr-pre {
+  margin: 0;
+  padding: .75rem .8rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f8fafc;
+  white-space: pre-wrap;
+  font-size: .78rem;
+  line-height: 1.6;
+  color: var(--text);
+  font-family: var(--font-mono, "IBM Plex Mono", monospace);
+}
 .pc__rr-list {
   margin: 0; padding-left: 1.1rem;
   font-size: .82rem; line-height: 1.7; color: var(--text);
+}
+.pc__rr-list--compact {
+  font-size: .76rem;
+  line-height: 1.55;
 }
 .pc__rr-list--warn li { color: #b45309; }
 
@@ -3007,6 +3067,11 @@ button, input, textarea, select { font: inherit; }
   margin: 0;
   line-height: 1.7;
   color: var(--text);
+}
+
+.aar__summary--sm {
+  margin-top: .75rem;
+  font-size: .92rem;
 }
 
 .aar__excerpt {
