@@ -2,8 +2,8 @@ export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArticleAnalysisReport } from "@/components/article-analysis-report";
 import { ArticleSummaryBoard } from "@/components/article-summary-board";
+import { ArticleWhiteboard } from "@/components/article-whiteboard";
 import { EvidenceCards } from "@/components/evidence-cards";
 import { RelatedResultsBoard } from "@/components/related-results-board";
 import { ResultCanvas } from "@/components/result-canvas";
@@ -31,31 +31,35 @@ export default async function ResultCanvasPage({ params }: Props) {
         <span className="rc__breadcrumb-ts">{timestamp}</span>
       </div>
       {audit.article_run ? (
-        <ArticleAnalysisReport audit={audit} />
+        <ArticleWhiteboard audit={audit} />
       ) : (
         <section className="rc__shell">
           <ResultCanvas audit={audit} />
         </section>
       )}
-      <RuntimeTechniquesPanel audit={audit} />
-      <ArticleSummaryBoard
-        title={audit.article_run?.title ?? audit.issue.summary}
-        summary={audit.knowledge_map.summary}
-        centralIdeas={audit.article_run?.central_ideas ?? []}
-        topics={audit.knowledge_map.topics.map((topic) => topic.label).slice(0, 8)}
-        warnings={audit.article_run?.warnings ?? []}
-        metadata={audit.article_run?.metadata ?? {}}
-        articleCards={audit.knowledge_map.article_cards}
-        themeClusters={audit.knowledge_map.theme_clusters}
-        relatedItems={audit.knowledge_map.related_audits}
-      />
-      <RelatedResultsBoard
-        currentId={audit.result_meta.id}
-        currentTitle={audit.article_run?.title ?? audit.issue.summary}
-        currentSummary={audit.knowledge_map.summary}
-        currentTopics={audit.knowledge_map.topics.map((topic) => topic.label).slice(0, 5)}
-        items={audit.knowledge_map.related_audits}
-      />
+      {!audit.article_run && <RuntimeTechniquesPanel audit={audit} />}
+      {!audit.article_run && (
+        <>
+          <ArticleSummaryBoard
+            title={audit.issue.summary}
+            summary={audit.knowledge_map.summary}
+            centralIdeas={[]}
+            topics={audit.knowledge_map.topics.map((topic) => topic.label).slice(0, 8)}
+            warnings={[]}
+            metadata={{}}
+            articleCards={audit.knowledge_map.article_cards}
+            themeClusters={audit.knowledge_map.theme_clusters}
+            relatedItems={audit.knowledge_map.related_audits}
+          />
+          <RelatedResultsBoard
+            currentId={audit.result_meta.id}
+            currentTitle={audit.issue.summary}
+            currentSummary={audit.knowledge_map.summary}
+            currentTopics={audit.knowledge_map.topics.map((topic) => topic.label).slice(0, 5)}
+            items={audit.knowledge_map.related_audits}
+          />
+        </>
+      )}
       {!audit.article_run && <EvidenceCards audit={audit} />}
     </main>
   );

@@ -106,6 +106,184 @@ flowchart TD
 
 Para mais detalhe de componentes, diagramas e responsabilidades, veja tambem `README_architecture.md` e `README_techniques.md`.
 
+## O que e RAG e por que este app usa isso
+
+`RAG` significa `Retrieval-Augmented Generation`.
+
+Na pratica, o app nao pede para o LLM responder apenas com o que ele "lembra" do treino. Antes da resposta final, o sistema tenta recuperar evidencias relevantes do seu proprio contexto:
+
+- texto enviado na request
+- anexos locais como logs, PDFs, planilhas e imagens
+- chunks indexados no Qdrant
+- relacoes indexadas no Neo4j
+- fatos extraidos por OCR e parsing
+
+O objetivo e simples:
+
+- reduzir alucinacao
+- aumentar precisao factual
+- citar evidencias mais proximas da fonte
+- permitir respostas mais atualizadas e especificas do dominio
+
+Este app segue o modelo `facts first, judge later`:
+
+1. primeiro estrutura fatos, artefatos e evidencias
+2. depois recupera o contexto mais util
+3. so entao monta o prompt e chama o provider LLM
+
+Esse desenho e consistente com a literatura recente. Em [ocaf008.pdf](artigos/ocaf008.pdf), uma revisao sistematica e meta-analise em biomedicina encontrou ganho agregado a favor de `LLM + RAG` sobre `LLM puro`. Em [dietrich-stubbert-2025-evaluating-adherence-to-canadian-radiology-guidelines-for-incidental-hepatobiliary-findings.pdf](artigos/dietrich-stubbert-2025-evaluating-adherence-to-canadian-radiology-guidelines-for-incidental-hepatobiliary-findings.pdf), a aderencia a guideline subiu fortemente com RAG. Em [3701228.pdf](artigos/3701228.pdf), o benchmark CRUD-RAG mostra que avaliar apenas a resposta final e insuficiente: e preciso medir base, retrieval e geracao.
+
+## Como seus dados percorrem o app
+
+Esta e a pergunta mais importante para quem usa o produto: `o que acontece com o texto e os arquivos que eu envio?`
+
+### Fluxo de `issue-validation`
+
+Quando voce envia um texto de issue e anexa arquivos, o caminho principal e este:
+
+1. a API recebe a issue e os anexos
+2. o `IssueNormalizer` transforma o payload em um formato canonico
+3. o `ArtifactPipeline` extrai texto e fatos de logs, PDFs, planilhas e imagens
+4. o `RulesEngine` verifica faltas, contradicoes e sinais de risco antes do LLM
+5. o sistema monta uma query de retrieval com base na issue, fatos extraidos e regras
+6. o `HybridRetriever` consulta contexto local, Qdrant e, se habilitado, Neo4j
+7. o `Reranker` reordena as evidencias para aumentar precisao
+8. o `Distiller` comprime o contexto e preserva fatos e quotes importantes
+9. o workflow monta o prompt final para o provider escolhido
+10. o provider gera a decisao
+11. o sistema grava auditoria completa em `data/audit`
+
+Fluxo resumido:
+
+```text
+issue + anexos
+-> normalizacao
+-> extracao de fatos
+-> regras deterministicas
+-> retrieval
+-> reranking
+-> distillation
+-> prompt final
+-> LLM/provider
+-> resposta + auditoria
+```
+
+### Fluxo de `article-analysis`
+
+Quando voce envia texto de artigo ou uma colecao de arquivos para review, o backend usa um fluxo um pouco diferente:
+
+1. o app recebe `title`, `content`, `metadata` e, opcionalmente, documentos-fonte
+2. o `ArticleStore` monta uma `query_text` usando `search_query`, nomes dos arquivos, titulo e trecho inicial do conteudo
+3. o sistema estima se a query pede `vector-global`, `graph-local`, `graph-bridge`, `graph-multi-hop` ou `exact-page`
+4. o retrieval busca os chunks mais relevantes no corpus
+5. se a cobertura vier fraca, o app pode rodar `corrective RAG`
+6. o `distill_for_small_model` resume os melhores trechos
+7. o prompt final mistura:
+   - texto bruto enviado
+   - chunks recuperados
+   - diagnosticos de retrieval
+   - resumo destilado, quando habilitado
+8. o provider gera a sintese final
+9. a auditoria grava warnings, tempos, modo de retrieval, benchmark e evidencias usadas
+
+Fluxo resumido:
+
+```text
+texto + arquivos
+-> query de busca
+-> retrieval adaptativo
+-> corrective pass se necessario
+-> distillation
+-> prompt packet
+-> LLM/provider
+-> analise + auditoria
+```
+
+### O LLM consulta mais dados sozinho?
+
+Nao diretamente.
+
+Quem decide consultar mais dados e o `app`, nao o provider remoto por conta propria. Isso acontece em tres cenarios principais:
+
+- `retrieval adaptativo`: o backend escolhe a melhor politica antes de chamar o LLM
+- `corrective RAG`: se a primeira busca vier fraca, o backend reescreve a query e busca de novo
+- `LangGraph`: quando ativo, o workflow pode planejar, refletir, reescrever e refazer retrieval antes da resposta final
+
+Ou seja: o LLM nao ganha acesso livre ao seu banco ou ao seu disco. O app monta o contexto de forma controlada e entrega apenas o pacote final permitido pela configuracao.
+
+### O que realmente vai para o LLM
+
+Por padrao, o app tenta mandar para o provider apenas o necessario:
+
+- resumo da issue ou do artigo
+- fatos extraidos dos anexos
+- evidencias recuperadas no retrieval
+- quotes e fatos preservados pelo distiller
+- instrucoes do prompt selecionado
+
+Quando `CONFIDENTIALITY_MODE=true`, o sistema bloqueia saida para OpenAI, Gemini e vector stores externos, mesmo que existam chaves configuradas. Nesse modo, os dados ficam locais, a menos que voce libere explicitamente os flags de egress.
+
+## Tecnicas usadas no app e o que fazem com os dados
+
+| Tecnica | O que entra | O que faz | O que sai |
+|---|---|---|---|
+| `Normalizer` | issue, campos textuais | padroniza schema e remove ambiguidade estrutural | issue canonica |
+| `Artifact extraction` | logs, PDFs, planilhas, imagens | extrai texto, entidades, tabelas, paginas e fatos | evidencias estruturadas |
+| `Rules engine` | issue + fatos | detecta faltas, contradicoes e sinais de risco | sinais deterministas |
+| `Hybrid retrieval` | query + corpus | procura contexto por dense + sparse search | top-k chunks |
+| `GraphRAG` | query + grafo | expande entidades e relacoes entre documentos | contexto relacional |
+| `Exact-page` | query literal + PDFs | busca pagina, secao, tabela ou trecho exato | evidencias page-level |
+| `Reranker` | candidatos recuperados | sobe os chunks mais relevantes | ranking refinado |
+| `Distiller` | chunks top-k | reduz ruido e preserva fatos importantes | contexto comprimido |
+| `LangGraph` | estado da execucao | permite loops de planejamento, reflexao e nova busca | contexto melhorado antes do LLM |
+| `Provider` | prompt final + contexto controlado | gera resposta, classificacao ou sintese | output do LLM |
+| `Audit/Eval` | request + resposta + trace | grava trilha e mede qualidade | relatorio e metricas |
+
+## Evidencia tecnica por tras das escolhas
+
+As tecnicas acima nao foram colocadas no app apenas por moda. Elas refletem um conjunto relativamente consistente de papers, benchmarks e documentacao oficial:
+
+| Escolha no app | Por que existe | Evidencia |
+|---|---|---|
+| `RAG` em vez de `LLM puro` | aumenta grounding em dominio especifico | [ocaf008.pdf](artigos/ocaf008.pdf), [dietrich-stubbert-2025-evaluating-adherence-to-canadian-radiology-guidelines-for-incidental-hepatobiliary-findings.pdf](artigos/dietrich-stubbert-2025-evaluating-adherence-to-canadian-radiology-guidelines-for-incidental-hepatobiliary-findings.pdf) |
+| `evaluation` e `audit` | RAG falha de forma silenciosa se nao for medido | [3701228.pdf](artigos/3701228.pdf), [Verification_and_Validation_of_LLM-RAG_for_Industrial_Automation.pdf](artigos/Verification_and_Validation_of_LLM-RAG_for_Industrial_Automation.pdf), https://docs.langchain.com/langsmith/evaluation-concepts |
+| `hybrid retrieval` | vetor puro costuma perder precisao lexical e page-level | https://qdrant.tech/documentation/concepts/hybrid-queries/ |
+| `reranking` | melhora precision do top-k antes da geracao | [hir-2024-30-4-355.pdf](artigos/hir-2024-30-4-355.pdf) |
+| `GraphRAG` seletivo | ajuda em relacoes, multi-hop e conhecimento estruturado | [btae560.pdf](artigos/btae560.pdf), https://microsoft.github.io/graphrag/query/overview/ |
+| `distillation` | reduz tokens sem perder informacao central | [btae560.pdf](artigos/btae560.pdf) |
+| `corrective / self-reflective retrieval` | segunda passada melhora cobertura quando a primeira busca vem fraca | https://arxiv.org/abs/2401.15884, https://arxiv.org/abs/2310.11511 |
+| `benchmark de retrieval por modo` | nao basta medir a resposta final | [3701228.pdf](artigos/3701228.pdf) |
+
+## Backlog orientado por evidencia
+
+Este e o backlog tecnico priorizado para fazer o app ficar mais preciso, confiavel e explicavel.
+
+### `P0` — precisa existir
+
+- criar um `golden dataset` proprio para `article-analysis`, com perguntas, respostas esperadas, paginas e evidencias esperadas
+- classificar falhas na auditoria em categorias como `retrieval miss`, `low coverage`, `grounding failure`, `reasoning failure`, `citation failure`
+- separar melhor as colecoes de artigos para nao misturar corpus central com material lateral
+- endurecer a exibicao de confianca quando o retrieval vier fraco
+
+### `P1` — aumenta qualidade real
+
+- exigir citacao page-level para afirmacoes fortes em review de artigos
+- reforcar deduplicacao e auditoria de chunking
+- manter `reranker` e `distillation` como default no modo de artigos
+- usar `GraphRAG` apenas quando a query realmente pedir relacao, cadeia ou timeline
+
+### `P2` — ganho de custo e escala
+
+- adicionar `semantic cache` e `context cache`
+- comparar provedores e modos de retrieval continuamente com `POST /api/v1/evaluate/compare`
+- expandir `DSPy` apenas para modulos que tenham dataset e metrica estavel
+
+### `P3` — avancos opcionais
+
+- benchmark multimodal separado para imagens, tabelas e figuras
+- pilotos especificos de `KG-RAG` para dominios tecnicos densos
+- politicas de abstencao mais fortes para respostas com baixa evidencia
+
 ## Requisitos
 
 - **Python >= 3.12**

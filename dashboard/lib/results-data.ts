@@ -312,12 +312,14 @@ type RawAudit = {
 };
 type AuditSeed = { issueKey: string; timestamp: string; payload: RawAudit };
 
-const TOPIC_LIBRARY: Array<{
+type TopicDefinition = {
   id: string;
   label: string;
   tokens: string[];
   notes: string;
-}> = [
+};
+
+const ISSUE_TOPIC_LIBRARY: TopicDefinition[] = [
   {
     id: "payments",
     label: "Payments",
@@ -349,6 +351,48 @@ const TOPIC_LIBRARY: Array<{
     notes: "Sinais de risco, revisão humana e conflitos entre fontes.",
   },
 ];
+
+const ARTICLE_TOPIC_LIBRARY: TopicDefinition[] = [
+  {
+    id: "Advanced RAG",
+    label: "Advanced RAG",
+    tokens: ["rag", "retrieval", "rerank", "re-rank", "chunk", "chunks", "hybrid", "corrective", "adaptive", "embedding", "embeddings", "graphrag"],
+    notes: "Arquiteturas RAG avançadas, retrieval híbrido, re-ranking e chunking.",
+  },
+  {
+    id: "Agents & MCP",
+    label: "Agents & MCP",
+    tokens: ["agent", "agents", "agentic", "agente", "agentes", "mcp", "tool", "tools", "langgraph", "planner", "workflow", "routing"],
+    notes: "Agentes, uso de ferramentas, MCP e orquestração de fluxos complexos.",
+  },
+  {
+    id: "Evaluation & Observability",
+    label: "Evaluation & Observability",
+    tokens: ["evaluation", "evaluacao", "evaluate", "observability", "observabilidade", "langsmith", "trace", "traces", "metrics", "faithfulness", "precision", "recall"],
+    notes: "Avaliação contínua, tracing, métricas e observabilidade de sistemas LLM.",
+  },
+  {
+    id: "Local Inference & Cost",
+    label: "Local Inference & Cost",
+    tokens: ["ollama", "ollm", "local", "gpu", "quantization", "quantizacao", "cache", "cost", "custo", "latency", "inferencia", "llama.cpp"],
+    notes: "Execução local, otimização de custo, quantização, caching e hardware.",
+  },
+  {
+    id: "Document Intelligence",
+    label: "Document Intelligence",
+    tokens: ["ocr", "pdf", "document", "documents", "docling", "monkeyocr", "multimodal", "table", "tables", "figure"],
+    notes: "Extração documental, OCR, PDFs complexos e pipelines multimodais.",
+  },
+  {
+    id: "LLMOps & Production",
+    label: "LLMOps & Production",
+    tokens: ["llmops", "production", "producao", "deploy", "deployment", "docker", "aws", "runtime", "monitoring", "pipeline", "service"],
+    notes: "Operação em produção, deploy, runtime e infraestrutura de aplicações de IA.",
+  },
+];
+
+const ALL_TOPIC_LIBRARY = [...ISSUE_TOPIC_LIBRARY, ...ARTICLE_TOPIC_LIBRARY];
+const GENERIC_RELATION_LABELS = new Set(["article-analysis", "issue-validation"]);
 
 const MOCK_AUDITS: ResultAudit[] = buildMockAudits();
 
@@ -466,6 +510,7 @@ function buildKnowledgeMap(
   peerAudits: AuditSeed[],
 ): ResultKnowledgeMap {
   const topics = rankTopicsForAudit(audit);
+  const topicLibrary = getTopicLibrary(audit);
 
   const articleArtifacts = buildKnowledgeArtifacts(audit);
   const articleCards = articleArtifacts.map((artifact, index) =>
@@ -483,7 +528,7 @@ function buildKnowledgeMap(
       kind: "artifact",
       summary: summarizeText(artifact.extracted_text, 140) || `Artifact ${artifact.artifact_type}`,
       linked_topic_ids: topics
-        .filter((topic) => matchesTopic(`${title} ${artifact.extracted_text}`.toLowerCase(), topic.id))
+        .filter((topic) => matchesTopic(`${title} ${artifact.extracted_text}`.toLowerCase(), topic.id, topicLibrary))
         .map((topic) => topic.id),
       evidence_refs: [artifact.artifact_id, artifact.source_path],
     };
@@ -556,8 +601,9 @@ function buildTopicTextCorpus(audit: RawAudit): string {
 }
 
 function rankTopicsForAudit(audit: RawAudit): ResultKnowledgeTopic[] {
+  const topicLibrary = getTopicLibrary(audit);
   const textCorpus = buildTopicTextCorpus(audit);
-  const rankedTopics = TOPIC_LIBRARY.map((topic) => {
+  const rankedTopics = topicLibrary.map((topic) => {
     const hits = topic.tokens.reduce((count, token) => {
       return count + (textCorpus.includes(token) ? 1 : 0);
     }, 0);
@@ -574,14 +620,23 @@ function rankTopicsForAudit(audit: RawAudit): ResultKnowledgeTopic[] {
 
   return rankedTopics.length > 0
     ? rankedTopics
-    : [
-        {
-          id: "triage",
-          label: "Triage",
-          strength: 0.55,
-          notes: "Fallback de triagem quando a auditoria não contém sinais fortes o suficiente.",
-        },
-      ];
+    : (audit.run_kind === "article-analysis" || audit.article_run
+      ? [
+          {
+            id: "Article Corpus",
+            label: "Article Corpus",
+            strength: 0.55,
+            notes: "Fallback para corpus de artigos quando a auditoria não contém sinais fortes o suficiente.",
+          },
+        ]
+      : [
+          {
+            id: "triage",
+            label: "Triage",
+            strength: 0.55,
+            notes: "Fallback de triagem quando a auditoria não contém sinais fortes o suficiente.",
+          },
+        ]);
 }
 
 function buildRelatedAuditCards(
@@ -641,7 +696,11 @@ function buildCorrelationContext(
   const component = normalizeToken(audit.issue.component);
   const service = normalizeToken(audit.issue.service);
   const environment = normalizeToken(audit.issue.environment);
-  const labels = new Set((audit.issue.labels ?? []).map(normalizeToken).filter(Boolean));
+  const labels = new Set(
+    (audit.issue.labels ?? [])
+      .map(normalizeToken)
+      .filter((label) => label && !GENERIC_RELATION_LABELS.has(label)),
+  );
   const topicsSet = new Set(topics.map((topic) => topic.id));
   const contradictionText = [
     ...(audit.rule_evaluation?.contradictions ?? []),
@@ -812,8 +871,18 @@ function buildKnowledgeSummary(
   return `Mapa derivado da auditoria ${audit.issue.issue_key}: ${topTopic} aparece como eixo principal. Foram conectados ${artifactCount} artefato(s), ${documentCount} documento(s) e ${articleCards.length} card(s) de artigo. O cluster dominante do corpus é ${topCluster}.`;
 }
 
-function matchesTopic(text: string, topicId: string): boolean {
-  const topic = TOPIC_LIBRARY.find((item) => item.id === topicId);
+function getTopicLibrary(audit: RawAudit): TopicDefinition[] {
+  return audit.run_kind === "article-analysis" || audit.article_run
+    ? ARTICLE_TOPIC_LIBRARY
+    : ISSUE_TOPIC_LIBRARY;
+}
+
+function findTopicDefinition(topicId: string, topicLibrary: TopicDefinition[] = ALL_TOPIC_LIBRARY): TopicDefinition | undefined {
+  return topicLibrary.find((item) => item.id === topicId);
+}
+
+function matchesTopic(text: string, topicId: string, topicLibrary: TopicDefinition[] = ALL_TOPIC_LIBRARY): boolean {
+  const topic = findTopicDefinition(topicId, topicLibrary);
   if (!topic) return false;
   return topic.tokens.some((token) => text.includes(token));
 }
@@ -894,7 +963,7 @@ function inferArticleTheme(
   if (text.includes("local") || text.includes("ollama") || text.includes("litellm")) {
     return "Modelos Locais";
   }
-  const topic = TOPIC_LIBRARY.find((item) => linkedTopicIds.includes(item.id));
+  const topic = ARTICLE_TOPIC_LIBRARY.find((item) => linkedTopicIds.includes(item.id));
   return topic?.label || "Tema misto";
 }
 
@@ -915,7 +984,7 @@ function buildArticleCard(
   const linkedTopicIds = topics
     .filter((topic) => {
       const text = `${title} ${baseTheme} ${secondaryThemes.join(" ")} ${artifact.extracted_text}`.toLowerCase();
-      return matchesTopic(text, topic.id);
+      return matchesTopic(text, topic.id, ARTICLE_TOPIC_LIBRARY);
     })
     .map((topic) => topic.id);
   const theme = baseTheme || inferArticleTheme(title, summary, linkedTopicIds);
