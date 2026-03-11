@@ -135,6 +135,8 @@ class DecisionResult(BaseModel):
     financial_impact_detected: bool = False
     confidence: float = 0.0
     requires_human_review: bool = False
+    failure_type: str | None = None
+    result_state: str = ""
     next_action: str = ""
     provider: str = "mock"
     model: str = "mock-judge-v1"

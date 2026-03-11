@@ -10,6 +10,7 @@ export function ArticleAnalysisReport({ audit }: ArticleAnalysisReportProps) {
   const view = audit.article_run;
   if (!view) return null;
 
+  const decision = audit.decision;
   const sourceName = view.source
     ? view.source.replace(/\\/g, "/").split("/").pop() || view.source
     : "conteudo manual";
@@ -36,6 +37,8 @@ export function ArticleAnalysisReport({ audit }: ArticleAnalysisReportProps) {
           <span className="aar__chip">{view.model}</span>
           <span className="aar__chip">{view.prompt_name}</span>
           <span className="aar__chip">{sourceName}</span>
+          {decision && <span className="aar__chip">confidence {formatPercent(decision.confidence)}</span>}
+          {decision?.requires_human_review && <span className="aar__chip aar__chip--accent">revisao humana</span>}
           {graphAssessment?.mode && <span className="aar__chip">{formatModeLabel(graphAssessment.mode)}</span>}
         </div>
       </div>
@@ -203,6 +206,9 @@ export function ArticleAnalysisReport({ audit }: ArticleAnalysisReportProps) {
                   <div className="aar__chips">
                     {item.topics.map((topic) => <span key={`${item.id}-${topic}`} className="aar__chip">{topic}</span>)}
                     {item.entities.map((entity) => <span key={`${item.id}-${entity}`} className="aar__chip">{entity}</span>)}
+                    {item.chunk_kind && <span className="aar__chip">{item.chunk_kind}</span>}
+                    {item.page_number !== null && <span className="aar__chip">page {item.page_number}</span>}
+                    {item.section_title && <span className="aar__chip">{item.section_title}</span>}
                     {item.retrieval_mode && <span className="aar__chip aar__chip--accent">{formatModeLabel(item.retrieval_mode)}</span>}
                   </div>
                 )}
@@ -227,6 +233,13 @@ export function ArticleAnalysisReport({ audit }: ArticleAnalysisReportProps) {
           <ul className="aar__list">
             {view.warnings.map((warning) => <li key={warning}>{warning}</li>)}
           </ul>
+        </article>
+      )}
+
+      {decision?.next_action && (
+        <article className="aar__card">
+          <div className="aar__label">Proxima acao recomendada</div>
+          <p className="aar__summary aar__summary--sm">{decision.next_action}</p>
         </article>
       )}
     </section>

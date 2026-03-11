@@ -217,6 +217,67 @@ class ValidationWorkflow(ValidationWorkflowCore):
             limit=request.limit,
         )
 
+    @staticmethod
+    def _derive_issue_quality_state(
+        *,
+        decision: DecisionResult,
+        rule_evaluation,
+        attachment_facts,
+        retrieved: list,
+    ) -> dict[str, object]:
+        attachment_missing = list(getattr(attachment_facts, "missing_information", []) or [])
+        contradictions = list(getattr(rule_evaluation, "contradictions", []) or [])
+        missing_items = list(getattr(rule_evaluation, "missing_items", []) or [])
+        extraction_failures = [
+            artifact.source_path
+            for artifact in getattr(attachment_facts, "artifacts", []) or []
+            if not getattr(artifact, "extracted_text", "").strip() and float(getattr(artifact, "confidence", 0.0)) < 0.35
+        ]
+
+        failure_type: str | None = None
+        if attachment_missing or missing_items:
+            failure_type = "input_gap"
+        elif extraction_failures:
+            failure_type = "attachment_extraction_failure"
+        elif not retrieved:
+            failure_type = "retrieval_miss"
+        elif contradictions:
+            failure_type = "reasoning_failure"
+        elif decision.requires_human_review:
+            failure_type = "human_review_required"
+
+        if decision.requires_human_review:
+            result_state = "review_required"
+        elif decision.ready_for_dev:
+            result_state = "ready_for_dev"
+        elif decision.classification == "not_bug":
+            result_state = "not_a_bug"
+        elif missing_items or attachment_missing:
+            result_state = "needs_more_information"
+        else:
+            result_state = "triaged"
+
+        next_action = decision.next_action.strip()
+        if not next_action:
+            if result_state == "ready_for_dev":
+                next_action = "Issue pronta para seguir para desenvolvimento."
+            elif result_state == "not_a_bug":
+                next_action = "Cancelar ou reclassificar a issue antes de novo handoff."
+            elif result_state == "needs_more_information":
+                next_action = "Complementar a issue com mais contexto e revalidar."
+            elif result_state == "review_required":
+                next_action = "Realizar revisao humana antes da decisao final."
+            else:
+                next_action = "Revisar a decisao e validar novamente."
+
+        return {
+            "failure_type": failure_type,
+            "result_state": result_state,
+            "next_action": next_action,
+            "attachment_extraction_failures": extraction_failures,
+            "input_gap_count": len(attachment_missing) + len(missing_items),
+        }
+
     def _run(
         self,
         issue,
@@ -275,7 +336,17 @@ class ValidationWorkflow(ValidationWorkflowCore):
                 "trace": [],
             }
 
+        quality_state = self._derive_issue_quality_state(
+            decision=decision,
+            rule_evaluation=rule_evaluation,
+            attachment_facts=attachment_facts,
+            retrieved=retrieved,
+        )
+        decision.failure_type = str(quality_state.get("failure_type")) if quality_state.get("failure_type") else None
+        decision.result_state = str(quality_state.get("result_state") or "")
+        decision.next_action = str(quality_state.get("next_action") or decision.next_action)
         runtime_payload = self._build_runtime_payload(state, agentic_state)
+        runtime_payload["quality_state"] = quality_state
         audit_path = self.audit.write(
             issue_key=normalized_issue.issue_key,
             payload={
@@ -311,6 +382,16 @@ class ValidationWorkflow(ValidationWorkflowCore):
             rule_evaluation = state["rule_evaluation"]
             retrieved = state.get("retrieved", [])
             distilled = state["distilled"]
+            quality_state = self._derive_issue_quality_state(
+                decision=decision,
+                rule_evaluation=rule_evaluation,
+                attachment_facts=attachment_facts,
+                retrieved=retrieved,
+            )
+            decision.failure_type = str(quality_state.get("failure_type")) if quality_state.get("failure_type") else None
+            decision.result_state = str(quality_state.get("result_state") or "")
+            decision.next_action = str(quality_state.get("next_action") or decision.next_action)
+            runtime_payload["quality_state"] = quality_state
             audit_path = self.audit.write(
                 issue_key=normalized_issue.issue_key,
                 payload={

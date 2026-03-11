@@ -487,50 +487,56 @@ class ArticleStore:
 
         # ── Qdrant ─────────────────────────────────────────────────────
         indexed = 0
+        ingest_warnings = list(chunk_warnings)
         if self._qdrant_available():
-            self._ensure_collection(collection)
-            texts         = chunks
-            dense_vectors, _ = self.embeddings.embed_texts(texts)
-            points: list[dict[str, Any]] = []
-            for idx, (record, dense) in enumerate(zip(chunk_records, dense_vectors, strict=False)):
-                chunk_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{doc_id}:chunk:{idx}"))
-                sparse   = self._build_sparse_vector(record.content)
-                points.append({
-                    "id": chunk_id,
-                    "vector": {"dense": dense, "text": sparse},
-                    "payload": {
-                        "doc_type":    "article",
-                        "doc_id":      doc_id,
-                        "collection":  collection,
-                        "tenant_id":   tenant_id,
-                        "source_tags": source_tags,
-                        "source_type": source_type or path.suffix.lower().lstrip("."),
-                        "title":       title,
-                        "source_path": str(path),
-                        "chunk_index": idx,
-                        "content":     record.content,
-                        "chunk_kind":  record.chunk_kind,
-                        "page_number": record.page_number,
-                        "section_title": record.section_title,
-                        "page_span":   record.page_span,
-                        "table_title": record.table_title,
-                        "figure_caption": record.figure_caption,
-                        "local_context": record.local_context,
-                        "global_context": record.global_context,
-                        "topics":      topics_per_chunk[idx],
-                        "entities":    entities_per_chunk[idx],
-                        "canonical_title": temporal_meta["canonical_title"],
-                        "published_at": temporal_meta["published_at"],
-                        "published_year": temporal_meta["published_year"],
-                        "version_label": temporal_meta["version_label"],
-                    },
-                })
-            self._qdrant(
-                "PUT",
-                f"/collections/{collection}/points?wait=true",
-                json_body={"points": points},
-            )
-            indexed = len(points)
+            try:
+                self._ensure_collection(collection)
+                texts         = chunks
+                dense_vectors, _ = self.embeddings.embed_texts(texts)
+                points: list[dict[str, Any]] = []
+                for idx, (record, dense) in enumerate(zip(chunk_records, dense_vectors, strict=False)):
+                    chunk_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{doc_id}:chunk:{idx}"))
+                    sparse   = self._build_sparse_vector(record.content)
+                    points.append({
+                        "id": chunk_id,
+                        "vector": {"dense": dense, "text": sparse},
+                        "payload": {
+                            "doc_type":    "article",
+                            "doc_id":      doc_id,
+                            "collection":  collection,
+                            "tenant_id":   tenant_id,
+                            "source_tags": source_tags,
+                            "source_type": source_type or path.suffix.lower().lstrip("."),
+                            "title":       title,
+                            "source_path": str(path),
+                            "chunk_index": idx,
+                            "content":     record.content,
+                            "chunk_kind":  record.chunk_kind,
+                            "page_number": record.page_number,
+                            "section_title": record.section_title,
+                            "page_span":   record.page_span,
+                            "table_title": record.table_title,
+                            "figure_caption": record.figure_caption,
+                            "local_context": record.local_context,
+                            "global_context": record.global_context,
+                            "topics":      topics_per_chunk[idx],
+                            "entities":    entities_per_chunk[idx],
+                            "canonical_title": temporal_meta["canonical_title"],
+                            "published_at": temporal_meta["published_at"],
+                            "published_year": temporal_meta["published_year"],
+                            "version_label": temporal_meta["version_label"],
+                        },
+                    })
+                self._qdrant(
+                    "PUT",
+                    f"/collections/{collection}/points?wait=true",
+                    json_body={"points": points},
+                )
+                indexed = len(points)
+            except httpx.HTTPError:
+                ingest_warnings.append(
+                    "Qdrant is configured but unavailable; article ingest continued without external vector indexing."
+                )
 
         # ── Neo4j ──────────────────────────────────────────────────────
         if self.settings.enable_graphrag:
@@ -555,7 +561,7 @@ class ArticleStore:
             version_label=temporal_meta["version_label"],
             extraction=extraction_report,
             chunk_stats=chunk_stats,
-            warnings=chunk_warnings,
+            warnings=ingest_warnings,
             ok=True,
         )
 
@@ -1797,29 +1803,32 @@ class ArticleStore:
     ) -> list[ArticleSearchResult]:
         if not self._qdrant_available():
             return []
-        self._ensure_collection(filters.collection)
-        dense_vector, _ = self.embeddings.embed_text(query)
-        sparse_payload_body = self._build_sparse_vector(query)
+        try:
+            self._ensure_collection(filters.collection)
+            dense_vector, _ = self.embeddings.embed_text(query)
+            sparse_payload_body = self._build_sparse_vector(query)
 
-        fused: dict[str, dict[str, Any]] = {}
-        for mode, payload in [
-            ("sparse", {"query": sparse_payload_body, "using": "text", "limit": top_k * 6, "with_payload": True}),
-            ("dense", {"query": dense_vector, "using": "dense", "limit": top_k * 6, "with_payload": True}),
-        ]:
-            resp = self._qdrant(
-                "POST",
-                f"/collections/{filters.collection}/points/query",
-                json_body=payload,
-            )
-            for pt in self._qdrant_points(resp):
-                pid = str(pt.get("id"))
-                score = float(pt.get("score", 0.0))
-                payload_body = pt.get("payload", {})
-                if not self._payload_matches_filters(payload_body, filters):
-                    continue
-                if pid not in fused:
-                    fused[pid] = {"payload": payload_body, "sparse": 0.0, "dense": 0.0}
-                fused[pid][mode] = score
+            fused: dict[str, dict[str, Any]] = {}
+            for mode, payload in [
+                ("sparse", {"query": sparse_payload_body, "using": "text", "limit": top_k * 6, "with_payload": True}),
+                ("dense", {"query": dense_vector, "using": "dense", "limit": top_k * 6, "with_payload": True}),
+            ]:
+                resp = self._qdrant(
+                    "POST",
+                    f"/collections/{filters.collection}/points/query",
+                    json_body=payload,
+                )
+                for pt in self._qdrant_points(resp):
+                    pid = str(pt.get("id"))
+                    score = float(pt.get("score", 0.0))
+                    payload_body = pt.get("payload", {})
+                    if not self._payload_matches_filters(payload_body, filters):
+                        continue
+                    if pid not in fused:
+                        fused[pid] = {"payload": payload_body, "sparse": 0.0, "dense": 0.0}
+                    fused[pid][mode] = score
+        except httpx.HTTPError:
+            return []
 
         results: list[ArticleSearchResult] = []
         for pid, data in fused.items():
@@ -1847,13 +1856,16 @@ class ArticleStore:
     ) -> list[ArticleSearchResult]:
         if not self._qdrant_available():
             return []
-        self._ensure_collection(filters.collection)
-        dense_vector, _ = self.embeddings.embed_text(query)
-        resp = self._qdrant(
-            "POST",
-            f"/collections/{filters.collection}/points/query",
-            json_body={"query": dense_vector, "using": "dense", "limit": top_k * 6, "with_payload": True},
-        )
+        try:
+            self._ensure_collection(filters.collection)
+            dense_vector, _ = self.embeddings.embed_text(query)
+            resp = self._qdrant(
+                "POST",
+                f"/collections/{filters.collection}/points/query",
+                json_body={"query": dense_vector, "using": "dense", "limit": top_k * 6, "with_payload": True},
+            )
+        except httpx.HTTPError:
+            return []
         results: list[ArticleSearchResult] = []
         for pt in self._qdrant_points(resp):
             payload = pt.get("payload", {})
@@ -2165,25 +2177,28 @@ class ArticleStore:
     def _scroll_collection_points(self, collection: str, limit: int = 500) -> list[dict[str, Any]]:
         if not self._qdrant_available():
             return []
-        self._ensure_collection(collection)
-        gathered: list[dict[str, Any]] = []
-        offset: Any | None = None
-        remaining = limit
-        while remaining > 0:
-            batch_size = min(100, remaining)
-            body: dict[str, Any] = {"limit": batch_size, "with_payload": True}
-            if offset is not None:
-                body["offset"] = offset
-            resp = self._qdrant("POST", f"/collections/{collection}/points/scroll", json_body=body)
-            result = resp.get("result") or {}
-            points = result.get("points") or []
-            if not points:
-                break
-            gathered.extend(points)
-            remaining -= len(points)
-            offset = result.get("next_page_offset")
-            if offset is None:
-                break
+        try:
+            self._ensure_collection(collection)
+            gathered: list[dict[str, Any]] = []
+            offset: Any | None = None
+            remaining = limit
+            while remaining > 0:
+                batch_size = min(100, remaining)
+                body: dict[str, Any] = {"limit": batch_size, "with_payload": True}
+                if offset is not None:
+                    body["offset"] = offset
+                resp = self._qdrant("POST", f"/collections/{collection}/points/scroll", json_body=body)
+                result = resp.get("result") or {}
+                points = result.get("points") or []
+                if not points:
+                    break
+                gathered.extend(points)
+                remaining -= len(points)
+                offset = result.get("next_page_offset")
+                if offset is None:
+                    break
+        except httpx.HTTPError:
+            return []
         return gathered[:limit]
 
     @classmethod
@@ -2515,43 +2530,46 @@ class ArticleStore:
         """Fallback when Neo4j is off: agrupa por doc_id nos chunks mais similares."""
         if not self._qdrant_available():
             return []
-        must_filters: list[dict[str, Any]] = [{"key": "doc_id", "match": {"value": doc_id}}]
-        if tenant_id:
-            must_filters.append({"key": "tenant_id", "match": {"value": tenant_id}})
-        # Busca os chunks do próprio artigo e usa o primeiro como query
-        anchor_resp = self._qdrant(
-            "POST",
-            f"/collections/{collection}/points/query",
-            json_body={
-                "filter": {"must": must_filters},
-                "using":  "dense",
-                "limit":  1,
-                "with_payload": True,
-                "with_vector": True,
-            },
-        )
-        pts = self._qdrant_points(anchor_resp)
-        if not pts:
+        try:
+            must_filters: list[dict[str, Any]] = [{"key": "doc_id", "match": {"value": doc_id}}]
+            if tenant_id:
+                must_filters.append({"key": "tenant_id", "match": {"value": tenant_id}})
+            # Busca os chunks do próprio artigo e usa o primeiro como query
+            anchor_resp = self._qdrant(
+                "POST",
+                f"/collections/{collection}/points/query",
+                json_body={
+                    "filter": {"must": must_filters},
+                    "using":  "dense",
+                    "limit":  1,
+                    "with_payload": True,
+                    "with_vector": True,
+                },
+            )
+            pts = self._qdrant_points(anchor_resp)
+            if not pts:
+                return []
+            anchor_vector = pts[0].get("vector", {}).get("dense") or pts[0].get("vector")
+            if not anchor_vector:
+                return []
+            similarity_filter: dict[str, Any] = {
+                "must_not": [{"key": "doc_id", "match": {"value": doc_id}}],
+            }
+            if tenant_id:
+                similarity_filter["must"] = [{"key": "tenant_id", "match": {"value": tenant_id}}]
+            sim_resp = self._qdrant(
+                "POST",
+                f"/collections/{collection}/points/query",
+                json_body={
+                    "query":  anchor_vector,
+                    "using":  "dense",
+                    "limit":  limit * 5,
+                    "with_payload": True,
+                    "filter": similarity_filter,
+                },
+            )
+        except httpx.HTTPError:
             return []
-        anchor_vector = pts[0].get("vector", {}).get("dense") or pts[0].get("vector")
-        if not anchor_vector:
-            return []
-        similarity_filter: dict[str, Any] = {
-            "must_not": [{"key": "doc_id", "match": {"value": doc_id}}],
-        }
-        if tenant_id:
-            similarity_filter["must"] = [{"key": "tenant_id", "match": {"value": tenant_id}}]
-        sim_resp = self._qdrant(
-            "POST",
-            f"/collections/{collection}/points/query",
-            json_body={
-                "query":  anchor_vector,
-                "using":  "dense",
-                "limit":  limit * 5,
-                "with_payload": True,
-                "filter": similarity_filter,
-            },
-        )
         seen: dict[str, float] = {}
         for pt in self._qdrant_points(sim_resp):
             pl  = pt.get("payload", {})

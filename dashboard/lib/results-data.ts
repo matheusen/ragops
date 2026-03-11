@@ -78,6 +78,9 @@ export interface ResultArticleContextHit {
   topics: string[];
   entities: string[];
   retrieval_mode: string;
+  chunk_kind: string;
+  page_number: number | null;
+  section_title: string;
   evidence_paths: ResultArticleEvidencePath[];
   source_name: string;
 }
@@ -246,6 +249,9 @@ export interface ResultAudit {
     contradictions: string[];
     financial_impact_detected: boolean;
     requires_human_review: boolean;
+    next_action?: string;
+    failure_type?: string;
+    result_state?: string;
     rationale: string;
     provider: string;
     model: string;
@@ -285,6 +291,9 @@ type RawAudit = {
     topics?: string[];
     entities?: string[];
     retrieval_mode?: string;
+    chunk_kind?: string;
+    page_number?: number;
+    section_title?: string;
     evidence_paths?: unknown[];
     metadata?: { category?: string; type?: string; retrieval_mode?: string; topics?: string[]; entities?: string[]; evidence_paths?: unknown[] };
     final_score?: number;
@@ -1096,6 +1105,9 @@ function buildArticleAnalysisView(audit: RawAudit): ResultArticleAnalysisView | 
       topics: directTopics.length > 0 ? directTopics : readStringArray(metadata?.topics),
       entities: directEntities.length > 0 ? directEntities : readStringArray(metadata?.entities),
       retrieval_mode: readString(item.retrieval_mode) || readString(metadata?.retrieval_mode) || "vector-global",
+      chunk_kind: readString(item.chunk_kind) || "text",
+      page_number: Number.isFinite(readNumber(item.page_number)) ? readNumber(item.page_number) : null,
+      section_title: readString(item.section_title),
       evidence_paths: normalizeEvidencePaths(item.evidence_paths ?? metadata?.evidence_paths),
       source_name: path.basename(sourceName),
     };

@@ -865,6 +865,93 @@ def _dedupe_warnings(warnings: list[str]) -> list[str]:
     return unique
 
 
+def _fallback_article_quality_state(warnings: list[str]) -> dict[str, Any]:
+    normalized_warnings = _dedupe_warnings(warnings)
+    joined = " ".join(normalized_warnings).lower()
+    requires_human_review = "human review is recommended." in joined
+    confidence = 0.42 if requires_human_review else 0.68
+    return {
+        "confidence": round(confidence, 4),
+        "requires_human_review": requires_human_review,
+        "failure_type": "human_review_required" if requires_human_review else None,
+        "result_state": "review_required" if requires_human_review else "grounded",
+        "next_action": (
+            "Human review is recommended before treating this article analysis as a strong conclusion."
+            if requires_human_review
+            else "Article analysis can be used as grounded guidance with normal caution."
+        ),
+    }
+
+
+def _derive_article_quality_state(
+    *,
+    article_store: ArticleStore,
+    query_text: str,
+    article_search: list[Any],
+    article_request: Any,
+    warnings: list[str],
+) -> dict[str, Any]:
+    normalized_warnings = _dedupe_warnings(warnings)
+    joined = " ".join(normalized_warnings).lower()
+    requires_human_review = "human review is recommended." in joined
+    exact_match_required = bool(getattr(article_request, "exact_match_required", False))
+    quality = article_store._quality_proxies(query_text, article_search) if query_text else {
+        "avg_score": 0.0,
+        "precision_proxy": 0.0,
+        "recall_proxy": 0.0,
+        "faithfulness_proxy": 0.0,
+    }
+    coverage = article_store._query_coverage(query_text, article_search) if query_text else 0.0
+    exact_hits = sum(1 for item in article_search if getattr(item, "retrieval_mode", "") == "exact-page")
+    corrective_used = any(getattr(item, "retrieval_mode", "") == "corrective" for item in article_search)
+
+    failure_type: str | None = None
+    if query_text and not article_search:
+        failure_type = "retrieval_miss"
+    elif exact_match_required and exact_hits == 0:
+        failure_type = "citation_failure"
+    elif requires_human_review or coverage < 0.35:
+        failure_type = "low_coverage"
+    elif article_search and quality.get("faithfulness_proxy", 0.0) < 0.2 and coverage >= 0.35:
+        failure_type = "grounding_failure"
+
+    base_confidence = (
+        0.18
+        + (0.42 * float(quality.get("precision_proxy", 0.0)))
+        + (0.25 * float(quality.get("recall_proxy", 0.0)))
+        + (0.15 * float(quality.get("faithfulness_proxy", 0.0)))
+    )
+    if article_search:
+        base_confidence += 0.06
+    if corrective_used:
+        base_confidence -= 0.05
+    if failure_type == "citation_failure":
+        base_confidence -= 0.08
+    if failure_type == "retrieval_miss":
+        base_confidence = min(base_confidence, 0.22)
+    if requires_human_review:
+        base_confidence = min(base_confidence, 0.45)
+    confidence = round(max(0.12, min(base_confidence, 0.94)), 4)
+
+    if requires_human_review:
+        result_state = "review_required"
+        next_action = "Human review is recommended because retrieval coverage remained weak after routing."
+    elif confidence < 0.7:
+        result_state = "partial_grounding"
+        next_action = "Treat this article analysis as partial guidance and verify the key claims against the cited evidence."
+    else:
+        result_state = "grounded"
+        next_action = "Article analysis is grounded enough for normal use, with standard verification of key claims."
+
+    return {
+        "confidence": confidence,
+        "requires_human_review": requires_human_review,
+        "failure_type": failure_type,
+        "result_state": result_state,
+        "next_action": next_action,
+    }
+
+
 def _build_article_runtime_payload(
     *,
     article_store: ArticleStore,
@@ -894,6 +981,13 @@ def _build_article_runtime_payload(
     graph_paths = sum(len(getattr(item, "evidence_paths", [])) for item in article_search)
     multimodal_hits = sum(1 for item in article_search if item.chunk_kind in {"table", "figure"})
     top_item = article_search[0] if article_search else None
+    quality_state = _derive_article_quality_state(
+        article_store=article_store,
+        query_text=query_text,
+        article_search=article_search,
+        article_request=article_request,
+        warnings=warnings,
+    )
     benchmark_summary = None
     if article_benchmark is not None and getattr(article_benchmark, "scenarios", None):
         ranked_scenarios = sorted(
@@ -913,6 +1007,7 @@ def _build_article_runtime_payload(
         "execution_path": execution_path,
         "timings_ms": timings_ms,
         "warnings": _dedupe_warnings(warnings),
+        "quality_state": quality_state,
         "retrieval_diagnostics": {
             "query_text": query_text,
             "requested_policy": article_request.retrieval_policy,
@@ -1005,6 +1100,11 @@ def write_article_analysis_audit(
     extraction_reports = article_request.metadata.get("extraction_reports", []) if isinstance(article_request.metadata, dict) else []
     source_documents = article_request.metadata.get("source_documents", []) if isinstance(article_request.metadata, dict) else []
     runtime_payload = dict(runtime_summary or {})
+    quality_state = (
+        runtime_payload.get("quality_state")
+        if isinstance(runtime_payload.get("quality_state"), dict)
+        else _fallback_article_quality_state(warnings)
+    )
     runtime_payload.update(
         {
             "flow_mode": str(runtime_payload.get("flow_mode") or "article-analysis"),
@@ -1021,6 +1121,7 @@ def write_article_analysis_audit(
             "exact_match_required": article_request.exact_match_required,
             "graph_assessment": graph_assessment.model_dump(mode="json") if hasattr(graph_assessment, "model_dump") else graph_assessment,
             "search_hits": len(article_search),
+            "quality_state": quality_state,
             "warnings": _dedupe_warnings([*warnings, *runtime_payload.get("warnings", [])] if isinstance(runtime_payload.get("warnings"), list) else warnings),
         }
     )
@@ -1120,8 +1221,18 @@ def write_article_analysis_audit(
                 "missing_items": [],
                 "contradictions": [],
                 "financial_impact_detected": False,
-                "requires_human_review": False,
-                "results": [],
+                "requires_human_review": bool(quality_state.get("requires_human_review")),
+                "results": [
+                    {
+                        "rule_name": "article_quality_gate",
+                        "severity": "warning" if quality_state.get("requires_human_review") else "info",
+                        "message": quality_state.get("next_action", ""),
+                        "metadata": {
+                            "failure_type": quality_state.get("failure_type"),
+                            "result_state": quality_state.get("result_state"),
+                        },
+                    }
+                ],
             },
             "retrieved": [item.model_dump(mode="json") for item in article_search],
             "distilled": {
@@ -1135,15 +1246,18 @@ def write_article_analysis_audit(
                 "is_bug": False,
                 "is_complete": True,
                 "ready_for_dev": True,
-                "confidence": 1.0,
+                "confidence": float(quality_state.get("confidence", 0.68)),
                 "missing_items": [],
                 "evidence_used": [item.chunk_id for item in article_search],
                 "contradictions": [],
                 "financial_impact_detected": False,
-                "requires_human_review": False,
+                "requires_human_review": bool(quality_state.get("requires_human_review")),
+                "next_action": str(quality_state.get("next_action", "")),
                 "rationale": prompt_result.output_text,
                 "provider": prompt_result.provider,
                 "model": prompt_result.model,
+                "failure_type": quality_state.get("failure_type"),
+                "result_state": quality_state.get("result_state"),
             },
             "prompt_execution": prompt_result.model_dump(mode="json"),
             "article_run": {
@@ -1168,6 +1282,7 @@ def write_article_analysis_audit(
                 "content_excerpt": article_request.content[:4000],
                 "output_text": prompt_result.output_text,
                 "warnings": warnings,
+                "quality_state": quality_state,
                 "related_articles": related_articles,
                 "graph_assessment": graph_assessment.model_dump(mode="json") if hasattr(graph_assessment, "model_dump") else graph_assessment,
                 "distillation": article_distillation.model_dump(mode="json") if hasattr(article_distillation, "model_dump") else article_distillation,

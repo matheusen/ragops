@@ -265,6 +265,10 @@ def analyze_article_upload(
         graph_assessment = store.assess_graph_usefulness(query_text) if query_text else None
         timings_ms: dict[str, float] = {}
         warnings: list[str] = []
+        for result in ingest_results:
+            warnings.extend(getattr(result, "warnings", []) or [])
+            if getattr(result, "error", None):
+                warnings.append(f"Ingest warning for {result.path}: {result.error}")
         missing_extractions = len(saved_names) - len(source_documents)
         if missing_extractions > 0:
             warnings.append(
