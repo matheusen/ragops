@@ -89,6 +89,44 @@ const navItems = [
       </svg>
     ),
   },
+  {
+    href: "/ingest",
+    label: "Ingest",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+        <polyline points="17 8 12 3 7 8" />
+        <line x1="12" y1="3" x2="12" y2="15" />
+      </svg>
+    ),
+  },
+  {
+    href: "/mindmap",
+    label: "Conhecimento",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="3" />
+        <circle cx="4" cy="6" r="2" />
+        <circle cx="20" cy="6" r="2" />
+        <circle cx="4" cy="18" r="2" />
+        <circle cx="20" cy="18" r="2" />
+        <line x1="6" y1="7" x2="10" y2="11" />
+        <line x1="18" y1="7" x2="14" y2="11" />
+        <line x1="6" y1="17" x2="10" y2="13" />
+        <line x1="18" y1="17" x2="14" y2="13" />
+      </svg>
+    ),
+  },
+  {
+    href: "/roadmap",
+    label: "Roadmap",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 17l6-6 4 4 8-8" />
+        <path d="M14 7h7v7" />
+      </svg>
+    ),
+  },
 ];
 
 function getBreadcrumb(pathname: string) {

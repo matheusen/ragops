@@ -576,6 +576,7 @@ class ArticleSearchResult(BaseModel):
     retrieval_mode: str = "vector-global"
     graph_usefulness: GraphUsefulnessAssessment | None = None
     evidence_paths: list[ArticleEvidencePath] = Field(default_factory=list)
+    image_path: str | None = None
 
 
 class ArticleRelatedRequest(BaseModel):
@@ -668,3 +669,103 @@ class ArticleRetrievalEvaluationResponse(BaseModel):
     total_examples: int = 0
     metrics: list[EvaluationMetric] = Field(default_factory=list)
     examples: list[ArticleRetrievalEvaluationExampleResult] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Knowledge base — grafo e roadmap
+# ---------------------------------------------------------------------------
+
+class KnowledgeDocNode(BaseModel):
+    doc_id: str
+    title: str
+    topics: list[str] = Field(default_factory=list)
+    chunk_count: int = 0
+    source_path: str = ""
+
+
+class KnowledgeGraphEdge(BaseModel):
+    source: str
+    target: str
+    weight: float = 0.0
+    shared_topics: list[str] = Field(default_factory=list)
+
+
+class KnowledgeGraphResponse(BaseModel):
+    nodes: list[KnowledgeDocNode] = Field(default_factory=list)
+    edges: list[KnowledgeGraphEdge] = Field(default_factory=list)
+    topic_clusters: dict[str, list[str]] = Field(default_factory=dict)
+
+
+class RoadmapGenerateRequest(BaseModel):
+    goal: str
+    provider: str = "openai"
+    model: str | None = None
+    context_query: str | None = None
+    top_k: int = Field(default=30, ge=1, le=100)
+
+
+class RoadmapTopicItem(BaseModel):
+    id: str
+    title: str
+    description: str
+    resources: list[str] = Field(default_factory=list)
+    prerequisites: list[str] = Field(default_factory=list)
+
+
+class RoadmapPhase(BaseModel):
+    id: str
+    title: str
+    duration: str = ""
+    description: str = ""
+    topics: list[RoadmapTopicItem] = Field(default_factory=list)
+
+
+class RoadmapConnection(BaseModel):
+    from_id: str = Field(alias="from")
+    to_id: str = Field(alias="to")
+    label: str = ""
+
+    model_config = {"populate_by_name": True}
+
+
+class RoadmapGenerateResponse(BaseModel):
+    title: str
+    goal: str
+    phases: list[RoadmapPhase] = Field(default_factory=list)
+    connections: list[RoadmapConnection] = Field(default_factory=list)
+    provider: str = ""
+    model: str = ""
+    context_docs_used: int = 0
+    raw_output: str = ""
+
+
+class KnowledgeChunkResult(BaseModel):
+    title: str
+    doc_id: str
+    page_number: int | None = None
+    section_title: str | None = None
+    content: str
+    score: float = 0.0
+    chunk_index: int = 0
+    chunk_kind: str = "text"
+    image_path: str | None = None
+    topics: list[str] = Field(default_factory=list)
+
+
+class KnowledgeSearchResponse(BaseModel):
+    query: str
+    results: list[KnowledgeChunkResult]
+
+
+class KnowledgeAskRequest(BaseModel):
+    query: str
+    provider: str = "gemini"
+    top_k: int = Field(default=12, ge=1, le=50)
+
+
+class KnowledgeAskResponse(BaseModel):
+    query: str
+    answer: str
+    sources: list[KnowledgeChunkResult]
+    provider: str
+    model: str

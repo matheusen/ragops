@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import json as _json_mod
 import shutil
 import tempfile
 import time
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 
 from jira_issue_rag.core.config import Settings, get_settings
 from jira_issue_rag.services.workflow import ValidationWorkflow
@@ -46,11 +50,23 @@ from jira_issue_rag.shared.models import (
     JiraFetchRequest,
     JiraFetchResponse,
     JiraValidationRequest,
+    KnowledgeAskRequest,
+    KnowledgeAskResponse,
+    KnowledgeChunkResult,
+    KnowledgeSearchResponse,
+    KnowledgeDocNode,
+    KnowledgeGraphEdge,
+    KnowledgeGraphResponse,
     PromptExecutionRequest,
     PromptExecutionResponse,
     PromptInfoResponse,
     ReplayRequest,
     ReplayResponse,
+    RoadmapConnection,
+    RoadmapGenerateRequest,
+    RoadmapGenerateResponse,
+    RoadmapPhase,
+    RoadmapTopicItem,
     ValidationExecutionResponse,
     ValidationResumeRequest,
     ValidationRequest,
@@ -852,5 +868,1204 @@ def related_articles(
         limit=request.limit,
         tenant_id=request.tenant_id,
         collection=request.collection,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Knowledge Base — upload persistente, grafo e roadmap
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/knowledge/upload",
+    response_model=list[ArticleIngestResponse],
+    tags=["knowledge"],
+    summary="Upload de livros/PDFs para a base de conhecimento",
+    description=(
+        "Recebe múltiplos arquivos via multipart/form-data, salva em `data/knowledge/` "
+        "e ingere no Qdrant (coleção `articles`). Ideal para construir uma base de conhecimento "
+        "persistente de livros e PDFs para geração de roadmaps."
+    ),
+)
+async def upload_knowledge_files(
+    files: list[UploadFile] = File(...),
+    store: ArticleStore = Depends(get_article_store),
+    settings: Settings = Depends(get_settings),
+) -> list[ArticleIngestResponse]:
+    from pathlib import Path as _Path
+
+    knowledge_dir = _Path("data/knowledge")
+    knowledge_dir.mkdir(parents=True, exist_ok=True)
+
+    saved_paths: list[str] = []
+    titles: list[str] = []
+    for upload in files:
+        fname = upload.filename or "file"
+        dest = knowledge_dir / fname
+        with dest.open("wb") as fh:
+            shutil.copyfileobj(upload.file, fh)
+        saved_paths.append(str(dest))
+        titles.append(_Path(fname).stem.replace("_", " ").replace("-", " ").title())
+
+    return store.ingest(paths=saved_paths, titles=titles, collection="articles")
+
+
+@router.get(
+    "/knowledge/graph",
+    response_model=KnowledgeGraphResponse,
+    tags=["knowledge"],
+    summary="Grafo da base de conhecimento",
+    description=(
+        "Retorna todos os documentos indexados no Qdrant como nós e as conexões entre eles "
+        "baseadas em tópicos compartilhados. Use para renderizar o mindmap de conhecimento."
+    ),
+)
+def knowledge_graph(
+    settings: Settings = Depends(get_settings),
+) -> KnowledgeGraphResponse:
+    import httpx as _httpx
+    from collections import defaultdict
+
+    qdrant_url = (settings.qdrant_url or "http://localhost:6333").rstrip("/")
+    all_points: list[dict] = []
+    offset = None
+
+    try:
+        with _httpx.Client(timeout=15.0) as client:
+            while True:
+                body: dict = {"limit": 250, "with_payload": True, "with_vector": False}
+                if offset is not None:
+                    body["offset"] = offset
+                resp = client.post(f"{qdrant_url}/collections/articles/points/scroll", json=body)
+                if not resp.is_success:
+                    break
+                data = resp.json()
+                points = data.get("result", {}).get("points", [])
+                all_points.extend(points)
+                next_offset = data.get("result", {}).get("next_page_offset")
+                if not next_offset or not points:
+                    break
+                offset = next_offset
+    except Exception:
+        pass
+
+    # Group by doc_id
+    doc_data: dict[str, dict] = defaultdict(lambda: {"title": "Unknown", "topics": set(), "chunk_count": 0, "source_path": ""})
+    for point in all_points:
+        payload = point.get("payload", {})
+        doc_id = payload.get("doc_id", "")
+        if not doc_id:
+            continue
+        title = payload.get("title") or payload.get("canonical_title") or "Unknown"
+        doc_data[doc_id]["title"] = title
+        doc_data[doc_id]["topics"].update(payload.get("topics") or [])
+        doc_data[doc_id]["chunk_count"] += 1
+        if not doc_data[doc_id]["source_path"]:
+            doc_data[doc_id]["source_path"] = payload.get("source_path", "")
+
+    nodes = [
+        KnowledgeDocNode(
+            doc_id=doc_id,
+            title=info["title"],
+            topics=sorted(info["topics"]),
+            chunk_count=info["chunk_count"],
+            source_path=info["source_path"],
+        )
+        for doc_id, info in doc_data.items()
+    ]
+
+    # Build edges from shared topics
+    edges: list[KnowledgeGraphEdge] = []
+    doc_ids = list(doc_data.keys())
+    for i in range(len(doc_ids)):
+        for j in range(i + 1, len(doc_ids)):
+            a_topics = doc_data[doc_ids[i]]["topics"]
+            b_topics = doc_data[doc_ids[j]]["topics"]
+            shared = a_topics & b_topics
+            if shared:
+                max_topics = max(len(a_topics), len(b_topics), 1)
+                edges.append(KnowledgeGraphEdge(
+                    source=doc_ids[i],
+                    target=doc_ids[j],
+                    weight=round(len(shared) / max_topics, 3),
+                    shared_topics=sorted(shared),
+                ))
+
+    # Build topic clusters
+    topic_clusters: dict[str, list[str]] = defaultdict(list)
+    for node in nodes:
+        for topic in node.topics:
+            topic_clusters[topic].append(node.doc_id)
+
+    return KnowledgeGraphResponse(
+        nodes=nodes,
+        edges=edges,
+        topic_clusters=dict(topic_clusters),
+    )
+
+
+@router.post(
+    "/roadmap/generate",
+    response_model=RoadmapGenerateResponse,
+    tags=["knowledge"],
+    summary="Gerar roadmap de aprendizado/desenvolvimento",
+    description=(
+        "Busca os documentos mais relevantes da base de conhecimento para o objetivo informado "
+        "e usa um LLM (OpenAI, Gemini ou Ollama) para gerar um roadmap estruturado em fases "
+        "com tópicos, recursos e prerequisitos."
+    ),
+)
+def generate_roadmap(
+    request: RoadmapGenerateRequest,
+    store: ArticleStore = Depends(get_article_store),
+    workflow: ValidationWorkflow = Depends(get_workflow),
+) -> RoadmapGenerateResponse:
+    import json as _json
+    import httpx as _httpx
+    from collections import defaultdict as _dd
+
+    # ── 1. Catálogo completo: todos os docs únicos no Qdrant ──────────────────
+    qdrant_url = (store.settings.qdrant_url or "http://localhost:6333").rstrip("/")
+    catalog: dict[str, dict] = {}  # doc_id → {title, topics}
+    try:
+        with _httpx.Client(timeout=20.0) as _client:
+            offset = None
+            while True:
+                body: dict = {"limit": 250, "with_payload": True, "with_vector": False,
+                              "filter": {"must": [{"key": "doc_type", "match": {"value": "article"}}]}}
+                if offset is not None:
+                    body["offset"] = offset
+                resp = _client.post(f"{qdrant_url}/collections/articles/points/scroll", json=body)
+                if not resp.is_success:
+                    break
+                data = resp.json()
+                for pt in data.get("result", {}).get("points", []):
+                    pl = pt.get("payload", {})
+                    did = pl.get("doc_id", "")
+                    if not did:
+                        continue
+                    if did not in catalog:
+                        catalog[did] = {"title": pl.get("title") or did, "topics": set()}
+                    catalog[did]["topics"].update(pl.get("topics") or [])
+                next_offset = data.get("result", {}).get("next_page_offset")
+                if not next_offset or not data.get("result", {}).get("points"):
+                    break
+                offset = next_offset
+    except Exception:
+        pass
+
+    # ── 2. Busca vetorial: chunks mais relevantes para o objetivo ─────────────
+    query = request.context_query or request.goal
+    top_k = max(request.top_k, 30)  # sempre pelo menos 30 chunks
+    results = store.search(query=query, top_k=top_k, collection="articles")
+
+    # ── 3. Monta contexto: catálogo + trechos relevantes ─────────────────────
+    catalog_lines: list[str] = []
+    for info in catalog.values():
+        topics_str = ", ".join(sorted(info["topics"])[:8]) if info["topics"] else "sem tópicos"
+        catalog_lines.append(f"- {info['title']} (tópicos: {topics_str})")
+
+    chunk_parts: list[str] = []
+    for r in results:
+        snippet = r.content[:500].strip()
+        chunk_parts.append(f"[{r.title}] {snippet}")
+
+    context_text = ""
+    if catalog_lines:
+        context_text += "=== LIVROS/DOCUMENTOS DISPONÍVEIS NA BASE ===\n" + "\n".join(catalog_lines)
+    if chunk_parts:
+        context_text += "\n\n=== TRECHOS MAIS RELEVANTES ===\n" + "\n\n".join(chunk_parts)
+    if not context_text.strip():
+        context_text = "Nenhum documento disponivel na base de conhecimento."
+
+    # Execute roadmap generation prompt
+    try:
+        exec_result = workflow.execute_prompt(
+            PromptExecutionRequest(
+                prompt_name="roadmap_generate",
+                content=context_text,
+                provider=request.provider,
+                title=request.goal,
+                metadata={"goal": request.goal, "context_docs": len(results)},
+            )
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    raw_output = exec_result.output_text.strip()
+
+    # Parse JSON output
+    phases: list[RoadmapPhase] = []
+    connections: list[RoadmapConnection] = []
+    title = request.goal
+    goal = request.goal
+
+    try:
+        # Strip markdown code fences if present
+        clean = raw_output
+        if clean.startswith("```"):
+            lines = clean.split("\n")
+            clean = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+        data = _json.loads(clean)
+        title = data.get("title", request.goal)
+        goal = data.get("goal", request.goal)
+        for ph in data.get("phases", []):
+            topics = [
+                RoadmapTopicItem(
+                    id=t.get("id", ""),
+                    title=t.get("title", ""),
+                    description=t.get("description", ""),
+                    resources=t.get("resources", []),
+                    prerequisites=t.get("prerequisites", []),
+                )
+                for t in ph.get("topics", [])
+            ]
+            phases.append(RoadmapPhase(
+                id=ph.get("id", ""),
+                title=ph.get("title", ""),
+                duration=ph.get("duration", ""),
+                description=ph.get("description", ""),
+                topics=topics,
+            ))
+        for conn in data.get("connections", []):
+            connections.append(RoadmapConnection(**{"from": conn.get("from", ""), "to": conn.get("to", ""), "label": conn.get("label", "")}))
+    except Exception:
+        pass
+
+    # ── 4. Validação determinística das referências ───────────────────────────
+    # Filtra resources de cada tópico para manter apenas títulos que existem
+    # no catálogo da KB (correspondência parcial, case-insensitive).
+    if catalog:
+        catalog_titles_lower = [t.lower() for t in (info["title"] for info in catalog.values())]
+        catalog_titles_orig  = [info["title"] for info in catalog.values()]
+        for phase in phases:
+            for topic in phase.topics:
+                validated: list[str] = []
+                for res in topic.resources:
+                    res_l = res.lower()
+                    # keep if any catalog title contains or is contained by the resource string
+                    if any(res_l in ct or ct in res_l for ct in catalog_titles_lower):
+                        # store the canonical catalog title (first match)
+                        match = next(
+                            (catalog_titles_orig[i] for i, ct in enumerate(catalog_titles_lower) if res_l in ct or ct in res_l),
+                            res,
+                        )
+                        if match not in validated:
+                            validated.append(match)
+                topic.resources = validated
+
+    return RoadmapGenerateResponse(
+        title=title,
+        goal=goal,
+        phases=phases,
+        connections=connections,
+        provider=exec_result.provider,
+        model=exec_result.model,
+        context_docs_used=len(catalog) or len(results),
+        raw_output=raw_output,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Roadmap — persistência no MongoDB + geração de exemplos Q&A
+# ---------------------------------------------------------------------------
+
+from jira_issue_rag.core.config import (
+    MongoClient as _MongoClient,
+    MONGODB_DB_NAME as _MONGO_DB,
+    _resolve_mongodb_uri as _mongo_uri,
+)
+
+_ROADMAPS_COL = "roadmaps"
+
+
+def _roadmap_col():
+    """Retorna a collection MongoDB de roadmaps (ou None se indisponível)."""
+    uri = _mongo_uri()
+    if not uri or _MongoClient is None:
+        raise HTTPException(status_code=503, detail="MongoDB não disponível")
+    client = _MongoClient(uri, serverSelectionTimeoutMS=3000)
+    return client[_MONGO_DB][_ROADMAPS_COL]
+
+
+def _strip_mongo_id(doc: dict) -> dict:
+    doc.pop("_id", None)
+    return doc
+
+
+def _strip_json(raw: str) -> str:
+    clean = raw.strip()
+    if clean.startswith("```"):
+        lines = clean.split("\n")
+        clean = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+    return clean
+
+
+@router.post(
+    "/roadmap/save",
+    tags=["knowledge"],
+    summary="Salvar roadmap gerado no MongoDB",
+)
+def save_roadmap(roadmap: RoadmapGenerateResponse):
+    col = _roadmap_col()
+    rid = uuid.uuid4().hex[:10]
+    payload = roadmap.model_dump(by_alias=True)
+    payload["id"] = rid
+    payload["created_at"] = datetime.now(timezone.utc).isoformat()
+    payload["examples"] = {}          # {topic_id: {topic_title, generated_at, qa_pairs}}
+    payload["node_positions"] = {}
+    col.insert_one(payload)
+    return {"id": rid, "saved": True}
+
+
+@router.get(
+    "/roadmap/list",
+    tags=["knowledge"],
+    summary="Listar roadmaps salvos",
+)
+def list_roadmaps():
+    col = _roadmap_col()
+    docs = col.find(
+        {},
+        {"id": 1, "title": 1, "goal": 1, "provider": 1, "model": 1,
+         "created_at": 1, "phases": 1},
+        sort=[("created_at", -1)],
+    )
+    items = []
+    for d in docs:
+        phases = d.get("phases", [])
+        items.append({
+            "id": d.get("id", str(d.get("_id", ""))),
+            "title": d.get("title", ""),
+            "goal": d.get("goal", ""),
+            "provider": d.get("provider", ""),
+            "model": d.get("model", ""),
+            "created_at": d.get("created_at", ""),
+            "phase_count": len(phases),
+            "topic_count": sum(len(p.get("topics", [])) for p in phases),
+        })
+    return {"roadmaps": items}
+
+
+@router.get(
+    "/roadmap/{roadmap_id}",
+    tags=["knowledge"],
+    summary="Carregar roadmap salvo",
+)
+def get_roadmap(roadmap_id: str):
+    col = _roadmap_col()
+    doc = col.find_one({"id": roadmap_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Roadmap não encontrado")
+    return _strip_mongo_id(doc)
+
+
+@router.delete(
+    "/roadmap/{roadmap_id}",
+    tags=["knowledge"],
+    summary="Deletar roadmap salvo",
+)
+def delete_roadmap(roadmap_id: str):
+    col = _roadmap_col()
+    col.delete_one({"id": roadmap_id})
+    return {"deleted": True}
+
+
+@router.patch(
+    "/roadmap/{roadmap_id}/positions",
+    tags=["knowledge"],
+    summary="Salvar posições dos nós do mindmap",
+)
+def update_roadmap_positions(roadmap_id: str, body: dict):
+    col = _roadmap_col()
+    col.update_one(
+        {"id": roadmap_id},
+        {"$set": {"node_positions": body.get("positions", {})}},
+    )
+    return {"saved": True}
+
+
+@router.post(
+    "/roadmap/{roadmap_id}/generate-examples",
+    tags=["knowledge"],
+    summary="Gerar exemplos Q&A para um tópico do roadmap",
+)
+def generate_topic_examples(
+    roadmap_id: str,
+    body: dict,
+    store: ArticleStore = Depends(get_article_store),
+    workflow: ValidationWorkflow = Depends(get_workflow),
+):
+    """
+    Busca chunks relevantes na KB e usa LLM para gerar 5 pares Q&A sobre o tópico.
+    Salva no MongoDB e retorna os pares gerados.
+    """
+    topic_id    = body.get("topic_id", "")
+    topic_title = body.get("topic_title", "")
+    provider    = body.get("provider", "gemini")
+    model       = body.get("model", None)
+    append      = bool(body.get("append", False))
+
+    if not topic_title:
+        raise HTTPException(status_code=400, detail="topic_title é obrigatório")
+
+    # Busca chunks relevantes na KB — filtra por score mínimo para evitar
+    # documentos não relacionados contaminarem as perguntas geradas.
+    _SCORE_MIN = 0.45
+    all_results = store.search(query=topic_title, top_k=12, collection="articles")
+    relevant = [r for r in all_results if (r.score or 0.0) >= _SCORE_MIN]
+    # fallback: se nenhum chunk passou o threshold, usa os 5 melhores
+    if not relevant:
+        relevant = all_results[:5]
+
+    chunk_parts = [
+        f"[{r.title}] (pág {r.page_number or '?'})\n{r.content[:600].strip()}"
+        for r in relevant
+    ]
+    content = "\n\n".join(chunk_parts) if chunk_parts else "Sem conteúdo disponível na base."
+
+    # Títulos reais dos documentos usados — para validação posterior
+    valid_source_titles: set[str] = {r.title for r in relevant if r.title}
+
+    try:
+        exec_result = workflow.execute_prompt(
+            PromptExecutionRequest(
+                prompt_name="topic_examples",
+                title=topic_title,
+                content=content,
+                provider=provider,
+                model=model,
+            )
+        )
+        raw = exec_result.output_text or ""
+        parsed = _json_mod.loads(_strip_json(raw))
+        qa_pairs = parsed.get("qa_pairs", [])
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erro ao gerar exemplos: {exc}") from exc
+
+    # Valida sources: remove títulos que não estão nos chunks reais usados
+    for pair in qa_pairs:
+        if isinstance(pair.get("sources"), list):
+            pair["sources"] = [
+                s for s in pair["sources"]
+                if any(s.lower() in vt.lower() or vt.lower() in s.lower() for vt in valid_source_titles)
+            ]
+
+    col = _roadmap_col()
+
+    # Se append=True, acumula os pares novos com os existentes
+    if append:
+        doc = col.find_one({"id": roadmap_id}) or {}
+        existing_pairs = (doc.get("examples") or {}).get(topic_id, {}).get("qa_pairs", [])
+        qa_pairs = existing_pairs + qa_pairs
+
+    example_entry = {
+        "topic_title": topic_title,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "provider": exec_result.provider,
+        "model": exec_result.model,
+        "qa_pairs": qa_pairs,
+    }
+    col.update_one(
+        {"id": roadmap_id},
+        {"$set": {f"examples.{topic_id}": example_entry}},
+        upsert=False,
+    )
+
+    return {
+        "topic_id": topic_id,
+        "topic_title": topic_title,
+        "qa_pairs": qa_pairs,
+        "provider": exec_result.provider,
+        "model": exec_result.model,
+    }
+
+
+@router.post(
+    "/roadmap/{roadmap_id}/generate-code-examples",
+    tags=["knowledge"],
+    summary="Gerar exemplos de código para um tópico do roadmap",
+)
+def generate_code_examples(
+    roadmap_id: str,
+    body: dict,
+    store: ArticleStore = Depends(get_article_store),
+    workflow: ValidationWorkflow = Depends(get_workflow),
+):
+    """Busca chunks relevantes na KB e usa LLM para gerar 3 exemplos de código sobre o tópico."""
+    topic_id    = body.get("topic_id", "")
+    topic_title = body.get("topic_title", "")
+    provider    = body.get("provider", "gemini")
+    model       = body.get("model", None)
+
+    if not topic_title:
+        raise HTTPException(status_code=400, detail="topic_title é obrigatório")
+
+    results = store.search(query=topic_title, top_k=8, collection="articles")
+    chunk_parts = [
+        f"[{r.title}] (pág {r.page_number or '?'})\n{r.content[:600].strip()}"
+        for r in results
+    ]
+    content = "\n\n".join(chunk_parts) if chunk_parts else "Sem conteúdo disponível na base."
+
+    try:
+        exec_result = workflow.execute_prompt(
+            PromptExecutionRequest(
+                prompt_name="topic_code_examples",
+                title=topic_title,
+                content=content,
+                provider=provider,
+                model=model,
+            )
+        )
+        raw = exec_result.output_text or ""
+        parsed = _json_mod.loads(_strip_json(raw))
+        code_examples = parsed.get("code_examples", [])
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erro ao gerar exemplos de código: {exc}") from exc
+
+    code_entry = {
+        "topic_title": topic_title,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "provider": exec_result.provider,
+        "model": exec_result.model,
+        "code_examples": code_examples,
+    }
+    col = _roadmap_col()
+    col.update_one(
+        {"id": roadmap_id},
+        {"$set": {f"code_examples.{topic_id}": code_entry}},
+        upsert=False,
+    )
+
+    return {
+        "topic_id": topic_id,
+        "topic_title": topic_title,
+        "code_examples": code_examples,
+        "provider": exec_result.provider,
+        "model": exec_result.model,
+    }
+
+
+@router.post(
+    "/roadmap/{roadmap_id}/regenerate-qa-pair",
+    tags=["knowledge"],
+    summary="Regenerar um par Q&A específico de um tópico",
+)
+def regenerate_qa_pair(
+    roadmap_id: str,
+    body: dict,
+    store: ArticleStore = Depends(get_article_store),
+    workflow: ValidationWorkflow = Depends(get_workflow),
+):
+    """Gera um novo par Q&A e substitui o item no índice indicado."""
+    topic_id    = body.get("topic_id", "")
+    topic_title = body.get("topic_title", "")
+    pair_index  = int(body.get("pair_index", 0))
+    provider    = body.get("provider", "gemini")
+    model       = body.get("model", None)
+
+    if not topic_title:
+        raise HTTPException(status_code=400, detail="topic_title é obrigatório")
+
+    _SCORE_MIN = 0.45
+    all_results = store.search(query=topic_title, top_k=10, collection="articles")
+    relevant = [r for r in all_results if (r.score or 0.0) >= _SCORE_MIN] or all_results[:5]
+    valid_source_titles: set[str] = {r.title for r in relevant if r.title}
+
+    chunk_parts = [
+        f"[{r.title}] (pág {r.page_number or '?'})\n{r.content[:600].strip()}"
+        for r in relevant
+    ]
+    content = "\n\n".join(chunk_parts) if chunk_parts else "Sem conteúdo disponível na base."
+
+    try:
+        exec_result = workflow.execute_prompt(
+            PromptExecutionRequest(
+                prompt_name="qa_single",
+                title=topic_title,
+                content=content,
+                provider=provider,
+                model=model,
+            )
+        )
+        raw = exec_result.output_text or ""
+        new_pair = _json_mod.loads(_strip_json(raw))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erro ao regenerar par Q&A: {exc}") from exc
+
+    # Valida sources
+    if isinstance(new_pair.get("sources"), list):
+        new_pair["sources"] = [
+            s for s in new_pair["sources"]
+            if any(s.lower() in vt.lower() or vt.lower() in s.lower() for vt in valid_source_titles)
+        ]
+
+    col = _roadmap_col()
+    doc = col.find_one({"id": roadmap_id}) or {}
+    qa_pairs: list = (doc.get("examples") or {}).get(topic_id, {}).get("qa_pairs", [])
+
+    if pair_index < len(qa_pairs):
+        qa_pairs[pair_index] = new_pair
+    else:
+        qa_pairs.append(new_pair)
+
+    col.update_one(
+        {"id": roadmap_id},
+        {"$set": {f"examples.{topic_id}.qa_pairs": qa_pairs}},
+        upsert=False,
+    )
+
+    return {"pair_index": pair_index, "new_pair": new_pair, "qa_pairs": qa_pairs}
+
+
+@router.post(
+    "/roadmap/{roadmap_id}/regenerate-code-example",
+    tags=["knowledge"],
+    summary="Regenerar um exemplo de código específico de um tópico",
+)
+def regenerate_code_example(
+    roadmap_id: str,
+    body: dict,
+    store: ArticleStore = Depends(get_article_store),
+    workflow: ValidationWorkflow = Depends(get_workflow),
+):
+    """Gera um novo exemplo de código e substitui o item no índice indicado."""
+    topic_id      = body.get("topic_id", "")
+    topic_title   = body.get("topic_title", "")
+    example_index = int(body.get("example_index", 0))
+    provider      = body.get("provider", "gemini")
+    model         = body.get("model", None)
+
+    if not topic_title:
+        raise HTTPException(status_code=400, detail="topic_title é obrigatório")
+
+    results = store.search(query=topic_title, top_k=8, collection="articles")
+    chunk_parts = [
+        f"[{r.title}] (pág {r.page_number or '?'})\n{r.content[:600].strip()}"
+        for r in results
+    ]
+    content = "\n\n".join(chunk_parts) if chunk_parts else "Sem conteúdo disponível na base."
+
+    try:
+        exec_result = workflow.execute_prompt(
+            PromptExecutionRequest(
+                prompt_name="code_single",
+                title=topic_title,
+                content=content,
+                provider=provider,
+                model=model,
+            )
+        )
+        raw = exec_result.output_text or ""
+        new_example = _json_mod.loads(_strip_json(raw))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erro ao regenerar código: {exc}") from exc
+
+    col = _roadmap_col()
+    doc = col.find_one({"id": roadmap_id}) or {}
+    code_examples: list = (doc.get("code_examples") or {}).get(topic_id, {}).get("code_examples", [])
+
+    if example_index < len(code_examples):
+        code_examples[example_index] = new_example
+    else:
+        code_examples.append(new_example)
+
+    col.update_one(
+        {"id": roadmap_id},
+        {"$set": {f"code_examples.{topic_id}.code_examples": code_examples}},
+        upsert=False,
+    )
+
+    return {"example_index": example_index, "new_example": new_example, "code_examples": code_examples}
+
+
+@router.post(
+    "/roadmap/{roadmap_id}/code-interact",
+    tags=["knowledge"],
+    summary="Interagir com trecho de código selecionado (explicar / estender / novo arquivo)",
+)
+def code_interact(
+    roadmap_id: str,
+    body: dict,
+    workflow: ValidationWorkflow = Depends(get_workflow),
+):
+    """Ações interativas sobre um trecho de código: explain | extend | new_file."""
+    action      = body.get("action", "explain")
+    topic_title = body.get("topic_title", "")
+    content     = body.get("content", "")   # full_code + snippet, pre-built by frontend
+    provider    = body.get("provider", "gemini")
+    model       = body.get("model", None)
+
+    prompt_map = {
+        "explain":  "code_explain",
+        "extend":   "code_extend",
+        "new_file": "code_new_file",
+    }
+    if action not in prompt_map:
+        raise HTTPException(status_code=400, detail=f"Ação inválida: {action}")
+
+    try:
+        exec_result = workflow.execute_prompt(
+            PromptExecutionRequest(
+                prompt_name=prompt_map[action],
+                content=content,
+                title=topic_title,
+                provider=provider,
+            )
+        )
+        raw = exec_result.output_text or ""
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erro na interação: {exc}") from exc
+
+    return {
+        "action":   action,
+        "output":   raw,
+        "provider": exec_result.provider,
+        "model":    exec_result.model,
+    }
+
+
+@router.post(
+    "/roadmap/{roadmap_id}/review",
+    tags=["knowledge"],
+    summary="Revisar roadmap: corrige referências e melhora descrições via LLM",
+)
+def review_roadmap(
+    roadmap_id: str,
+    body: dict,
+    store: ArticleStore = Depends(get_article_store),
+    workflow: ValidationWorkflow = Depends(get_workflow),
+):
+    """Valida e corrige os resources de cada tópico com base no catálogo real da KB.
+
+    Envia ao LLM apenas IDs + títulos + resources atuais (payload mínimo)
+    e aplica as correções de volta nas fases sem reescrever o roadmap inteiro.
+    """
+    import httpx as _httpx
+
+    provider = body.get("provider", "gemini")
+
+    # Load roadmap
+    col = _roadmap_col()
+    doc = col.find_one({"id": roadmap_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Roadmap não encontrado")
+    existing_phases: list[dict] = doc.get("phases", [])
+
+    # Build KB catalog via Qdrant scroll
+    qdrant_url = (store.settings.qdrant_url or "http://localhost:6333").rstrip("/")
+    catalog_titles: list[str] = []
+    try:
+        with _httpx.Client(timeout=30.0) as _client:
+            offset = None
+            seen: set[str] = set()
+            while True:
+                scroll_body: dict = {
+                    "limit": 250, "with_payload": True, "with_vector": False,
+                    "filter": {"must": [{"key": "doc_type", "match": {"value": "article"}}]},
+                }
+                if offset is not None:
+                    scroll_body["offset"] = offset
+                resp = _client.post(f"{qdrant_url}/collections/articles/points/scroll", json=scroll_body)
+                if not resp.is_success:
+                    break
+                data = resp.json()
+                for pt in data.get("result", {}).get("points", []):
+                    pl = pt.get("payload", {})
+                    did = pl.get("doc_id", "")
+                    title = pl.get("title") or did
+                    if did and did not in seen:
+                        seen.add(did)
+                        catalog_titles.append(title)
+                next_offset = data.get("result", {}).get("next_page_offset")
+                if not next_offset or not data.get("result", {}).get("points"):
+                    break
+                offset = next_offset
+    except Exception:
+        pass
+
+    catalog_text = (
+        "Nenhum documento disponível."
+        if not catalog_titles
+        else "\n".join(f"- {t}" for t in catalog_titles)
+    )
+
+    # Build lean topics list (only id + title + current resources — no descriptions)
+    lean_topics: list[dict] = []
+    for phase in existing_phases:
+        for topic in phase.get("topics", []):
+            lean_topics.append({
+                "id":               topic.get("id", ""),
+                "title":            topic.get("title", ""),
+                "current_resources": topic.get("resources", []),
+            })
+
+    topics_json = _json_mod.dumps(lean_topics, ensure_ascii=False)
+
+    try:
+        exec_result = workflow.execute_prompt(
+            PromptExecutionRequest(
+                prompt_name="roadmap_validate_refs",
+                content=catalog_text,
+                title=doc.get("title", ""),
+                provider=provider,
+                metadata={"topics_json": topics_json},
+            )
+        )
+        raw = exec_result.output_text or ""
+        result = _json_mod.loads(_strip_json(raw))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erro na revisão: {exc}") from exc
+
+    # Apply updates: patch only the resources field per topic id
+    updates_map: dict[str, list[str]] = {
+        u["id"]: u["resources"]
+        for u in result.get("updates", [])
+        if "id" in u and "resources" in u
+    }
+
+    updated_phases = []
+    for phase in existing_phases:
+        updated_topics = []
+        for topic in phase.get("topics", []):
+            tid = topic.get("id", "")
+            if tid in updates_map:
+                topic = {**topic, "resources": updates_map[tid]}
+            updated_topics.append(topic)
+        updated_phases.append({**phase, "topics": updated_topics})
+
+    col.update_one(
+        {"id": roadmap_id},
+        {"$set": {"phases": updated_phases, "reviewed_at": datetime.now(timezone.utc).isoformat()}},
+    )
+
+    updated_doc = col.find_one({"id": roadmap_id})
+    return _strip_mongo_id(updated_doc)
+
+
+@router.post(
+    "/roadmap/{roadmap_id}/save-interaction",
+    tags=["knowledge"],
+    summary="Salvar interação (pergunta/resposta) vinculada ao roadmap",
+)
+def save_roadmap_interaction(roadmap_id: str, body: dict):
+    """Persiste uma pergunta e resposta feita pelo usuário no painel de conhecimento."""
+    col = _roadmap_col()
+    interaction = {
+        "asked_at": datetime.now(timezone.utc).isoformat(),
+        "query":    body.get("query", ""),
+        "answer":   body.get("answer", ""),
+        "sources":  body.get("sources", []),
+        "context":  body.get("context", ""),   # topicTitle
+    }
+    col.update_one(
+        {"id": roadmap_id},
+        {"$push": {"interactions": interaction}},
+        upsert=False,
+    )
+    return {"saved": True}
+
+
+@router.post(
+    "/roadmap/{roadmap_id}/expand",
+    tags=["knowledge"],
+    summary="Expandir roadmap existente com novas fases via LLM",
+)
+def expand_roadmap(
+    roadmap_id: str,
+    body: dict,
+    workflow: ValidationWorkflow = Depends(get_workflow),
+):
+    """Carrega o roadmap, pede ao LLM novas fases e mescla no MongoDB sem perder as existentes."""
+    col = _roadmap_col()
+    doc = col.find_one({"id": roadmap_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Roadmap não encontrado")
+
+    expansion_request = body.get("expansion", "").strip()
+    provider = body.get("provider", "gemini")
+    model = body.get("model", None)
+
+    if not expansion_request:
+        raise HTTPException(status_code=400, detail="expansion é obrigatório")
+
+    # Build context: summarise existing phases so the LLM doesn't repeat them
+    existing_phases = doc.get("phases", [])
+    phase_lines = []
+    for p in existing_phases:
+        topics_str = ", ".join(t.get("title", "") for t in p.get("topics", []))
+        phase_lines.append(f"- Fase '{p.get('title', '')}' ({p.get('duration', '')}): {topics_str}")
+    title_context = (
+        f"Roadmap: {doc.get('title', doc.get('goal', ''))}\n\n"
+        f"Fases existentes:\n" + "\n".join(phase_lines)
+    )
+
+    try:
+        exec_result = workflow.execute_prompt(
+            PromptExecutionRequest(
+                prompt_name="roadmap_expand",
+                title=title_context,
+                content=expansion_request,
+                provider=provider,
+                model=model,
+            )
+        )
+        raw = exec_result.output_text or ""
+        parsed = _json_mod.loads(_strip_json(raw))
+        new_phases = parsed.get("phases", [])
+        new_connections = parsed.get("connections", [])
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erro ao expandir: {exc}") from exc
+
+    if not new_phases:
+        raise HTTPException(status_code=422, detail="LLM não retornou novas fases. Tente reformular a solicitação.")
+
+    updated_phases = existing_phases + new_phases
+    existing_conns = doc.get("connections", [])
+    col.update_one(
+        {"id": roadmap_id},
+        {"$set": {"phases": updated_phases, "connections": existing_conns + new_connections}},
+    )
+
+    updated_doc = col.find_one({"id": roadmap_id})
+    return _strip_mongo_id(updated_doc)
+
+
+@router.patch(
+    "/roadmap/{roadmap_id}/edit-node",
+    tags=["knowledge"],
+    summary="Editar campos de um tópico ou fase do roadmap",
+)
+def edit_roadmap_node(roadmap_id: str, body: dict):
+    """Atualiza title/description/resources/duration de um nó identificado pelo id."""
+    col = _roadmap_col()
+    doc = col.find_one({"id": roadmap_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Roadmap não encontrado")
+
+    node_id = body.get("node_id", "")
+    updates = body.get("updates", {})
+
+    if not node_id:
+        raise HTTPException(status_code=400, detail="node_id é obrigatório")
+
+    phases = doc.get("phases", [])
+    changed = False
+
+    for phase in phases:
+        if phase.get("id") == node_id:
+            for f in ("title", "description", "duration"):
+                if f in updates:
+                    phase[f] = updates[f]
+            changed = True
+            break
+        for topic in phase.get("topics", []):
+            if topic.get("id") == node_id:
+                for f in ("title", "description", "resources"):
+                    if f in updates:
+                        topic[f] = updates[f]
+                changed = True
+                break
+        if changed:
+            break
+
+    if not changed:
+        raise HTTPException(status_code=404, detail="Nó não encontrado no roadmap")
+
+    col.update_one({"id": roadmap_id}, {"$set": {"phases": phases}})
+    return {"updated": True}
+
+
+@router.post(
+    "/roadmap/{roadmap_id}/linkedin-post",
+    tags=["knowledge"],
+    summary="Gerar post LinkedIn com base no roadmap",
+)
+def generate_linkedin_post(
+    roadmap_id: str,
+    body: dict,
+    workflow: ValidationWorkflow = Depends(get_workflow),
+):
+    """Usa o LLM para gerar um post profissional para o LinkedIn a partir do roadmap salvo."""
+    col = _roadmap_col()
+    doc = col.find_one({"id": roadmap_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Roadmap não encontrado")
+
+    provider = body.get("provider", "gemini")
+
+    # Build a concise summary of the roadmap to feed the prompt
+    title = doc.get("title", doc.get("goal", ""))
+    phases = doc.get("phases", [])
+    phase_lines = []
+    for p in phases:
+        topics = ", ".join(t.get("title", "") for t in p.get("topics", []))
+        phase_lines.append(f"- {p.get('title', '')} ({p.get('duration', '')}): {topics}")
+    summary = "\n".join(phase_lines)
+
+    content_for_prompt = f"{doc.get('goal', '')}\n\nFases:\n{summary}"
+
+    try:
+        result = workflow.execute_prompt(
+            PromptExecutionRequest(
+                prompt_name="linkedin_post",
+                content=content_for_prompt,
+                provider=provider,
+                title=title,
+            )
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return {"post": result.output_text.strip()}
+
+
+# ---------------------------------------------------------------------------
+# Knowledge Images — servir imagens extraídas de PDFs
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/knowledge/image",
+    tags=["knowledge"],
+    summary="Servir imagem extraída de PDF",
+    description=(
+        "Retorna o arquivo de imagem salvo em `data/knowledge/images/` dado o caminho "
+        "armazenado no campo `image_path` do chunk Qdrant. "
+        "Use `?path=<caminho_absoluto>` para buscar a imagem."
+    ),
+)
+def serve_knowledge_image(
+    path: str = Query(..., description="Caminho absoluto do arquivo de imagem"),
+) -> FileResponse:
+    image_path = Path(path)
+    if not image_path.exists():
+        raise HTTPException(status_code=404, detail=f"Imagem não encontrada: {path}")
+    # Segurança: apenas arquivos dentro de data/knowledge/images/
+    try:
+        image_path.resolve().relative_to(Path("data/knowledge/images").resolve())
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Acesso negado: caminho fora de data/knowledge/images/")
+    suffix = image_path.suffix.lower()
+    media_type_map = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif"}
+    media_type = media_type_map.get(suffix, "application/octet-stream")
+    return FileResponse(str(image_path), media_type=media_type)
+
+
+@router.get(
+    "/knowledge/images/{doc_id}",
+    tags=["knowledge"],
+    summary="Listar imagens de um documento",
+    description="Retorna a lista de imagens extraídas e salvas para um `doc_id` específico.",
+)
+def list_knowledge_images(doc_id: str) -> list[dict]:
+    images_dir = Path("data/knowledge/images") / doc_id
+    if not images_dir.exists():
+        return []
+    _IMG_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+    return [
+        {
+            "filename": f.name,
+            "path": str(f),
+            "size_bytes": f.stat().st_size,
+            "url": f"/api/v1/knowledge/image?path={f}",
+        }
+        for f in sorted(images_dir.iterdir())
+        if f.suffix.lower() in _IMG_EXT
+    ]
+
+
+@router.get(
+    "/knowledge/search",
+    response_model=KnowledgeSearchResponse,
+    tags=["knowledge"],
+    summary="Buscar chunks na base de conhecimento",
+    description="Busca vetorial híbrida (dense + BM25) na coleção `articles`. Retorna chunks rankeados por relevância.",
+)
+def knowledge_search(
+    q: str = Query(..., description="Consulta de busca ou pergunta"),
+    top_k: int = Query(default=12, ge=1, le=50),
+    store: ArticleStore = Depends(get_article_store),
+) -> KnowledgeSearchResponse:
+    results = store.search(query=q, top_k=top_k, collection="articles")
+    chunks = [
+        KnowledgeChunkResult(
+            title=r.title or "",
+            doc_id=r.doc_id or "",
+            page_number=r.page_number,
+            section_title=r.section_title,
+            content=r.content,
+            score=r.score,
+            chunk_index=r.chunk_index,
+            chunk_kind=r.chunk_kind or "text",
+            image_path=r.image_path,
+            topics=r.topics or [],
+        )
+        for r in results
+    ]
+    return KnowledgeSearchResponse(query=q, results=chunks)
+
+
+@router.post(
+    "/knowledge/ask",
+    response_model=KnowledgeAskResponse,
+    tags=["knowledge"],
+    summary="Perguntar à base de conhecimento (RAG)",
+    description=(
+        "Busca os chunks mais relevantes e usa um LLM para gerar uma resposta objetiva "
+        "com citações das fontes. Retorna a resposta e a lista de fontes usadas."
+    ),
+)
+def knowledge_ask(
+    request: KnowledgeAskRequest,
+    store: ArticleStore = Depends(get_article_store),
+    workflow: ValidationWorkflow = Depends(get_workflow),
+) -> KnowledgeAskResponse:
+    results = store.search(query=request.query, top_k=request.top_k, collection="articles")
+
+    context_parts = [
+        f"[{r.title}, pág {r.page_number or '?'}]\n{r.content[:600]}"
+        for r in results
+    ]
+    context_text = "\n\n---\n\n".join(context_parts) if context_parts else "Nenhum documento disponível na base de conhecimento."
+
+    answer = ""
+    provider_used = request.provider
+    model_used = ""
+    try:
+        exec_result = workflow.execute_prompt(
+            PromptExecutionRequest(
+                prompt_name="knowledge_ask",
+                content=context_text,
+                provider=request.provider,
+                title=request.query,
+            )
+        )
+        answer = exec_result.output_text.strip()
+        provider_used = exec_result.provider
+        model_used = exec_result.model
+    except Exception:
+        answer = ""
+
+    sources = [
+        KnowledgeChunkResult(
+            title=r.title or "",
+            doc_id=r.doc_id or "",
+            page_number=r.page_number,
+            section_title=r.section_title,
+            content=r.content,
+            score=r.score,
+            chunk_index=r.chunk_index,
+            chunk_kind=r.chunk_kind or "text",
+            image_path=r.image_path,
+            topics=r.topics or [],
+        )
+        for r in results
+    ]
+    return KnowledgeAskResponse(
+        query=request.query,
+        answer=answer,
+        sources=sources,
+        provider=provider_used,
+        model=model_used,
     )
 

@@ -486,6 +486,7 @@ class ArticleStore:
         all_entities = sorted({entity for es in entities_per_chunk for entity in es})
 
         # ── Qdrant ─────────────────────────────────────────────────────
+        _QDRANT_BATCH = 200  # max points per PUT to avoid payload / timeout issues
         indexed = 0
         ingest_warnings = list(chunk_warnings)
         if self._qdrant_available():
@@ -527,16 +528,87 @@ class ArticleStore:
                             "version_label": temporal_meta["version_label"],
                         },
                     })
-                self._qdrant(
-                    "PUT",
-                    f"/collections/{collection}/points?wait=true",
-                    json_body={"points": points},
-                )
+                for batch_start in range(0, len(points), _QDRANT_BATCH):
+                    self._qdrant(
+                        "PUT",
+                        f"/collections/{collection}/points?wait=true",
+                        json_body={"points": points[batch_start : batch_start + _QDRANT_BATCH]},
+                    )
                 indexed = len(points)
-            except httpx.HTTPError:
+            except Exception as exc:
                 ingest_warnings.append(
-                    "Qdrant is configured but unavailable; article ingest continued without external vector indexing."
+                    f"Qdrant indexing failed ({type(exc).__name__}): {exc}. "
+                    "Article ingest continued without external vector indexing."
                 )
+
+        # ── Extração e indexação de imagens ────────────────────────────
+        images_indexed = 0
+        if self.settings.enable_pdf_image_extraction and path.suffix.lower() == ".pdf":
+            try:
+                monkeyocr_output_dir = extraction_report.get("output_dir", "")
+                markdown_for_captions = raw_text if extraction_report.get("selected_engine") == "monkeyocr" else ""
+                image_records = self._extract_pdf_images(
+                    pdf_path=path,
+                    doc_id=doc_id,
+                    monkeyocr_output_dir=monkeyocr_output_dir,
+                    markdown_text=markdown_for_captions,
+                )
+            except Exception as exc:
+                image_records = []
+                ingest_warnings.append(f"Image extraction failed: {exc}")
+            if image_records and self._qdrant_available():
+                try:
+                    img_texts = [r.content for r in image_records]
+                    img_vectors, _ = self.embeddings.embed_texts(img_texts)
+                    img_points: list[dict[str, Any]] = []
+                    for img_idx, (img_record, img_dense) in enumerate(zip(image_records, img_vectors, strict=False)):
+                        # image_path stored in local_context as "image_path:<path>"
+                        saved_image_path = ""
+                        if img_record.local_context and img_record.local_context.startswith("image_path:"):
+                            saved_image_path = img_record.local_context[len("image_path:"):]
+                        chunk_offset = len(chunk_records) + img_idx
+                        chunk_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{doc_id}:img:{img_idx}"))
+                        sparse = self._build_sparse_vector(img_record.content)
+                        img_points.append({
+                            "id": chunk_id,
+                            "vector": {"dense": img_dense, "text": sparse},
+                            "payload": {
+                                "doc_type":    "article",
+                                "doc_id":      doc_id,
+                                "collection":  collection,
+                                "tenant_id":   tenant_id,
+                                "source_tags": source_tags,
+                                "source_type": source_type or path.suffix.lower().lstrip("."),
+                                "title":       title,
+                                "source_path": str(path),
+                                "chunk_index": chunk_offset,
+                                "content":     img_record.content,
+                                "chunk_kind":  "figure",
+                                "page_number": img_record.page_number,
+                                "section_title": None,
+                                "page_span":   None,
+                                "table_title": None,
+                                "figure_caption": img_record.figure_caption,
+                                "local_context": None,
+                                "global_context": None,
+                                "image_path":  saved_image_path,
+                                "topics":      self._extract_topics(img_record.content),
+                                "entities":    [],
+                                "canonical_title": temporal_meta["canonical_title"],
+                                "published_at": temporal_meta["published_at"],
+                                "published_year": temporal_meta["published_year"],
+                                "version_label": temporal_meta["version_label"],
+                            },
+                        })
+                    for batch_start in range(0, len(img_points), _QDRANT_BATCH):
+                        self._qdrant(
+                            "PUT",
+                            f"/collections/{collection}/points?wait=true",
+                            json_body={"points": img_points[batch_start : batch_start + _QDRANT_BATCH]},
+                        )
+                    images_indexed = len(img_points)
+                except Exception as exc:
+                    ingest_warnings.append(f"Image indexing failed: {exc}")
 
         # ── Neo4j ──────────────────────────────────────────────────────
         if self.settings.enable_graphrag:
@@ -553,7 +625,7 @@ class ArticleStore:
 
         return ArticleIngestResponse(
             doc_id=doc_id, title=title, path=str(path), collection=collection, tenant_id=tenant_id, source_tags=source_tags,
-            chunks_indexed=indexed,
+            chunks_indexed=indexed + images_indexed,
             topics=sorted(set([*all_topics, *all_entities[:8]])),
             canonical_title=temporal_meta["canonical_title"],
             published_at=temporal_meta["published_at"],
@@ -775,6 +847,199 @@ class ArticleStore:
             return "\n\n".join(parts).strip()
         except Exception:
             return ""
+
+    # ── Extração de imagens de PDFs ───────────────────────────────────────────
+
+    def _extract_pdf_images(
+        self,
+        pdf_path: Path,
+        doc_id: str,
+        monkeyocr_output_dir: str = "",
+        markdown_text: str = "",
+    ) -> list[_ChunkRecord]:
+        """Extrai imagens de um PDF e cria _ChunkRecord com chunk_kind='figure'.
+
+        Duas estratégias, em ordem de preferência:
+        1. MonkeyOCR output_dir — lê PNGs/JPEGs do output_dir gerado pelo sidecar.
+           As legendas vêm do markdown (padrão ![caption](filename)).
+        2. pypdf — extrai imagens embutidas na camada XObject do PDF.
+           Sem legendas automáticas; usa número de página como contexto.
+
+        As imagens são copiadas para data/knowledge/images/{doc_id}/ de forma permanente.
+        O campo `figure_caption` do _ChunkRecord recebe a legenda e o `content` recebe
+        uma descrição textual (via Gemini se ENABLE_IMAGE_DESCRIPTION=true, caso contrário
+        apenas a legenda + metadados para ser pesquisável).
+        """
+        import re as _re
+        import shutil as _shutil
+
+        images_dir = Path("data/knowledge/images") / doc_id
+        images_dir.mkdir(parents=True, exist_ok=True)
+
+        records: list[_ChunkRecord] = []
+        _IMG_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+
+        # ── Estratégia 1: MonkeyOCR output_dir ───────────────────────────
+        if monkeyocr_output_dir and Path(monkeyocr_output_dir).is_dir():
+            output_path = Path(monkeyocr_output_dir)
+
+            # Extrai mapa caption→filename do markdown
+            caption_map: dict[str, str] = {}
+            for match in _re.finditer(r"!\[([^\]]*)\]\(([^)]+)\)", markdown_text):
+                caption, img_ref = match.group(1).strip(), match.group(2).strip()
+                caption_map[Path(img_ref).name] = caption
+
+            for img_file in sorted(output_path.rglob("*")):
+                if img_file.suffix.lower() not in _IMG_EXT:
+                    continue
+                dest = images_dir / img_file.name
+                _shutil.copy2(img_file, dest)
+
+                caption = caption_map.get(img_file.name, "")
+                page_num: int | None = None
+                m = _re.search(r"page[_-]?(\d+)", img_file.stem, _re.IGNORECASE)
+                if m:
+                    page_num = int(m.group(1))
+
+                content = self._build_figure_content(dest, caption, pdf_path.stem, page_num)
+                records.append(_ChunkRecord(
+                    content=content,
+                    chunk_kind="figure",
+                    page_number=page_num,
+                    figure_caption=caption or None,
+                    local_context=f"image_path:{dest}",
+                ))
+            if records:
+                return records
+
+        # ── Estratégia 2: pypdf image extraction ─────────────────────────
+        try:
+            from pypdf import PdfReader  # type: ignore[import-untyped]
+            reader = PdfReader(str(pdf_path))
+            img_counter = 0
+            for page_idx, page in enumerate(reader.pages):
+                page_num = page_idx + 1
+                for img_file_name, img_obj in page.images:
+                    img_counter += 1
+                    ext = Path(img_file_name).suffix.lower() or ".png"
+                    if ext not in _IMG_EXT:
+                        ext = ".png"
+                    dest_name = f"page{page_num:03d}_img{img_counter:03d}{ext}"
+                    dest = images_dir / dest_name
+                    dest.write_bytes(img_obj.data)
+
+                    content = self._build_figure_content(dest, "", pdf_path.stem, page_num)
+                    records.append(_ChunkRecord(
+                        content=content,
+                        chunk_kind="figure",
+                        page_number=page_num,
+                        figure_caption=None,
+                        local_context=f"image_path:{dest}",
+                    ))
+        except Exception:
+            pass
+
+        return records
+
+    def _build_figure_content(
+        self,
+        image_path: Path,
+        caption: str,
+        doc_title: str,
+        page_num: int | None,
+    ) -> str:
+        """Constrói o conteúdo textual indexável de uma imagem.
+
+        Se ENABLE_IMAGE_DESCRIPTION=true e Gemini/Vertex estiver disponível,
+        chama a vision API para obter uma descrição rica e pesquisável.
+        Caso contrário, usa caption + metadados como fallback.
+        """
+        description = ""
+        if self.settings.enable_image_description:
+            description = self._describe_image_gemini(image_path)
+
+        parts: list[str] = []
+        if description:
+            parts.append(description)
+        if caption:
+            parts.append(f"Legenda: {caption}")
+        parts.append(f"Documento: {doc_title}")
+        if page_num:
+            parts.append(f"Página: {page_num}")
+        parts.append(f"Arquivo: {image_path.name}")
+
+        return " | ".join(parts) if parts else f"Imagem de {doc_title}"
+
+    def _describe_image_gemini(self, image_path: Path) -> str:
+        """Descreve uma imagem via Gemini Vision (Vertex AI ou chave direta).
+        Retorna string vazia se nenhuma credencial disponível.
+        """
+        import base64 as _b64
+
+        _MIME = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
+        mime = _MIME.get(image_path.suffix.lower(), "image/png")
+
+        try:
+            b64_data = _b64.b64encode(image_path.read_bytes()).decode("utf-8")
+        except Exception:
+            return ""
+
+        prompt = (
+            "Describe this image extracted from a technical book or document. "
+            "State the type (diagram, chart, graph, screenshot, figure, table, photo), "
+            "the main subject, key labels, technical concepts, and any data shown. "
+            "Be specific and detailed so the description is searchable. Max 3 sentences."
+        )
+
+        payload: dict = {
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [
+                        {"text": prompt},
+                        {"inline_data": {"mime_type": mime, "data": b64_data}},
+                    ],
+                }
+            ],
+            "generationConfig": {"responseMimeType": "text/plain"},
+        }
+
+        timeout = httpx.Timeout(connect=15.0, read=60.0, write=30.0, pool=10.0)
+
+        # Tenta Vertex AI primeiro (GCP service account)
+        try:
+            from jira_issue_rag.providers.google_vertex_auth import GoogleVertexAuth
+            auth = GoogleVertexAuth(self.settings)
+            if auth.is_available():
+                url = auth.build_generate_content_url(self.settings.gemini_model)
+                with httpx.Client(timeout=timeout) as client:
+                    resp = client.post(url, headers=auth.build_headers(), json=payload)
+                    resp.raise_for_status()
+                    for candidate in resp.json().get("candidates", []):
+                        for part in candidate.get("content", {}).get("parts", []):
+                            if part.get("text"):
+                                return str(part["text"]).strip()
+        except Exception:
+            pass
+
+        # Fallback: Gemini direct API key
+        if self.settings.gemini_api_key:
+            try:
+                url = (
+                    f"https://generativelanguage.googleapis.com/v1beta/models"
+                    f"/{self.settings.gemini_model}:generateContent"
+                )
+                with httpx.Client(timeout=timeout) as client:
+                    resp = client.post(url, params={"key": self.settings.gemini_api_key}, json=payload)
+                    resp.raise_for_status()
+                    for candidate in resp.json().get("candidates", []):
+                        for part in candidate.get("content", {}).get("parts", []):
+                            if part.get("text"):
+                                return str(part["text"]).strip()
+            except Exception:
+                pass
+
+        return ""
 
     @classmethod
     def _chunk_document(cls, text: str, max_chars: int = 800, min_chars: int = 80) -> list[_ChunkRecord]:
@@ -2122,6 +2387,7 @@ class ArticleStore:
             retrieval_mode=retrieval_mode,
             graph_usefulness=assessment,
             evidence_paths=evidence_paths,
+            image_path=payload.get("image_path") or None,
         )
 
     # ── Qdrant helpers ────────────────────────────────────────────────────────
@@ -2160,7 +2426,7 @@ class ArticleStore:
         headers: dict[str, str] = {"Content-Type": "application/json"}
         if self.settings.qdrant_api_key:
             headers["api-key"] = self.settings.qdrant_api_key
-        with httpx.Client(timeout=60.0) as client:
+        with httpx.Client(timeout=120.0) as client:
             resp = client.request(method, f"{base}{path}", headers=headers, json=json_body)
             resp.raise_for_status()
             return resp.json() if resp.content else {}

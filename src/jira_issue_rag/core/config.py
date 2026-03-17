@@ -127,6 +127,11 @@ class Settings(BaseSettings):
     monkeyocr_api_url: str = Field(default="http://localhost:8001", alias="MONKEYOCR_API_URL")
     enable_docling_pdf_parser: bool = Field(default=False, alias="ENABLE_DOCLING_PDF_PARSER")
     enable_tesseract_pdf_ocr: bool = Field(default=True, alias="ENABLE_TESSERACT_PDF_OCR")
+    # Extração e indexação de imagens de PDFs no Qdrant (chunk_kind="figure")
+    # Com MonkeyOCR: usa output_dir do sidecar. Sem MonkeyOCR: usa pypdf.
+    # Se ENABLE_IMAGE_DESCRIPTION=true, chama Gemini para descrever cada imagem (custo extra).
+    enable_pdf_image_extraction: bool = Field(default=False, alias="ENABLE_PDF_IMAGE_EXTRACTION")
+    enable_image_description: bool = Field(default=False, alias="ENABLE_IMAGE_DESCRIPTION")
 
     # DSPy optimization lab (item 11)
     dspy_lab_dir: Path = Field(default=PROJECT_ROOT / "data/dspy_lab", alias="DSPY_LAB_DIR")

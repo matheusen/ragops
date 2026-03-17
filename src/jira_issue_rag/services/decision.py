@@ -69,6 +69,7 @@ class ProviderRouter:
                 "content": content,
                 "title": title or "",
                 "metadata_json": json.dumps(metadata or {}, indent=2, ensure_ascii=True),
+                **(metadata or {}),  # allow {var} placeholders in templates
             },
         )
         provider = self._get_provider(provider_override or self.settings.default_provider)
