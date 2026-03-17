@@ -15,6 +15,7 @@ src/jira_issue_rag/providers/gemini_provider.py
 src/jira_issue_rag/providers/google_vertex_auth.py
 src/jira_issue_rag/providers/mock_provider.py
 src/jira_issue_rag/providers/ollama_provider.py
+src/jira_issue_rag/providers/ollm_provider.py
 src/jira_issue_rag/providers/openai_provider.py
 src/jira_issue_rag/services/article_store.py
 src/jira_issue_rag/services/artifacts.py
@@ -24,6 +25,7 @@ src/jira_issue_rag/services/distiller.py
 src/jira_issue_rag/services/dspy_optimizer.py
 src/jira_issue_rag/services/embeddings.py
 src/jira_issue_rag/services/evaluation.py
+src/jira_issue_rag/services/file_checkpoint.py
 src/jira_issue_rag/services/flow_runner.py
 src/jira_issue_rag/services/jira.py
 src/jira_issue_rag/services/langgraph_workflow.py

@@ -1,0 +1,14 @@
+preciso que vc crie no meu dashboard, uma page para fazer um ingest de varios livros para o qdrant,
+a ideia é poder criar uma base de conhecimento a fim de criar um roadmap de desenvolvimento de software , inteligencia artificial etc, baseado em cards no estilo mindmap,  os contextos que tem correlacao precisam ser linkados nesses cards.
+
+a area de fazer ingest preciso que tenha uma area drag and drop para arrastar arquivos, ou button anexar varios arquivos.
+
+veja qual a melhor estrategia para linkar os conteudos dos livros, pdfs.
+
+devera ter entao uma page para visualizar essa base de conhecimento, sendo possivel pesquisar algo nessa nesse mindmap com cards.
+
+ao encontrar algo relacionado, deverá direcionar para o mapa, devera ser uma interface intuitiva , para facilitar ao maximo a visualizacao do conteudo para apreender facilmente o assunto que esta pesquisando.
+
+a funcao criar roadmap, devera usar toda base de conhecimento + api de um provedor LLM ou ollama se quiser incluir na validacao.
+
+devera existir a integracao com o openai, gemini, e ollama.

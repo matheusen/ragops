@@ -10,6 +10,7 @@ Requires-Dist: langgraph>=0.6.0
 Requires-Dist: openpyxl>=3.1.5
 Requires-Dist: orjson>=3.11.0
 Requires-Dist: pandas>=2.3.0
+Requires-Dist: pymongo>=4.10.0
 Requires-Dist: pydantic>=2.11.0
 Requires-Dist: pydantic-settings>=2.10.0
 Requires-Dist: pypdf>=5.5.0
@@ -37,6 +38,8 @@ Provides-Extra: optimization
 Requires-Dist: dspy-ai>=2.6.0; extra == "optimization"
 Provides-Extra: graphrag
 Requires-Dist: neo4j>=5.0.0; extra == "graphrag"
+Provides-Extra: ollm
+Requires-Dist: ollm>=1.0.3; extra == "ollm"
 Provides-Extra: dev
 Requires-Dist: pytest>=8.4.0; extra == "dev"
 Requires-Dist: pytest-asyncio>=1.1.0; extra == "dev"
@@ -46,6 +49,7 @@ Requires-Dist: pytest-asyncio>=1.1.0; extra == "dev"
 Implementacao executavel do README de arquitetura em `README_advanced_jira_issue_rag_openai_gemini.md`.
 
 Arquitetura detalhada da aplicacao: [README_architecture.md](README_architecture.md)
+Mapa das tecnicas do app: [README_techniques.md](README_techniques.md)
 
 ## O que existe aqui
 
@@ -64,6 +68,267 @@ Arquitetura detalhada da aplicacao: [README_architecture.md](README_architecture
 - testes de regressao do pipeline
 - modo confidencial por padrao bloqueando envio para providers e vector stores de terceiros
 - catalogo de prompts em disco com selecao por nome na API
+
+## Ideia do Flow
+
+O canvas em `/flow` nao e apenas uma visualizacao bonita da pipeline. Ele funciona como um compositor de runtime para o endpoint `/api/v1/run-flow`: cada no ativo ou variante selecionada vira configuracao real do backend.
+
+Em termos praticos, o flow existe para:
+
+- montar e comparar variantes da pipeline sem editar codigo
+- alternar entre `issue-validation` e `article-analysis`
+- ligar ou desligar planner, query rewriter, reflection memory, policy loop, reranker, distiller e GraphRAG
+- salvar configuracoes recorrentes da pipeline para replay e comparacao
+
+No modo `article-analysis`, o `/flow` agora tambem expone controles operacionais de retrieval:
+
+- `collection`: escolhe a colecao logica do corpus de artigos
+- `retrieval_policy`: `auto`, `vector-global`, `graph-local`, `graph-bridge`, `graph-multi-hop`, `exact-page` ou `corrective`
+- `tenant_id`: isola retrieval por tenant quando o corpus e multi-tenant
+- `source_tags` e `source_contains`: filtram por classe de documento, origem ou tema
+- `top_k`: controla quantos chunks entram no contexto
+- `exact_match_required`: forca fallback lexical/page-level para consultas de alta precisao
+- `enable_corrective_rag`: permite uma segunda passagem com reescrita e troca de modo quando o retrieval inicial vem fraco
+- `use_small_model_distillation`: resume o contexto recuperado antes de enviar ao provider
+
+Esses campos sao enviados para `POST /api/v1/run-flow` e gravados na auditoria do `article-analysis`.
+
+Nem todo no do canvas tem o mesmo peso hoje. O runtime principal ja respeita de forma forte retrieval, graph, reranking, distillation, LangGraph e `flow-mode`. Alguns elementos continuam mais proximos de laboratorio, como partes da avaliacao offline.
+
+```mermaid
+flowchart LR
+  Canvas["Dashboard /flow"] --> Saved["Flow salvo"]
+  Saved --> RunEndpoint["/api/v1/run-flow"]
+  RunEndpoint --> Mode{"flow-mode"}
+  Mode --> Issue["issue-validation"]
+  Mode --> Article["article-analysis"]
+
+  Issue --> Core["normalizer -> artifacts -> rules"]
+  Core --> Retrieval["retrieval -> reranker -> distiller"]
+  Retrieval --> Agentic["planner / rewriter / reflection / policy loop"]
+  Agentic --> Judge["provider + prompt"]
+  Judge --> Audit["audit + response"]
+
+  Article --> ArticlePath["PromptCatalog + ArticleStore + retrieval opcional"]
+  ArticlePath --> ArticleJudge["provider + prompt"]
+  ArticleJudge --> ArticleOut["summary / analysis"]
+```
+
+![alt text](image.png)
+![alt text](image-1.png)
+
+## Arquitetura Resumida
+
+O sistema segue a ideia de `facts first, judge later`: primeiro estrutura fatos, artefatos, regras e evidencias; depois entrega contexto controlado ao LLM ou provider selecionado. Isso reduz alucinacao, melhora auditabilidade e permite trocar retrieval, provider e modo de execucao sem reescrever a aplicacao inteira.
+
+As camadas principais sao:
+
+- `API layer`: recebe requests HTTP, valida schema e roteia para o workflow
+- `workflow layer`: centraliza a orquestracao entre execucao direta e LangGraph
+- `evidence layer`: normaliza issue e extrai fatos de logs, PDFs, planilhas e imagens
+- `rules layer`: detecta faltas, contradicoes antes do LLM
+- `retrieval layer`: combina contexto local, Qdrant, Neo4j, reranker e distillation
+- `provider layer`: renderiza prompt e executa com `mock`, OpenAI, Gemini ou Ollama
+- `audit/eval layer`: grava trilha de execucao e compara cenarios offline
+
+```mermaid
+flowchart TD
+  Client["Client / Dashboard"] --> API["FastAPI routes"]
+  API --> Workflow["ValidationWorkflow + flow_runner"]
+  Workflow --> Normalizer["IssueNormalizer"]
+  Workflow --> Artifacts["ArtifactPipeline"]
+  Workflow --> Rules["RulesEngine"]
+  Workflow --> Retrieval["HybridRetriever"]
+  Retrieval --> Qdrant["QdrantStore"]
+  Retrieval --> Neo4j["Neo4jGraphStore"]
+  Retrieval --> Reranker["Reranker"]
+  Retrieval --> Distiller["Distiller"]
+  Workflow --> LangGraph["LangGraphValidationRunner"]
+  Workflow --> Decision["ProviderRouter + PromptCatalog"]
+  Decision --> Providers["Mock / OpenAI / Gemini / Ollama"]
+  Workflow --> Audit["AuditStore"]
+  Workflow --> Eval["GoldenDatasetEvaluator"]
+```
+
+Para mais detalhe de componentes, diagramas e responsabilidades, veja tambem `README_architecture.md` e `README_techniques.md`.
+
+## O que e RAG e por que este app usa isso
+
+`RAG` significa `Retrieval-Augmented Generation`.
+
+Na pratica, o app nao pede para o LLM responder apenas com o que ele "lembra" do treino. Antes da resposta final, o sistema tenta recuperar evidencias relevantes do seu proprio contexto:
+
+- texto enviado na request
+- anexos locais como logs, PDFs, planilhas e imagens
+- chunks indexados no Qdrant
+- relacoes indexadas no Neo4j
+- fatos extraidos por OCR e parsing
+
+O objetivo e simples:
+
+- reduzir alucinacao
+- aumentar precisao factual
+- citar evidencias mais proximas da fonte
+- permitir respostas mais atualizadas e especificas do dominio
+
+Este app segue o modelo `facts first, judge later`:
+
+1. primeiro estrutura fatos, artefatos e evidencias
+2. depois recupera o contexto mais util
+3. so entao monta o prompt e chama o provider LLM
+
+Esse desenho e consistente com a literatura recente. Em [ocaf008.pdf](artigos/ocaf008.pdf), uma revisao sistematica e meta-analise em biomedicina encontrou ganho agregado a favor de `LLM + RAG` sobre `LLM puro`. Em [dietrich-stubbert-2025-evaluating-adherence-to-canadian-radiology-guidelines-for-incidental-hepatobiliary-findings.pdf](artigos/dietrich-stubbert-2025-evaluating-adherence-to-canadian-radiology-guidelines-for-incidental-hepatobiliary-findings.pdf), a aderencia a guideline subiu fortemente com RAG. Em [3701228.pdf](artigos/3701228.pdf), o benchmark CRUD-RAG mostra que avaliar apenas a resposta final e insuficiente: e preciso medir base, retrieval e geracao.
+
+## Como seus dados percorrem o app
+
+Esta e a pergunta mais importante para quem usa o produto: `o que acontece com o texto e os arquivos que eu envio?`
+
+### Fluxo de `issue-validation`
+
+Quando voce envia um texto de issue e anexa arquivos, o caminho principal e este:
+
+1. a API recebe a issue e os anexos
+2. o `IssueNormalizer` transforma o payload em um formato canonico
+3. o `ArtifactPipeline` extrai texto e fatos de logs, PDFs, planilhas e imagens
+4. o `RulesEngine` verifica faltas, contradicoes e sinais de risco antes do LLM
+5. o sistema monta uma query de retrieval com base na issue, fatos extraidos e regras
+6. o `HybridRetriever` consulta contexto local, Qdrant e, se habilitado, Neo4j
+7. o `Reranker` reordena as evidencias para aumentar precisao
+8. o `Distiller` comprime o contexto e preserva fatos e quotes importantes
+9. o workflow monta o prompt final para o provider escolhido
+10. o provider gera a decisao
+11. o sistema grava auditoria completa em `data/audit`
+
+Fluxo resumido:
+
+```text
+issue + anexos
+-> normalizacao
+-> extracao de fatos
+-> regras deterministicas
+-> retrieval
+-> reranking
+-> distillation
+-> prompt final
+-> LLM/provider
+-> resposta + auditoria
+```
+
+### Fluxo de `article-analysis`
+
+Quando voce envia texto de artigo ou uma colecao de arquivos para review, o backend usa um fluxo um pouco diferente:
+
+1. o app recebe `title`, `content`, `metadata` e, opcionalmente, documentos-fonte
+2. o `ArticleStore` monta uma `query_text` usando `search_query`, nomes dos arquivos, titulo e trecho inicial do conteudo
+3. o sistema estima se a query pede `vector-global`, `graph-local`, `graph-bridge`, `graph-multi-hop` ou `exact-page`
+4. o retrieval busca os chunks mais relevantes no corpus
+5. se a cobertura vier fraca, o app pode rodar `corrective RAG`
+6. o `distill_for_small_model` resume os melhores trechos
+7. o prompt final mistura:
+   - texto bruto enviado
+   - chunks recuperados
+   - diagnosticos de retrieval
+   - resumo destilado, quando habilitado
+8. o provider gera a sintese final
+9. a auditoria grava warnings, tempos, modo de retrieval, benchmark e evidencias usadas
+
+Fluxo resumido:
+
+```text
+texto + arquivos
+-> query de busca
+-> retrieval adaptativo
+-> corrective pass se necessario
+-> distillation
+-> prompt packet
+-> LLM/provider
+-> analise + auditoria
+```
+
+### O LLM consulta mais dados sozinho?
+
+Nao diretamente.
+
+Quem decide consultar mais dados e o `app`, nao o provider remoto por conta propria. Isso acontece em tres cenarios principais:
+
+- `retrieval adaptativo`: o backend escolhe a melhor politica antes de chamar o LLM
+- `corrective RAG`: se a primeira busca vier fraca, o backend reescreve a query e busca de novo
+- `LangGraph`: quando ativo, o workflow pode planejar, refletir, reescrever e refazer retrieval antes da resposta final
+
+Ou seja: o LLM nao ganha acesso livre ao seu banco ou ao seu disco. O app monta o contexto de forma controlada e entrega apenas o pacote final permitido pela configuracao.
+
+### O que realmente vai para o LLM
+
+Por padrao, o app tenta mandar para o provider apenas o necessario:
+
+- resumo da issue ou do artigo
+- fatos extraidos dos anexos
+- evidencias recuperadas no retrieval
+- quotes e fatos preservados pelo distiller
+- instrucoes do prompt selecionado
+
+Quando `CONFIDENTIALITY_MODE=true`, o sistema bloqueia saida para OpenAI, Gemini e vector stores externos, mesmo que existam chaves configuradas. Nesse modo, os dados ficam locais, a menos que voce libere explicitamente os flags de egress.
+
+## Tecnicas usadas no app e o que fazem com os dados
+
+| Tecnica | O que entra | O que faz | O que sai |
+|---|---|---|---|
+| `Normalizer` | issue, campos textuais | padroniza schema e remove ambiguidade estrutural | issue canonica |
+| `Artifact extraction` | logs, PDFs, planilhas, imagens | extrai texto, entidades, tabelas, paginas e fatos | evidencias estruturadas |
+| `Rules engine` | issue + fatos | detecta faltas, contradicoes e sinais de risco | sinais deterministas |
+| `Hybrid retrieval` | query + corpus | procura contexto por dense + sparse search | top-k chunks |
+| `GraphRAG` | query + grafo | expande entidades e relacoes entre documentos | contexto relacional |
+| `Exact-page` | query literal + PDFs | busca pagina, secao, tabela ou trecho exato | evidencias page-level |
+| `Reranker` | candidatos recuperados | sobe os chunks mais relevantes | ranking refinado |
+| `Distiller` | chunks top-k | reduz ruido e preserva fatos importantes | contexto comprimido |
+| `LangGraph` | estado da execucao | permite loops de planejamento, reflexao e nova busca | contexto melhorado antes do LLM |
+| `Provider` | prompt final + contexto controlado | gera resposta, classificacao ou sintese | output do LLM |
+| `Audit/Eval` | request + resposta + trace | grava trilha e mede qualidade | relatorio e metricas |
+
+## Evidencia tecnica por tras das escolhas
+
+As tecnicas acima nao foram colocadas no app apenas por moda. Elas refletem um conjunto relativamente consistente de papers, benchmarks e documentacao oficial:
+
+| Escolha no app | Por que existe | Evidencia |
+|---|---|---|
+| `RAG` em vez de `LLM puro` | aumenta grounding em dominio especifico | [ocaf008.pdf](artigos/ocaf008.pdf), [dietrich-stubbert-2025-evaluating-adherence-to-canadian-radiology-guidelines-for-incidental-hepatobiliary-findings.pdf](artigos/dietrich-stubbert-2025-evaluating-adherence-to-canadian-radiology-guidelines-for-incidental-hepatobiliary-findings.pdf) |
+| `evaluation` e `audit` | RAG falha de forma silenciosa se nao for medido | [3701228.pdf](artigos/3701228.pdf), [Verification_and_Validation_of_LLM-RAG_for_Industrial_Automation.pdf](artigos/Verification_and_Validation_of_LLM-RAG_for_Industrial_Automation.pdf), https://docs.langchain.com/langsmith/evaluation-concepts |
+| `hybrid retrieval` | vetor puro costuma perder precisao lexical e page-level | https://qdrant.tech/documentation/concepts/hybrid-queries/ |
+| `reranking` | melhora precision do top-k antes da geracao | [hir-2024-30-4-355.pdf](artigos/hir-2024-30-4-355.pdf) |
+| `GraphRAG` seletivo | ajuda em relacoes, multi-hop e conhecimento estruturado | [btae560.pdf](artigos/btae560.pdf), https://microsoft.github.io/graphrag/query/overview/ |
+| `distillation` | reduz tokens sem perder informacao central | [btae560.pdf](artigos/btae560.pdf) |
+| `corrective / self-reflective retrieval` | segunda passada melhora cobertura quando a primeira busca vem fraca | https://arxiv.org/abs/2401.15884, https://arxiv.org/abs/2310.11511 |
+| `benchmark de retrieval por modo` | nao basta medir a resposta final | [3701228.pdf](artigos/3701228.pdf) |
+
+## Backlog orientado por evidencia
+
+Este e o backlog tecnico priorizado para fazer o app ficar mais preciso, confiavel e explicavel.
+
+### `P0` — precisa existir
+
+- criar um `golden dataset` proprio para `article-analysis`, com perguntas, respostas esperadas, paginas e evidencias esperadas
+- classificar falhas na auditoria em categorias como `retrieval miss`, `low coverage`, `grounding failure`, `reasoning failure`, `citation failure`
+- separar melhor as colecoes de artigos para nao misturar corpus central com material lateral
+- endurecer a exibicao de confianca quando o retrieval vier fraco
+
+### `P1` — aumenta qualidade real
+
+- exigir citacao page-level para afirmacoes fortes em review de artigos
+- reforcar deduplicacao e auditoria de chunking
+- manter `reranker` e `distillation` como default no modo de artigos
+- usar `GraphRAG` apenas quando a query realmente pedir relacao, cadeia ou timeline
+
+### `P2` — ganho de custo e escala
+
+- adicionar `semantic cache` e `context cache`
+- comparar provedores e modos de retrieval continuamente com `POST /api/v1/evaluate/compare`
+- expandir `DSPy` apenas para modulos que tenham dataset e metrica estavel
+
+### `P3` — avancos opcionais
+
+- benchmark multimodal separado para imagens, tabelas e figuras
+- pilotos especificos de `KG-RAG` para dominios tecnicos densos
+- politicas de abstencao mais fortes para respostas com baixa evidencia
 
 ## Requisitos
 
@@ -99,7 +364,7 @@ Para instalar tudo de uma vez:
 pip install -e ".[providers,retrieval,rerank,parsing,ocr,eval,dev]"
 ```
 
-Se for usar Jira e Qdrant, preencha tambem `JIRA_BASE_URL`, `JIRA_USER_EMAIL`, `JIRA_API_TOKEN`, `QDRANT_URL` e opcionalmente `QDRANT_API_KEY`.
+Se for usar Jira e Qdrant, preencha tambem `JIRA_BASE_URL`, `JIRA_USER_EMAIL`, `JIRA_API_TOKEN`, `QDRANT_URL` e, para instancia remota, `QDRANT_API_KEY`.
 
 O workflow usa LangGraph por padrao. Se quiser desligar e voltar ao fluxo direto, defina `ENABLE_LANGGRAPH=false`.
 
@@ -111,6 +376,8 @@ Por padrao o projeto sobe em modo confidencial: `CONFIDENTIALITY_MODE=true`. Nes
 
 Se a exigencia for estrita, mantenha `DEFAULT_PROVIDER=mock` e deixe os tres flags acima como `false`.
 
+Para uploads de PDF no Windows, o caminho mais estavel e manter `ENABLE_DOCLING_PDF_PARSER=false` e deixar o backend usar `pypdf` primeiro, com OCR Tesseract como fallback. Isso evita alguns crashes do stack `Docling`/`RapidOCR` que aparecem no dashboard como `socket hang up` ou `ECONNRESET`.
+
 ## Rodar API
 
 Execute a partir da raiz do repositório com o venv ativo:
@@ -120,10 +387,28 @@ Execute a partir da raiz do repositório com o venv ativo:
 python -m uvicorn jira_issue_rag.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
+Se o PowerShell ainda estiver a usar outro Python instalado na maquina, rode directamente com o interpreter da venv:
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn jira_issue_rag.main:app --reload --host 0.0.0.0 --port 8000
+```
+
 A API sobe em `http://localhost:8000`. Documentacao interativa disponivel em:
 
 - Swagger UI: `http://localhost:8000/docs`
 - Redoc: `http://localhost:8000/redoc`
+
+Smoke test util para validar upload sem depender do dashboard:
+
+```powershell
+curl.exe -i -sS -X POST "http://localhost:8000/api/v1/validate/upload" `
+  -F "issue_key=PAY-1421" `
+  -F "summary=upload test" `
+  -F "description=test" `
+  -F "issue_type=Bug" `
+  -F "provider=mock" `
+  -F "files=@examples/input/PAY-1421/payment_logs.txt"
+```
 
 ## Rodar Dashboard
 
@@ -135,15 +420,94 @@ npm install
 npm run dev
 ```
 
-O dashboard le os prompts em `../prompts`, as trilhas em `../data/audit`, os relatorios em `../data/eval_reports` e a configuracao em `../.env`.
+O dashboard le os prompts em `../prompts`, as trilhas em `../data/audit`, os relatorios em `../data/eval_reports` e usa `.env` + MongoDB para configuracao.
 
-Opcionalmente, o dashboard pode persistir configuracoes em MongoDB. Para isso, adicione `MONGODB_URI` no `.env` do dashboard (`dashboard/.env.local`) ou no `.env` raiz:
+Em desenvolvimento local, o dashboard tenta usar Mongo em `mongodb://localhost:27017` automaticamente. Se quiser apontar para outra instancia, defina `MONGODB_URI` no `.env` do dashboard (`dashboard/.env.local`) ou no `.env` raiz:
 
 ```
 MONGODB_URI=mongodb://localhost:27017
 ```
 
-Sem `MONGODB_URI`, o dashboard usa o arquivo `.env` raiz como fallback automaticamente.
+Os overrides ficam em `ragflow.settings` e os flows salvos em `ragflow.flows`. Se o Mongo nao estiver disponivel, o app cai para fallback local em `.env` e arquivo JSON.
+
+## Retrieval de Artigos
+
+O dominio de artigos deixou de ser apenas "vector search simples". O backend agora tem uma politica explicita de retrieval para consultas de `article-analysis`.
+
+### Politicas de retrieval
+
+- `auto`: escolhe o modo com base na heuristica de `graph usefulness`
+- `vector-global`: dense+sparse retrieval hibrido no Qdrant
+- `graph-local`: expansao local por entidades no Neo4j
+- `graph-bridge`: usa grafo quando a query pede conexao entre entidades/chunks
+- `graph-multi-hop`: sobe o grafo para consultas de cadeia, conflito, timeline ou agregacao
+- `exact-page`: fallback sem vetor para consultas que exigem trecho literal, pagina, secao, tabela ou figura
+- `corrective`: reexecuta retrieval com variantes da query e combina `exact + graph + hybrid`
+
+### Chunking orientado a documento
+
+Na ingestao de artigos o pipeline agora anota metadados de chunk:
+
+- `chunk_kind`: `text`, `table` ou `figure`
+- `page_number`
+- `section_title`
+
+Isso melhora retrieval para PDFs tecnicos, especialmente em consultas sobre tabelas, screenshots, seccoes especificas e evidencias page-level.
+
+### Corrective RAG
+
+Quando o retrieval inicial vem fraco, o sistema pode:
+
+1. reescrever a query
+2. tentar `exact-page`
+3. tentar `graph` e `hybrid`
+4. mesclar os melhores candidatos
+5. marcar warning de `human review recommended` se a cobertura continuar baixa
+
+### Colecoes recomendadas
+
+Para artigos, o mais seguro e separar o corpus por finalidade em vez de jogar tudo em `articles`:
+
+- `core-rag`
+- `agentic`
+- `doc-intel`
+- `runtime-local`
+- `off-topic`
+
+Com isso voce evita misturar notas tecnicas realmente uteis com artigos laterais que poluem recall.
+
+### Seguranca e filtros
+
+Os endpoints de artigos aceitam filtros operacionais:
+
+- `collection`
+- `tenant_id`
+- `source_tags`
+- `source_contains`
+
+Esses filtros tambem aparecem na auditoria para deixar claro quais chunks realmente entraram no prompt.
+
+Quando `STRICT_ARTICLE_TENANT_ISOLATION=true`, o backend passa a exigir `tenant_id` em toda operacao de artigos para as colecoes listadas em `MULTI_TENANT_ARTICLE_COLLECTIONS`. Se a lista ficar vazia, qualquer colecao de artigos passa a exigir escopo explicito.
+
+### Benchmarks de retrieval
+
+`POST /api/v1/articles/benchmark` agora compara:
+
+- `dense`
+- `hybrid`
+- `graph`
+- `exact-page`
+- `adaptive`
+- `corrective`
+
+O retorno inclui proxies operacionais para:
+
+- `avg_score`
+- `precision_proxy`
+- `recall_proxy`
+- `faithfulness_proxy`
+
+Tambem devolve opcoes de provider com latencia/custo relativo estimado para ajudar a escolher entre OpenAI, Gemini, Ollama, oLLM e Mock.
 
 ## Testes
 
@@ -301,6 +665,25 @@ docker compose up -d
 
 Isso sobe: Qdrant, Neo4j, MongoDB e Ollama. O MonkeyOCR fica em perfil separado por exigir GPU.
 
+Importante: o MonkeyOCR ja esta definido no `docker-compose.yml`. Ele nao entra no `up -d` padrao porque depende de:
+
+- GPU NVIDIA
+- build local a partir do clone `C:\Users\mengl\Documents\Github\MonkeyOCR`
+
+Fluxo minimo para usar MonkeyOCR pelo compose:
+
+```powershell
+# 1. Clonar o repositorio do MonkeyOCR ao lado do repo ragflow
+cd C:\Users\mengl\Documents\Github
+git clone https://github.com/Yuliang-Liu/MonkeyOCR
+
+# 2. Subir o container do MonkeyOCR
+docker compose --profile gpu up monkeyocr --build -d
+
+# 3. Verificar logs
+docker compose --profile gpu logs -f monkeyocr
+```
+
 ### Servicos individuais
 
 ```powershell
@@ -313,11 +696,11 @@ docker compose up neo4j -d
 # Apenas MongoDB (dashboard)
 docker compose up mongodb -d
 
-# Apenas Ollama (LLM local)
+# Apenas Ollama (LLM local com GPU NVIDIA)
 docker compose up ollama -d
 
-# MonkeyOCR (requer GPU NVIDIA)
-docker compose --profile gpu up monkeyocr -d
+# MonkeyOCR (requer GPU NVIDIA e `C:\Users\mengl\Documents\Github\MonkeyOCR`)
+docker compose --profile gpu up monkeyocr --build -d
 ```
 
 ### Parar e limpar
@@ -349,6 +732,8 @@ docker compose up qdrant -d
 QDRANT_URL=http://localhost:6333
 QDRANT_COLLECTION=issue_evidence
 QDRANT_API_KEY=                          # deixe vazio para instancia local sem auth
+REQUIRE_QDRANT_API_KEY_FOR_REMOTE=true  # falha o boot se Qdrant remoto estiver sem auth
+ALLOW_INSECURE_REMOTE_QDRANT=false      # bloqueia Qdrant remoto em HTTP puro
 ALLOW_EXTERNAL_VECTOR_STORE=true         # necessario quando CONFIDENTIALITY_MODE=true
 ```
 
@@ -453,8 +838,9 @@ Nao ha imagem pre-compilada no Docker Hub — o container e construido a partir 
 **Passo 1 — clonar o repositorio MonkeyOCR (apenas uma vez):**
 
 ```powershell
-# Na raiz do repositorio ragops
-git clone https://github.com/Yuliang-Liu/MonkeyOCR monkeyocr-src
+# Ao lado do repositorio ragflow
+cd C:\Users\mengl\Documents\Github
+git clone https://github.com/Yuliang-Liu/MonkeyOCR
 ```
 
 **Passo 2 — compilar e subir:**
@@ -468,12 +854,31 @@ O container usa o modelo `MonkeyOCR-pro-1.2B` (~4 GB VRAM). Para maior precisao 
 
 ### Subir manualmente (sem Docker)
 
-```bash
+```powershell
 git clone https://github.com/Yuliang-Liu/MonkeyOCR
 cd MonkeyOCR
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 pip install -e .
 python tools/download_model.py -n MonkeyOCR-pro-1.2B
-uvicorn api.main:app --host 0.0.0.0 --port 8001
+python -m uvicorn api.main:app --host 0.0.0.0 --port 8001
+```
+
+
+Se o clone ja existir em outro lugar, basta entrar na pasta e subir a API:
+
+```powershell
+cd C:\Users\mengl\Documents\Github\MonkeyOCR
+.\.venv\Scripts\python.exe -m uvicorn api.main:app --host 0.0.0.0 --port 8001
+# Swagger UI: http://localhost:8001/docs
+```
+
+Atalho pelo repo principal:
+
+```powershell
+.\scripts\start-monkeyocr.ps1
+# ou em background:
+.\scripts\start-monkeyocr.ps1 -Background
 ```
 
 ### Configuracao no `.env`
@@ -505,6 +910,9 @@ docker compose up ollama -d
 # API: http://localhost:11434
 ```
 
+O serviço `ollama` no `docker-compose.yml` agora reserva `1` GPU NVIDIA para inferência local.
+Pré-requisito: Docker Desktop/Engine com suporte a containers NVIDIA.
+
 ### Baixar modelos
 
 ```powershell
@@ -523,6 +931,7 @@ docker exec -it ragops-ollama ollama list
 DEFAULT_PROVIDER=ollama
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=llama3.1:8b
+OLLAMA_TIMEOUT_SECONDS=600
 
 # Ollama e local → pode liberar sem risco
 CONFIDENTIALITY_MODE=false
@@ -551,6 +960,8 @@ Copie `.env.example` para `.env` e ajuste conforme necessario. Abaixo um resumo 
 | `QDRANT_URL` | _(vazio)_ | Ex.: `http://localhost:6333` |
 | `QDRANT_COLLECTION` | `issue_evidence` | Nome da colecao |
 | `QDRANT_API_KEY` | _(vazio)_ | Apenas para instancias com auth |
+| `REQUIRE_QDRANT_API_KEY_FOR_REMOTE` | `true` | Exige auth quando `QDRANT_URL` aponta para host remoto |
+| `ALLOW_INSECURE_REMOTE_QDRANT` | `false` | Permite HTTP remoto apenas se voce aceitar o risco explicitamente |
 | `QDRANT_QUANTIZATION_TYPE` | `none` | `scalar`, `binary` ou `none` |
 | `ENABLE_CASCADE_RETRIEVAL` | `false` | Busca N×factor + re-rank |
 | `ALLOW_EXTERNAL_VECTOR_STORE` | `false` | Necessario quando `CONFIDENTIALITY_MODE=true` |
