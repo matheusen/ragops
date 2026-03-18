@@ -102,6 +102,25 @@ services:
               capabilities: [gpu]
     restart: unless-stopped
 
+  # ── Piston — execução de código em sandbox (Java, Python, JS, etc.) ─────────
+  # API: http://localhost:2000   →  PISTON_URL=http://localhost:2000
+  # Instalar Java após subir:
+  #   curl -s http://localhost:2000/api/v2/runtimes | jq '.[].language'
+  # (Java já vem pré-instalado na imagem ghcr.io/engineer-man/piston)
+  piston:
+    image: ghcr.io/engineer-man/piston
+    container_name: ragops-piston
+    ports:
+      - "2000:2000"
+    volumes:
+      - piston_data:/piston/packages
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:2000/api/v2/runtimes"]
+      interval: 15s
+      timeout: 8s
+      retries: 5
+
   # ── MonkeyOCR v1.5 — extração de PDFs complexos (SRR paradigm) ──────────────
   # Este servico ESTA no docker compose.
   # Ele nao sobe no `docker compose up -d` padrao porque:
@@ -159,5 +178,6 @@ volumes:
   neo4j_logs:
   mongodb_data:
   ollama_data:
+  piston_data:
   monkeyocr_models:
   monkeyocr_output:

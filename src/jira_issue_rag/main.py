@@ -67,3 +67,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(router, prefix=settings.api_prefix)
+
+
+@app.on_event("startup")
+def _startup_linkedin_scheduler():
+    from jira_issue_rag.services.linkedin_scheduler import load_crons_from_db
+    load_crons_from_db()

@@ -6,8 +6,13 @@ import {
   Background,
   Controls,
   MiniMap,
+  Panel,
+  SelectionMode,
   useNodesState,
   useEdgesState,
+  useReactFlow,
+  getNodesBounds,
+  getViewportForBounds,
   Handle,
   Position,
   type Node,
@@ -118,6 +123,8 @@ function buildLayout(
   onTopicSearch: (q: string, topicId?: string) => void,
   savedPositions: SavedPositions = {},
   onReviewRefs?: () => void,
+  onExpand?: (topicId: string, title: string, description: string, color: string) => void,
+  onChat?: (topicId: string, title: string, description: string) => void,
 ) {
   const nodes: ReturnType<typeof makeNode>[] = [];
   const edges: ReturnType<typeof makeEdge>[] = [];
@@ -170,6 +177,12 @@ function buildLayout(
         onSearch: () => onTopicSearch(topic.title, topic.id),
         onResourceSearch: (r: string) => onTopicSearch(r),
         onReviewRefs,
+        onExpand: onExpand
+          ? () => onExpand(topic.id, topic.title, topic.description, color)
+          : undefined,
+        onChat: onChat
+          ? () => onChat(topic.id, topic.title, topic.description)
+          : undefined,
       }));
 
       edges.push(makeEdge(`${phase.id}-${topic.id}`, phase.id, topic.id, color, 1.5));
@@ -226,21 +239,44 @@ function TopicNode({ data }: NodeProps) {
   const onSearch     = data.onSearch as () => void;
   const onResSearch  = data.onResourceSearch as (r: string) => void;
   const onReviewRefs = data.onReviewRefs as (() => void) | undefined;
+  const onExpand     = data.onExpand as (() => void) | undefined;
+  const onChat       = data.onChat as (() => void) | undefined;
   const resources    = data.resources as string[];
   const title        = data.title as string;
   const desc         = data.description as string;
   const importance   = data.interviewImportance as "high" | "medium" | undefined;
   const tip          = data.interviewTip as string | undefined;
+  const expanding    = data.expanding as boolean | undefined;
 
+  const isExpanded = !!(data.isExpanded as boolean | undefined);
+  const isDone     = !!(data.isDone     as boolean | undefined);
   const ivColor  = importance === "high" ? "#f59e0b" : importance === "medium" ? "#6366f1" : undefined;
-  const ivBorder = ivColor ? `2px solid ${ivColor}` : `1.5px solid ${color}`;
+  const ivBorder = ivColor
+    ? `2px solid ${ivColor}`
+    : isDone
+      ? `1.5px solid #22c55e`
+      : isExpanded
+        ? `1.5px dashed ${color}99`
+        : `1.5px solid ${color}`;
 
   return (
     <div
-      className={`rmn rmn--topic ${importance ? "rmn--interview" : ""}`}
-      style={{ border: ivBorder, boxShadow: ivColor ? `0 0 0 3px ${ivColor}22` : undefined }}
+      className={`rmn rmn--topic ${importance ? "rmn--interview" : ""} ${isExpanded ? "rmn--child" : ""} ${isDone ? "rmn--done" : ""}`}
+      style={{ border: ivBorder, boxShadow: ivColor ? `0 0 0 3px ${ivColor}22` : isDone ? "0 0 0 3px #22c55e22" : undefined }}
     >
       <AllHandles />
+      {isDone && (
+        <div className="rmn__done-badge">
+          <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+          concluído
+        </div>
+      )}
+      {isExpanded && (
+        <div className="rmn__child-badge" style={{ color, borderColor: color + "55", background: color + "12" }}>
+          <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><path d="M17 7l-1.41 1.41L18.17 11H8V3H6v10h12.17l-2.58 2.58L17 17l5-5-5-5z"/></svg>
+          sub-tópico
+        </div>
+      )}
       {importance && (
         <div className="rmn__iv-badge" style={{ background: ivColor }}>
           {importance === "high" ? "🎯 Alta prioridade" : "🔹 Média prioridade"}
@@ -276,6 +312,34 @@ function TopicNode({ data }: NodeProps) {
           )}
         </div>
       )}
+      <div className="rmn__node-actions">
+        {onExpand && (
+          <button
+            className="rmn__expand-btn"
+            style={{ borderColor: color + "88", color }}
+            onClick={(e) => { e.stopPropagation(); onExpand(); }}
+            disabled={!!expanding}
+            title="Expandir: ver subtópicos e dependências diretas"
+          >
+            {expanding
+              ? <><span className="rmn__expand-spin" /> Expandindo…</>
+              : <><span className="rmn__expand-plus">+</span> Expandir</>}
+          </button>
+        )}
+        {onChat && (
+          <button
+            className="rmn__chat-btn"
+            style={{ borderColor: color + "88", color }}
+            onClick={(e) => { e.stopPropagation(); onChat(); }}
+            title="Perguntar sobre este tópico no chat"
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"/>
+            </svg>
+            Chat
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -297,6 +361,271 @@ function AllHandles() {
 }
 
 const NODE_TYPES = { goalNode: GoalNode, phaseNode: PhaseNode, topicNode: TopicNode };
+
+// ── Checklist Panel ───────────────────────────────────────────────────────────
+
+interface ChecklistItem {
+  id: string;
+  title: string;
+  type: "phase" | "topic" | "subtopic";
+  children: ChecklistItem[];
+}
+
+interface ChecklistPanelProps {
+  roadmap: RoadmapData;
+  expandedRecords: Record<string, { parent_id: string; title: string; description: string; color: string }>;
+  progress: Record<string, boolean>;
+  onToggle: (id: string, checked: boolean) => void;
+  onClose: () => void;
+}
+
+function ChecklistPanel({ roadmap, expandedRecords, progress, onToggle, onClose }: ChecklistPanelProps) {
+  // Build tree from roadmap + expanded nodes
+  const tree: ChecklistItem[] = roadmap.phases.map((phase) => {
+    const topics: ChecklistItem[] = phase.topics.map((topic) => {
+      const subtopics: ChecklistItem[] = Object.entries(expandedRecords)
+        .filter(([, rec]) => rec.parent_id === topic.id)
+        .map(([id, rec]) => ({ id, title: rec.title, type: "subtopic" as const, children: [] }));
+      return { id: topic.id, title: topic.title, type: "topic" as const, children: subtopics };
+    });
+    return { id: phase.id, title: phase.title, type: "phase" as const, children: topics };
+  });
+
+  // Count totals
+  const allTopicIds = tree.flatMap(ph =>
+    ph.children.flatMap(t => [t.id, ...t.children.map(s => s.id)])
+  );
+  const doneCount  = allTopicIds.filter(id => progress[id]).length;
+  const totalCount = allTopicIds.length;
+  const pct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+
+  const renderItem = (item: ChecklistItem, depth: number) => {
+    const done = !!progress[item.id];
+    const childIds = item.children.flatMap(c => [c.id, ...c.children.map(s => s.id)]);
+    const childDone  = childIds.filter(id => progress[id]).length;
+    const childTotal = childIds.length;
+
+    return (
+      <div key={item.id}>
+        <label
+          className={`cl-item cl-item--${item.type} ${done ? "cl-item--done" : ""}`}
+          style={{ paddingLeft: `${0.5 + depth * 1.1}rem` }}
+        >
+          <input
+            type="checkbox"
+            className="cl-item__cb"
+            checked={done}
+            onChange={e => onToggle(item.id, e.target.checked)}
+          />
+          <span className="cl-item__title">{item.title}</span>
+          {item.type === "phase" && childTotal > 0 && (
+            <span className="cl-item__count">{childDone}/{childTotal}</span>
+          )}
+        </label>
+        {item.children.map(child => renderItem(child, depth + 1))}
+      </div>
+    );
+  };
+
+  return (
+    <div className="cl-panel">
+      <div className="cl-panel__header">
+        <span className="cl-panel__title">☑ Checklist de progresso</span>
+        <button className="cl-panel__close" onClick={onClose}>×</button>
+      </div>
+
+      {/* Overall progress bar */}
+      <div className="cl-panel__progress">
+        <div className="cl-panel__progress-bar">
+          <div className="cl-panel__progress-fill" style={{ width: `${pct}%` }} />
+        </div>
+        <span className="cl-panel__progress-label">{doneCount}/{totalCount} · {pct}%</span>
+      </div>
+
+      <div className="cl-panel__list">
+        {tree.map(phase => renderItem(phase, 0))}
+      </div>
+    </div>
+  );
+}
+
+// ── Roadmap Chat Panel ────────────────────────────────────────────────────────
+
+interface ChatMessage { role: "user" | "assistant"; content: string; timestamp: string; }
+
+interface RoadmapChatPanelProps {
+  roadmapId: string;
+  provider: string;
+  roadmapTitle: string;
+  onClose: () => void;
+  pinnedNode?: { id: string; title: string; description: string } | null;
+  onClearPin?: () => void;
+}
+
+function RoadmapChatPanel({ roadmapId, provider, roadmapTitle, onClose, pinnedNode, onClearPin }: RoadmapChatPanelProps) {
+  const [messages,    setMessages]    = useState<ChatMessage[]>([]);
+  const [input,       setInput]       = useState("");
+  const [sending,     setSending]     = useState(false);
+  const [loadingHist, setLoadingHist] = useState(true);
+  const [isListening, setIsListening] = useState(false);
+  const [transcript,  setTranscript]  = useState("");
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recRef     = useRef<any>(null);
+  const bottomRef  = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/roadmap/${roadmapId}/chat`)
+      .then(r => r.json())
+      .then(d => setMessages(d.messages || []))
+      .catch(() => {})
+      .finally(() => setLoadingHist(false));
+  }, [roadmapId]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, sending]);
+
+  const startListening = () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any;
+    const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
+    if (!SR) { alert("Reconhecimento de voz não suportado. Use Chrome ou Edge."); return; }
+    const rec = new SR();
+    rec.lang = "pt-BR"; rec.continuous = false; rec.interimResults = true;
+    rec.onstart  = () => { setIsListening(true); setTranscript(""); };
+    rec.onend    = () => setIsListening(false);
+    rec.onerror  = () => setIsListening(false);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    rec.onresult = (e: any) => {
+      let interim = "", final = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        e.results[i].isFinal ? (final += t) : (interim += t);
+      }
+      setTranscript(interim || final);
+      if (final) { setInput(p => p ? p + " " + final.trim() : final.trim()); setTranscript(""); }
+    };
+    recRef.current = rec; rec.start();
+  };
+
+  const stopListening = () => { recRef.current?.stop(); setIsListening(false); };
+
+  const sendMessage = async () => {
+    const text = input.trim();
+    if (!text || sending) return;
+    const userMsg: ChatMessage = { role: "user", content: text, timestamp: new Date().toISOString() };
+    setMessages(prev => [...prev, userMsg]);
+    setInput("");
+    setSending(true);
+    try {
+      const r = await fetch(`${API_BASE}/roadmap/${roadmapId}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: text,
+          provider,
+          ...(pinnedNode ? { node_context: { id: pinnedNode.id, title: pinnedNode.title, description: pinnedNode.description } } : {}),
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d?.detail || `HTTP ${r.status}`);
+      setMessages(d.messages || []);
+    } catch {
+      setMessages(prev => [...prev, { role: "assistant", content: "Erro ao obter resposta. Tente novamente.", timestamp: new Date().toISOString() }]);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const clearChat = async () => {
+    if (!confirm("Limpar todo o histórico desta conversa?")) return;
+    await fetch(`${API_BASE}/roadmap/${roadmapId}/chat`, { method: "DELETE" }).catch(() => {});
+    setMessages([]);
+  };
+
+  return (
+    <div className="rc-panel">
+      <div className="rc-panel__header">
+        <span className="rc-panel__title">💬 Chat — {roadmapTitle.slice(0, 40)}{roadmapTitle.length > 40 ? "…" : ""}</span>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <button className="rc-panel__clear" onClick={clearChat} title="Limpar histórico">🗑</button>
+          <button className="rc-panel__close" onClick={onClose}>×</button>
+        </div>
+      </div>
+
+      {!pinnedNode && (
+        <div className="rc-panel__drop-hint">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"/></svg>
+          <span>Arraste um nó do mapa até aqui para conversar sobre ele</span>
+        </div>
+      )}
+      <div className="rc-panel__messages">
+        {loadingHist && <div className="rc-panel__hint">Carregando histórico…</div>}
+        {!loadingHist && messages.length === 0 && (
+          <div className="rc-panel__hint">Sem mensagens ainda. Pergunte qualquer dúvida sobre seu roadmap! 🚀</div>
+        )}
+        {messages.map((msg, i) => (
+          <div key={i} className={`rc-msg rc-msg--${msg.role}`}>
+            <div className="rc-msg__bubble">{msg.content}</div>
+            <div className="rc-msg__time">
+              {new Date(msg.timestamp).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+            </div>
+          </div>
+        ))}
+        {sending && (
+          <div className="rc-msg rc-msg--assistant">
+            <div className="rc-msg__bubble rc-msg__typing">
+              <span className="rc-dot" /><span className="rc-dot" /><span className="rc-dot" />
+            </div>
+          </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      <div className="rc-panel__footer">
+        {pinnedNode && (
+          <div className="rc-panel__pin">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}>
+              <path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"/>
+            </svg>
+            <span className="rc-panel__pin-label">{pinnedNode.title}</span>
+            <button className="rc-panel__pin-clear" onClick={onClearPin} title="Remover contexto">×</button>
+          </div>
+        )}
+        <div className="rc-panel__input-row">
+          <textarea
+            className="rc-panel__input"
+            placeholder={isListening ? "🎤 Ouvindo…" : "Pergunte sobre o roadmap… (Enter para enviar)"}
+            value={isListening && transcript ? transcript : input}
+            onChange={e => { if (!isListening) setInput(e.target.value); }}
+            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+            rows={2}
+            disabled={sending}
+            style={isListening ? { borderColor: "#ef4444", background: "#fff1f1" } : undefined}
+          />
+          <button
+            className={`rc-panel__mic${isListening ? " rc-panel__mic--active" : ""}`}
+            onClick={isListening ? stopListening : startListening}
+            title={isListening ? "Parar gravação" : "Falar (pt-BR)"}
+            type="button"
+          >
+            {isListening
+              ? <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+              : <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1a4 4 0 0 1 4 4v7a4 4 0 0 1-8 0V5a4 4 0 0 1 4-4zm0 2a2 2 0 0 0-2 2v7a2 2 0 0 0 4 0V5a2 2 0 0 0-2-2zm-7 8a1 1 0 0 1 1 1 6 6 0 0 0 12 0 1 1 0 1 1 2 0 8 8 0 0 1-7 7.93V21h2a1 1 0 1 1 0 2H9a1 1 0 1 1 0-2h2v-2.07A8 8 0 0 1 4 12a1 1 0 0 1 1-1z"/></svg>
+            }
+          </button>
+        </div>
+        <button
+          className="rc-panel__send"
+          onClick={sendMessage}
+          disabled={sending || !(isListening ? transcript : input).trim()}
+        >
+          {sending ? <span className="rc-panel__spin" /> : "↑ Enviar"}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // ── Syntax Highlighter ────────────────────────────────────────────────────────
 
@@ -379,6 +708,12 @@ function CodeModal({ example, regenLoading, onClose, onRegen, roadmapId, topicTi
   const [interactions, setInteractions] = useState<CodeInteraction[]>([]);
   const [nestedFile,   setNestedFile]   = useState<CodeExample | null>(null);
 
+  // Execution state
+  const [running,     setRunning]     = useState(false);
+  const [runOutput,   setRunOutput]   = useState<{ stdout: string; stderr: string; exit_code: number; version: string } | null>(null);
+  const [showTerminal, setShowTerminal] = useState(false);
+  const [stdinInput,  setStdinInput]  = useState("");
+
   const lines = shLines(shHighlight(currentCode, example.language));
 
   const copy = () => {
@@ -429,7 +764,27 @@ function CodeModal({ example, regenLoading, onClose, onRegen, roadmapId, topicTi
 
   const applyExtension = (newCode: string) => { setCurrentCode(newCode); };
 
-  const panelOpen = interactions.length > 0 || !!interacting;
+  const runCode = async () => {
+    setRunning(true);
+    setShowTerminal(true);
+    setRunOutput(null);
+    try {
+      const res = await fetch(`${API_BASE}/code/execute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: currentCode, language: example.language, stdin: stdinInput }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`);
+      setRunOutput(data);
+    } catch (e: unknown) {
+      setRunOutput({ stdout: "", stderr: e instanceof Error ? e.message : String(e), exit_code: -1, version: "" });
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const panelOpen = interactions.length > 0 || !!interacting || showTerminal;
 
   return (
     <>
@@ -442,6 +797,9 @@ function CodeModal({ example, regenLoading, onClose, onRegen, roadmapId, topicTi
           {roadmapId && <span className="code-modal__select-hint">Selecione código → interagir</span>}
           <button className="code-modal__regen" onClick={onRegen} disabled={regenLoading} title="Regenerar">
             {regenLoading ? <span className="code-modal__spin" /> : "🔄"}
+          </button>
+          <button className="code-modal__run-btn" onClick={runCode} disabled={running} title="Executar código">
+            {running ? <><span className="code-modal__spin" /> Executando…</> : "▶ Executar"}
           </button>
           <button className="code-modal__copy" onClick={copy}>
             {copied ? "✓ Copiado!" : "📋 Copiar"}
@@ -474,8 +832,59 @@ function CodeModal({ example, regenLoading, onClose, onRegen, roadmapId, topicTi
             <div className="code-modal__interact-panel">
               <div className="code-modal__interact-head">
                 <span>Interações</span>
-                <button className="code-modal__interact-clear" onClick={() => setInteractions([])}>Limpar</button>
+                <button className="code-modal__interact-clear" onClick={() => { setInteractions([]); setShowTerminal(false); setRunOutput(null); }}>Limpar</button>
               </div>
+
+              {/* ── Terminal output ── */}
+              {showTerminal && (
+                <div className="code-modal__terminal">
+                  <div className="code-modal__terminal-header">
+                    <span className="code-modal__terminal-title">
+                      {running ? "⏳ Executando…" : runOutput ? (runOutput.exit_code === 0 ? "✅ Saída" : "❌ Erro") : "Terminal"}
+                    </span>
+                    {runOutput?.version && <span className="code-modal__terminal-badge">{example.language} {runOutput.version}</span>}
+                    <button className="code-modal__terminal-close" onClick={() => { setShowTerminal(false); setRunOutput(null); }}>×</button>
+                  </div>
+
+                  {/* stdin input */}
+                  <div className="code-modal__stdin-row">
+                    <span className="code-modal__stdin-label">stdin</span>
+                    <input
+                      className="code-modal__stdin-input"
+                      placeholder="entrada para o programa (opcional)"
+                      value={stdinInput}
+                      onChange={(e) => setStdinInput(e.target.value)}
+                      disabled={running}
+                    />
+                    <button className="code-modal__run-btn code-modal__run-btn--sm" onClick={runCode} disabled={running}>
+                      {running ? <span className="code-modal__spin" /> : "▶"}
+                    </button>
+                  </div>
+
+                  {running && (
+                    <div className="code-modal__terminal-body code-modal__terminal-body--loading">
+                      <span className="code-modal__spin code-modal__spin--green" /> compilando e executando…
+                    </div>
+                  )}
+
+                  {!running && runOutput && (
+                    <div className="code-modal__terminal-body">
+                      {runOutput.stdout && (
+                        <pre className="code-modal__terminal-out">{runOutput.stdout}</pre>
+                      )}
+                      {runOutput.stderr && (
+                        <pre className="code-modal__terminal-err">{runOutput.stderr}</pre>
+                      )}
+                      {!runOutput.stdout && !runOutput.stderr && (
+                        <span className="code-modal__terminal-empty">(sem saída)</span>
+                      )}
+                      <div className="code-modal__terminal-exit">
+                        exit {runOutput.exit_code}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Loading state */}
               {interacting && (
@@ -770,7 +1179,7 @@ function KbPanel({ query, topicId, topicTitle, topicData, roadmapId, provider, o
       const r = await fetch(`${API_BASE}/roadmap/${roadmapId}/generate-examples`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic_id: topicId, topic_title: topicTitle, provider }),
+        body: JSON.stringify({ topic_id: topicId, topic_title: topicTitle, topic_description: topicData?.description ?? "", provider }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d?.detail || `HTTP ${r.status}`);
@@ -798,7 +1207,7 @@ function KbPanel({ query, topicId, topicTitle, topicData, roadmapId, provider, o
       const r = await fetch(`${API_BASE}/roadmap/${roadmapId}/generate-examples`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic_id: topicId, topic_title: topicTitle, provider, append: true }),
+        body: JSON.stringify({ topic_id: topicId, topic_title: topicTitle, topic_description: topicData?.description ?? "", provider, append: true }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d?.detail || `HTTP ${r.status}`);
@@ -826,7 +1235,7 @@ function KbPanel({ query, topicId, topicTitle, topicData, roadmapId, provider, o
       const r = await fetch(`${API_BASE}/roadmap/${roadmapId}/generate-code-examples`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic_id: topicId, topic_title: topicTitle, provider }),
+        body: JSON.stringify({ topic_id: topicId, topic_title: topicTitle, topic_description: topicData?.description ?? "", provider }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d?.detail || `HTTP ${r.status}`);
@@ -853,7 +1262,7 @@ function KbPanel({ query, topicId, topicTitle, topicData, roadmapId, provider, o
       const r = await fetch(`${API_BASE}/roadmap/${roadmapId}/regenerate-qa-pair`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic_id: topicId, topic_title: topicTitle, pair_index: pairIndex, provider }),
+        body: JSON.stringify({ topic_id: topicId, topic_title: topicTitle, topic_description: topicData?.description ?? "", pair_index: pairIndex, provider }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d?.detail || `HTTP ${r.status}`);
@@ -873,7 +1282,7 @@ function KbPanel({ query, topicId, topicTitle, topicData, roadmapId, provider, o
       const r = await fetch(`${API_BASE}/roadmap/${roadmapId}/regenerate-code-example`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic_id: topicId, topic_title: topicTitle, example_index: exIndex, provider }),
+        body: JSON.stringify({ topic_id: topicId, topic_title: topicTitle, topic_description: topicData?.description ?? "", example_index: exIndex, provider }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d?.detail || `HTTP ${r.status}`);
@@ -1254,6 +1663,82 @@ function SavedSidebar({ active, onLoad, onDelete: _onDelete, onNew, refreshTick 
   );
 }
 
+// ── Export Panel (inner component — needs ReactFlow context) ──────────────────
+
+const EXPORT_W = 3840;
+const EXPORT_H = 2160;
+const EXPORT_PIXEL_RATIO = 2; // renders at 2× → effective 7680×4320
+
+function ExportPanel({ title }: { title: string }) {
+  const { getNodes } = useReactFlow();
+  const [exporting, setExporting] = useState<"png" | "pdf" | null>(null);
+
+  const capture = async (): Promise<string> => {
+    const nodes = getNodes();
+    const bounds = getNodesBounds(nodes);
+    const transform = getViewportForBounds(bounds, EXPORT_W, EXPORT_H, 0.05, 2, 0.08);
+    const viewport = document.querySelector(".react-flow__viewport") as HTMLElement;
+    if (!viewport) throw new Error("canvas not found");
+    const { toPng } = await import("html-to-image");
+    return toPng(viewport, {
+      backgroundColor: "#0f1117",
+      width: EXPORT_W,
+      height: EXPORT_H,
+      pixelRatio: EXPORT_PIXEL_RATIO,
+      cacheBust: true,
+      style: {
+        width: `${EXPORT_W}px`,
+        height: `${EXPORT_H}px`,
+        transform: `translate(${transform.x}px,${transform.y}px) scale(${transform.zoom})`,
+        transformOrigin: "top left",
+      },
+    });
+  };
+
+  const exportPng = async () => {
+    setExporting("png");
+    try {
+      const dataUrl = await capture();
+      const a = document.createElement("a");
+      a.download = `roadmap-${title.slice(0, 40).replace(/\s+/g, "-")}.png`;
+      a.href = dataUrl;
+      a.click();
+    } finally { setExporting(null); }
+  };
+
+  const exportPdf = async () => {
+    setExporting("pdf");
+    try {
+      const dataUrl = await capture();
+      const { jsPDF } = await import("jspdf");
+      const pdf = new jsPDF({ orientation: "landscape", unit: "px", format: [EXPORT_W, EXPORT_H], hotfixes: ["px_scaling"] });
+      pdf.addImage(dataUrl, "PNG", 0, 0, EXPORT_W, EXPORT_H);
+      pdf.save(`roadmap-${title.slice(0, 40).replace(/\s+/g, "-")}.pdf`);
+    } finally { setExporting(null); }
+  };
+
+  return (
+    <Panel position="top-right" className="rg2__export-panel">
+      <button
+        className="rg2__export-btn"
+        onClick={exportPng}
+        disabled={!!exporting}
+        title="Exportar como PNG"
+      >
+        {exporting === "png" ? <><span className="rg2__export-spin" />PNG…</> : "↓ PNG"}
+      </button>
+      <button
+        className="rg2__export-btn"
+        onClick={exportPdf}
+        disabled={!!exporting}
+        title="Exportar como PDF"
+      >
+        {exporting === "pdf" ? <><span className="rg2__export-spin" />PDF…</> : "↓ PDF"}
+      </button>
+    </Panel>
+  );
+}
+
 // ── Main Component ─────────────────────────────────────────────────────────────
 
 export function RoadmapGenerator() {
@@ -1266,6 +1751,19 @@ export function RoadmapGenerator() {
   const [roadmap, setRoadmap] = useState<RoadmapData | null>(null);
   const [refreshTick, setRefreshTick] = useState(0);
 
+  // Canvas interaction mode: pan (mãozinha) ↔ select (ponteiro + multi-drag)
+  const [interactionMode, setInteractionMode] = useState<"pan" | "select">("pan");
+
+  // Checklist state
+  const [showChecklist, setShowChecklist] = useState(false);
+  const [progress, setProgress] = useState<Record<string, boolean>>({});
+  const saveProgressTick = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Chat state
+  const [showChat, setShowChat] = useState(false);
+  const [chatPinnedNode, setChatPinnedNode] = useState<{ id: string; title: string; description: string } | null>(null);
+  const preDragPosRef = useRef<{ x: number; y: number } | null>(null);
+
   // Expand state
   const [showExpand,  setShowExpand]  = useState(false);
   const [expandText,  setExpandText]  = useState("");
@@ -1277,11 +1775,25 @@ export function RoadmapGenerator() {
   const [reviewError,  setReviewError]  = useState("");
   const [reviewedAt,   setReviewedAt]   = useState<string | null>(null);
 
-  // LinkedIn post state
-  const [linkedinPost,      setLinkedinPost]      = useState<string | null>(null);
+  // LinkedIn Studio state
+  const [showLinkedinStudio, setShowLinkedinStudio] = useState(false);
+  const [linkedinPost,       setLinkedinPost]       = useState<string | null>(null);
+  const [linkedinPostId,     setLinkedinPostId]     = useState<string | null>(null);
   const [generatingLinkedin, setGeneratingLinkedin] = useState(false);
-  const [linkedinError,     setLinkedinError]     = useState("");
-  const [linkedinCopied,    setLinkedinCopied]    = useState(false);
+  const [linkedinError,      setLinkedinError]      = useState("");
+  const [linkedinCopied,     setLinkedinCopied]     = useState(false);
+  const [liTopicFocus,       setLiTopicFocus]       = useState("");
+  const [liCustomPrompt,     setLiCustomPrompt]     = useState("");
+  const [liIsListening,      setLiIsListening]      = useState(false);
+  const [liTranscript,       setLiTranscript]       = useState("");
+  const liRecRef = useRef<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const [savedPosts,         setSavedPosts]         = useState<{id:string;content:string;topic_focus:string;created_at:string}[]>([]);
+  const [liCrons,            setLiCrons]            = useState<{id:string;schedule:string;topic_focus:string;next_run_at:string|null}[]>([]);
+  const [liCronSchedule,     setLiCronSchedule]     = useState("weekly");
+  const [creatingCron,       setCreatingCron]       = useState(false);
+
+  // How it works modal
+  const [showHowItWorks, setShowHowItWorks] = useState(false);
 
   // KB panel context
   const [kbContext, setKbContext] = useState<{ query: string; topicId: string | null; topicTitle: string; topicData: RoadmapTopic | null } | null>(null);
@@ -1294,9 +1806,15 @@ export function RoadmapGenerator() {
   const handleSearch = useCallback((q: string, topicId?: string) => {
     let topicData: RoadmapTopic | null = null;
     if (topicId && roadmapRef.current) {
+      // 1. look in roadmap phases
       for (const phase of roadmapRef.current.phases) {
         const found = phase.topics.find((t) => t.id === topicId);
         if (found) { topicData = found; break; }
+      }
+      // 2. fallback: expanded node stored in ref → build synthetic RoadmapTopic
+      if (!topicData && expandedRecordsRef.current[topicId]) {
+        const rec = expandedRecordsRef.current[topicId];
+        topicData = { id: topicId, title: rec.title, description: rec.description, resources: [], prerequisites: [] };
       }
     }
     setKbContext({ query: q, topicId: topicId ?? null, topicTitle: q, topicData });
@@ -1309,9 +1827,29 @@ export function RoadmapGenerator() {
   const savePosTick  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const doReviewRef  = useRef<() => void>(() => {});
 
+  // Ref que acumula todos os nós expandidos: id → record
+  const expandedRecordsRef = useRef<Record<string, { parent_id: string; title: string; description: string; color: string }>>({});
+
   useEffect(() => { savedIdRef.current = savedId; }, [savedId]);
   useEffect(() => { nodesRef.current = nodes; }, [nodes]);
   useEffect(() => { roadmapRef.current = roadmap; }, [roadmap]);
+
+  // Sync progress → node data.isDone so TopicNode can render done state
+  useEffect(() => {
+    setNodes(nds => nds.map(n => {
+      const done = !!progress[n.id];
+      if (!!n.data.isDone === done) return n;
+      return { ...n, data: { ...n.data, isDone: done } };
+    }));
+  }, [progress, setNodes]);
+
+  // Fetch the app's default LLM provider from settings on mount
+  useEffect(() => {
+    fetch(`${API_BASE}/settings/default-provider`)
+      .then((r) => r.json())
+      .then((d) => { if (d.provider) setProvider(d.provider); })
+      .catch(() => {});
+  }, []);
 
   const flushPositions = useCallback(() => {
     const id = savedIdRef.current;
@@ -1329,6 +1867,54 @@ export function RoadmapGenerator() {
     if (savePosTick.current) clearTimeout(savePosTick.current);
     savePosTick.current = setTimeout(flushPositions, 600);
   }, [flushPositions]);
+
+  const handleOpenChat = useCallback((nodeId?: string, title?: string, description?: string) => {
+    setShowChat(true);
+    if (nodeId && title) {
+      setChatPinnedNode({ id: nodeId, title, description: description ?? "" });
+    }
+  }, []);
+
+  const handleNodeDragStart = useCallback((_evt: React.MouseEvent, node: Node) => {
+    preDragPosRef.current = { x: node.position.x, y: node.position.y };
+  }, []);
+
+  const handleNodeDragStop = useCallback((evt: React.MouseEvent, node: Node) => {
+    // Check if dropped onto the chat panel — if so, pin the node as context
+    const panel = document.querySelector(".rc-panel") as HTMLElement | null;
+    if (panel && showChat) {
+      const rect = panel.getBoundingClientRect();
+      if (
+        evt.clientX >= rect.left && evt.clientX <= rect.right &&
+        evt.clientY >= rect.top  && evt.clientY <= rect.bottom
+      ) {
+        // Restore pre-drag position so the node stays on canvas
+        if (preDragPosRef.current) {
+          const prev = preDragPosRef.current;
+          setNodes(nds => nds.map(n => n.id === node.id ? { ...n, position: prev } : n));
+        }
+        // Pin node as chat context
+        const title       = node.data.title as string;
+        const description = (node.data.description as string) ?? "";
+        setChatPinnedNode({ id: node.id, title, description });
+        return; // skip savePositions — position restored
+      }
+    }
+    savePositions();
+  }, [showChat, savePositions, setNodes]);
+
+  const saveExpansions = useCallback(() => {
+    const id = savedIdRef.current;
+    if (!id) return;
+    const expanded_nodes = Object.entries(expandedRecordsRef.current).map(([nodeId, rec]) => ({
+      id: nodeId, ...rec,
+    }));
+    fetch(`${API_BASE}/roadmap/${id}/expansions`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expanded_nodes }),
+    }).catch(() => {});
+  }, []);
 
   const doExpand = async () => {
     if (!savedIdRef.current || !expandText.trim()) return;
@@ -1378,6 +1964,22 @@ export function RoadmapGenerator() {
   // Keep ref in sync so buildLayout closures always call the latest version
   doReviewRef.current = doReview;
 
+  const loadSavedPosts = useCallback(async (id: string) => {
+    const r = await fetch(`${API_BASE}/roadmap/${id}/linkedin-posts`).catch(() => null);
+    if (r?.ok) { const d = await r.json(); setSavedPosts(d.posts || []); }
+  }, []);
+
+  const loadLiCrons = useCallback(async (id: string) => {
+    const r = await fetch(`${API_BASE}/roadmap/${id}/linkedin-crons`).catch(() => null);
+    if (r?.ok) { const d = await r.json(); setLiCrons(d.crons || []); }
+  }, []);
+
+  const openLinkedinStudio = useCallback(() => {
+    setShowLinkedinStudio(true);
+    const id = savedIdRef.current;
+    if (id) { loadSavedPosts(id); loadLiCrons(id); }
+  }, [loadSavedPosts, loadLiCrons]);
+
   const doGenerateLinkedin = async () => {
     if (!savedIdRef.current) return;
     setGeneratingLinkedin(true);
@@ -1387,16 +1989,65 @@ export function RoadmapGenerator() {
       const res = await fetch(`${API_BASE}/roadmap/${savedIdRef.current}/linkedin-post`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider }),
+        body: JSON.stringify({ provider, topic_focus: liTopicFocus, custom_prompt: liCustomPrompt }),
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d?.detail || `HTTP ${res.status}`);
       setLinkedinPost(d.post);
+      setLinkedinPostId(d.post_id || null);
+      if (savedIdRef.current) loadSavedPosts(savedIdRef.current);
     } catch (e: unknown) {
       setLinkedinError(e instanceof Error ? e.message : String(e));
     } finally {
       setGeneratingLinkedin(false);
     }
+  };
+
+  const liStartListening = () => {
+    const w = window as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
+    if (!SR) return;
+    const rec = new SR();
+    rec.lang = "pt-BR"; rec.continuous = false; rec.interimResults = true;
+    rec.onstart  = () => { setLiIsListening(true); setLiTranscript(""); };
+    rec.onend    = () => setLiIsListening(false);
+    rec.onerror  = () => setLiIsListening(false);
+    rec.onresult = (e: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+      let interim = "", final = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        e.results[i].isFinal ? (final += t) : (interim += t);
+      }
+      setLiTranscript(interim || final);
+      if (final) { setLiCustomPrompt(p => p ? p + " " + final.trim() : final.trim()); setLiTranscript(""); }
+    };
+    liRecRef.current = rec; rec.start();
+  };
+  const liStopListening = () => { liRecRef.current?.stop(); setLiIsListening(false); };
+
+  const liAppendElement = (text: string) => setLiCustomPrompt(p => p ? p + " " + text : text);
+
+  const doCreateLiCron = async () => {
+    if (!savedIdRef.current) return;
+    setCreatingCron(true);
+    try {
+      const r = await fetch(`${API_BASE}/roadmap/${savedIdRef.current}/linkedin-cron`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ schedule: liCronSchedule, topic_focus: liTopicFocus, prompt: liCustomPrompt, provider }),
+      });
+      if (r.ok && savedIdRef.current) await loadLiCrons(savedIdRef.current);
+    } finally { setCreatingCron(false); }
+  };
+
+  const doDeleteLiCron = async (cronId: string) => {
+    await fetch(`${API_BASE}/linkedin-crons/${cronId}`, { method: "DELETE" }).catch(() => {});
+    setLiCrons(prev => prev.filter(c => c.id !== cronId));
+  };
+
+  const doDeleteSavedPost = async (postId: string) => {
+    await fetch(`${API_BASE}/linkedin-posts/${postId}`, { method: "DELETE" }).catch(() => {});
+    setSavedPosts(prev => prev.filter(p => p.id !== postId));
   };
 
   const handleNodeUpdated = useCallback((nodeId: string, updates: { title?: string; description?: string; resources?: string[] }) => {
@@ -1419,13 +2070,109 @@ export function RoadmapGenerator() {
     });
   }, [setNodes]);
 
-  const applyRoadmap = useCallback((data: RoadmapData & { node_positions?: SavedPositions }) => {
+  const handleExpandTopic = useCallback(async (
+    topicId: string, title: string, description: string,
+    color: string,
+  ) => {
+    // Captura posição ANTES de qualquer await — garante que é a posição atual do nó
+    const parentNode = nodesRef.current.find(n => n.id === topicId);
+    const parentX = parentNode?.position.x ?? 0;
+    const parentY = parentNode?.position.y ?? 0;
+
+    // Mark node as expanding
+    setNodes(nds => nds.map(n => n.id === topicId ? { ...n, data: { ...n.data, expanding: true } } : n));
+    try {
+      const res = await fetch(`${API_BASE}/roadmap/expand-topic`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic_title: title, topic_description: description, roadmap_goal: roadmap?.goal ?? "", provider, roadmap_id: savedIdRef.current ?? "", parent_topic_id: topicId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`);
+      const subtopics: { id: string; title: string; description: string }[] = data.subtopics || [];
+      if (!subtopics.length) return;
+
+      const R = 220;
+      const newNodes: Node[] = subtopics.map((st, i) => {
+        const angle = (i / subtopics.length) * 2 * Math.PI - Math.PI / 2;
+        const nodeId = `exp-${topicId}-${st.id}-${i}`;
+        const nx = parentX + R * Math.cos(angle);
+        const ny = parentY + R * Math.sin(angle);
+        return {
+          id: nodeId, type: "topicNode", draggable: true,
+          position: { x: nx, y: ny },
+          data: {
+            title: st.title, description: st.description,
+            resources: [], color, isExpanded: true,
+            onSearch: () => handleSearch(st.title, nodeId),
+            onResourceSearch: (r: string) => handleSearch(r),
+            onExpand: () => handleExpandTopic(nodeId, st.title, st.description, color),
+            onChat: () => handleOpenChat(nodeId, st.title, st.description),
+          },
+        };
+      });
+
+      const newEdges: Edge[] = subtopics.map((_, i) => ({
+        id: `exp-edge-${topicId}-${i}`,
+        source: topicId,
+        target: newNodes[i].id,
+        style: { stroke: color + "99", strokeWidth: 1.2, strokeDasharray: "5 3" },
+        animated: true,
+      }));
+
+      // Registra no ref para persistência
+      subtopics.forEach((st, i) => {
+        expandedRecordsRef.current[newNodes[i].id] = {
+          parent_id: topicId, title: st.title, description: st.description, color,
+        };
+      });
+
+      setNodes(nds => [...nds, ...newNodes]);
+      setEdges(eds => [...eds, ...newEdges]);
+      saveExpansions();
+      savePositions(); // posições dos novos nós também
+    } catch (e) {
+      console.error("expand-topic error:", e);
+    } finally {
+      setNodes(nds => nds.map(n => n.id === topicId ? { ...n, data: { ...n.data, expanding: false } } : n));
+    }
+  }, [provider, roadmap, handleSearch, handleOpenChat, setNodes, setEdges, saveExpansions, savePositions]);
+
+  const applyRoadmap = useCallback((data: RoadmapData & { node_positions?: SavedPositions; expanded_nodes?: { id: string; parent_id: string; title: string; description: string; color: string }[] }) => {
     setRoadmap(data);
     setKbContext(null);
-    const { nodes: n, edges: e } = buildLayout(data, handleSearch, data.node_positions ?? {}, () => doReviewRef.current());
-    setNodes(n as Node[]);
-    setEdges(e as Edge[]);
-  }, [handleSearch, setNodes, setEdges]);
+    const positions = data.node_positions ?? {};
+    const { nodes: n, edges: e } = buildLayout(data, handleSearch, positions, () => doReviewRef.current(), handleExpandTopic, handleOpenChat);
+
+    // Restaura nós expandidos salvos
+    expandedRecordsRef.current = {};
+    const expNodes: Node[] = [];
+    const expEdges: Edge[] = [];
+    for (const rec of data.expanded_nodes ?? []) {
+      expandedRecordsRef.current[rec.id] = { parent_id: rec.parent_id, title: rec.title, description: rec.description, color: rec.color };
+      const pos = positions[rec.id] ?? { x: 0, y: 0 };
+      expNodes.push({
+        id: rec.id, type: "topicNode", draggable: true, position: pos,
+        data: {
+          title: rec.title, description: rec.description,
+          resources: [], color: rec.color, isExpanded: true,
+          onSearch: () => handleSearch(rec.title, rec.id),
+          onResourceSearch: (r: string) => handleSearch(r),
+          onExpand: () => handleExpandTopic(rec.id, rec.title, rec.description, rec.color),
+          onChat: () => handleOpenChat(rec.id, rec.title, rec.description),
+        },
+      });
+      expEdges.push({
+        id: `exp-edge-${rec.parent_id}-${rec.id}`,
+        source: rec.parent_id, target: rec.id,
+        style: { stroke: rec.color + "99", strokeWidth: 1.2, strokeDasharray: "5 3" },
+        animated: true,
+      });
+    }
+
+    setNodes([...n as Node[], ...expNodes]);
+    setEdges([...e as Edge[], ...expEdges]);
+  }, [handleSearch, handleExpandTopic, handleOpenChat, setNodes, setEdges]);
 
   // Auto-save after generation
   const saveRoadmap = useCallback(async (data: RoadmapData) => {
@@ -1473,15 +2220,42 @@ export function RoadmapGenerator() {
   };
 
   // Load saved roadmap
+  const flushProgress = useCallback((id: string, prog: Record<string, boolean>) => {
+    fetch(`${API_BASE}/roadmap/${id}/progress`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ progress: prog }),
+    }).catch(() => {});
+  }, []);
+
+  const handleToggleProgress = useCallback((nodeId: string, checked: boolean) => {
+    setProgress(prev => {
+      const next = { ...prev, [nodeId]: checked };
+      const id = savedIdRef.current;
+      if (id) {
+        if (saveProgressTick.current) clearTimeout(saveProgressTick.current);
+        saveProgressTick.current = setTimeout(() => flushProgress(id, next), 600);
+      }
+      return next;
+    });
+  }, [flushProgress]);
+
   const loadRoadmap = async (id: string) => {
     setSavedId(id);
     setKbContext(null);
     try {
-      const res = await fetch(`${API_BASE}/roadmap/${id}`);
-      if (!res.ok) return;
-      const data: RoadmapData = await res.json();
+      const [roadmapRes, progressRes] = await Promise.all([
+        fetch(`${API_BASE}/roadmap/${id}`),
+        fetch(`${API_BASE}/roadmap/${id}/progress`),
+      ]);
+      if (!roadmapRes.ok) return;
+      const data: RoadmapData = await roadmapRes.json();
       setGoal(data.goal || "");
       applyRoadmap(data);
+      if (progressRes.ok) {
+        const pd = await progressRes.json();
+        setProgress(pd.progress || {});
+      }
     } catch {
       setError("Erro ao carregar roadmap.");
     }
@@ -1527,37 +2301,111 @@ export function RoadmapGenerator() {
         </button>
         {saving && <span className="rg2__saving">Salvando…</span>}
         {savedId && !saving && <span className="rg2__saved-ok">✓ Salvo</span>}
+        <button
+          type="button"
+          className="rg2__help-btn"
+          onClick={() => setShowHowItWorks(true)}
+          title="Como o roadmap é gerado?"
+        >?</button>
       </div>
+
+      {/* ── How it works modal ── */}
+      {showHowItWorks && (
+        <div className="hiw__overlay" onClick={() => setShowHowItWorks(false)}>
+          <div className="hiw__modal" onClick={(e) => e.stopPropagation()}>
+            <div className="hiw__header">
+              <span className="hiw__title">Como o roadmap é gerado</span>
+              <button className="hiw__close" onClick={() => setShowHowItWorks(false)}>✕</button>
+            </div>
+            <div className="hiw__body">
+              <div className="hiw__step">
+                <span className="hiw__step-num">1</span>
+                <div>
+                  <strong>Catálogo da base de conhecimento</strong>
+                  <p>Todos os documentos indexados nas collections <code>articles</code> e <code>books</code> do Qdrant são listados, extraindo títulos e tópicos de cada um.</p>
+                </div>
+              </div>
+              <div className="hiw__step">
+                <span className="hiw__step-num">2</span>
+                <div>
+                  <strong>Busca RAG semântica</strong>
+                  <p>Seu objetivo é transformado em um embedding vetorial e comparado contra as duas collections via busca <strong>híbrida</strong> (BM25 sparse + dense). O sistema retorna os 30+ chunks mais relevantes, com corrective RAG automático se a relevância for baixa.</p>
+                </div>
+              </div>
+              <div className="hiw__step">
+                <span className="hiw__step-num">3</span>
+                <div>
+                  <strong>Montagem do contexto</strong>
+                  <p>Os trechos recuperados são concatenados junto ao catálogo de livros/artigos disponíveis, formando o contexto que será enviado ao LLM.</p>
+                </div>
+              </div>
+              <div className="hiw__step">
+                <span className="hiw__step-num">4</span>
+                <div>
+                  <strong>Geração pelo LLM</strong>
+                  <p>O prompt <code>roadmap_generate</code> instrui o modelo selecionado (Gemini / OpenAI / Ollama) a criar um roadmap estruturado em fases e tópicos, citando somente recursos presentes na base.</p>
+                </div>
+              </div>
+              <div className="hiw__step">
+                <span className="hiw__step-num">5</span>
+                <div>
+                  <strong>Salvo e interativo</strong>
+                  <p>O roadmap é persistido no MongoDB e renderizado como grafo interativo. Você pode expandir fases, gerar exemplos Q&amp;A e código por tópico, revisar referências e exportar como post LinkedIn.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {error && <div className="rg2__error"><strong>Erro:</strong> {error}</div>}
 
       {/* ── Expand / Review strip (only when a roadmap is loaded and saved) ── */}
       {roadmap && savedId && (
         <div className="rg2__expand-strip">
-          <button className="rg2__expand-toggle" type="button" onClick={() => setShowExpand((v) => !v)}>
-            {showExpand ? "▲" : "➕"} Expandir roadmap
-          </button>
-          <button
-            className="rg2__review-btn"
-            type="button"
-            onClick={doReview}
-            disabled={reviewing}
-            title="Revisa e corrige as referências de cada tópico com base na KB real"
-          >
-            {reviewing ? <><span className="rg2__spinner" /> Revisando…</> : "🔍 Revisar referências"}
-          </button>
-          {reviewedAt && !reviewing && <span className="rg2__review-ok">✓ Revisado às {reviewedAt}</span>}
-          {reviewError && <span className="rg2__expand-err">{reviewError}</span>}
-          <button
-            className="rg2__linkedin-btn"
-            type="button"
-            onClick={doGenerateLinkedin}
-            disabled={generatingLinkedin}
-            title="Gerar post para o LinkedIn com base neste roadmap"
-          >
-            {generatingLinkedin ? <><span className="rg2__spinner" /> Gerando…</> : "💼 Post LinkedIn"}
-          </button>
-          {linkedinError && <span className="rg2__expand-err">{linkedinError}</span>}
+          <div className="rg2__strip-row">
+            <button className="rg2__expand-toggle" type="button" onClick={() => setShowExpand((v) => !v)}>
+              {showExpand ? "▲" : "➕"} Expandir roadmap
+            </button>
+            <div className="rg2__strip-actions">
+              {reviewedAt && !reviewing && <span className="rg2__review-ok">✓ Revisado às {reviewedAt}</span>}
+              {reviewError && <span className="rg2__expand-err">{reviewError}</span>}
+              {linkedinError && <span className="rg2__expand-err">{linkedinError}</span>}
+              <button
+                className="rg2__review-btn"
+                type="button"
+                onClick={doReview}
+                disabled={reviewing}
+                title="Revisa e corrige as referências de cada tópico com base na KB real"
+              >
+                {reviewing ? <><span className="rg2__spinner" /> Revisando…</> : "🔍 Revisar referências"}
+              </button>
+              <button
+                className="rg2__linkedin-btn"
+                type="button"
+                onClick={openLinkedinStudio}
+                title="LinkedIn Studio — gerar e agendar posts"
+              >
+                💼 LinkedIn Studio
+              </button>
+              <button
+                className={`rg2__checklist-btn${showChecklist ? " rg2__checklist-btn--active" : ""}`}
+                type="button"
+                onClick={() => setShowChecklist(v => !v)}
+                title="Ver checklist de progresso"
+              >
+                ☑ Checklist
+              </button>
+              <button
+                className="rg2__chat-btn"
+                type="button"
+                onClick={() => setShowChat(v => !v)}
+                title="Chat com tutor sobre este roadmap"
+              >
+                💬 Chat
+              </button>
+            </div>
+          </div>
           {showExpand && (
             <div className="rg2__expand-form">
               <textarea
@@ -1601,13 +2449,19 @@ export function RoadmapGenerator() {
                   edges={edges}
                   onNodesChange={onNodesChange}
                   onEdgesChange={onEdgesChange}
-                  onNodeDragStop={savePositions}
+                  onNodeDragStart={handleNodeDragStart}
+                  onNodeDragStop={handleNodeDragStop}
                   nodeTypes={NODE_TYPES}
                   fitView
                   fitViewOptions={{ padding: 0.18 }}
                   minZoom={0.15}
                   maxZoom={2.5}
                   attributionPosition="bottom-right"
+                  // Modo pan: arrastar canvas; Modo select: arrastar cria seleção + multi-drag
+                  panOnDrag={interactionMode === "pan"}
+                  selectionOnDrag={interactionMode === "select"}
+                  selectionMode={SelectionMode.Partial}
+                  multiSelectionKeyCode={null}
                 >
                   <Background gap={24} size={1} color="#dde0e8" />
                   <Controls showInteractive={false} />
@@ -1617,6 +2471,24 @@ export function RoadmapGenerator() {
                     nodeColor={(n) => (n.data?.color as string) || "#4f7df3"}
                     style={{ background: "var(--surface)" }}
                   />
+                  <ExportPanel title={roadmap.title} />
+                  {/* Toolbar de modo de interação */}
+                  <Panel position="top-left" className="rg2__mode-panel">
+                    <button
+                      className={`rg2__mode-btn${interactionMode === "pan" ? " rg2__mode-btn--active" : ""}`}
+                      onClick={() => setInteractionMode("pan")}
+                      title="Modo mover — arrastar navega pelo canvas"
+                    >
+                      ✋
+                    </button>
+                    <button
+                      className={`rg2__mode-btn${interactionMode === "select" ? " rg2__mode-btn--active" : ""}`}
+                      onClick={() => setInteractionMode("select")}
+                      title="Modo seleção — clique e arraste para selecionar múltiplos nós"
+                    >
+                      ↖
+                    </button>
+                  </Panel>
                 </ReactFlow>
 
                 {/* Floating meta pill */}
@@ -1630,9 +2502,21 @@ export function RoadmapGenerator() {
                 </div>
               </div>
 
+              {/* Checklist overlay */}
+              {showChecklist && roadmap && (
+                <ChecklistPanel
+                  roadmap={roadmap}
+                  expandedRecords={expandedRecordsRef.current}
+                  progress={progress}
+                  onToggle={handleToggleProgress}
+                  onClose={() => setShowChecklist(false)}
+                />
+              )}
+
               {/* KB + Examples side panel */}
               {panelOpen && kbContext && (
                 <KbPanel
+                  key={kbContext.topicId ?? kbContext.query}
                   query={kbContext.query}
                   topicId={kbContext.topicId}
                   topicTitle={kbContext.topicTitle}
@@ -1641,6 +2525,17 @@ export function RoadmapGenerator() {
                   provider={provider}
                   onClose={() => setKbContext(null)}
                   onNodeUpdated={handleNodeUpdated}
+                />
+              )}
+              {showChat && savedId && roadmap && (
+                <RoadmapChatPanel
+                  key={savedId}
+                  roadmapId={savedId}
+                  provider={provider}
+                  roadmapTitle={roadmap.title}
+                  onClose={() => setShowChat(false)}
+                  pinnedNode={chatPinnedNode}
+                  onClearPin={() => setChatPinnedNode(null)}
                 />
               )}
             </div>
@@ -1672,37 +2567,184 @@ export function RoadmapGenerator() {
         </div>
       </div>
 
-      {/* ── LinkedIn Post Modal ── */}
-      {linkedinPost && (
-        <div className="li-modal__overlay" onClick={() => setLinkedinPost(null)}>
-          <div className="li-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="li-modal__header">
-              <span className="li-modal__title">💼 Post para LinkedIn</span>
-              <button className="li-modal__close" onClick={() => setLinkedinPost(null)}>✕</button>
+      {/* ── LinkedIn Studio Modal ── */}
+      {showLinkedinStudio && (
+        <div className="lis__overlay" onClick={() => setShowLinkedinStudio(false)}>
+          <div className="lis__modal" onClick={(e) => e.stopPropagation()}>
+
+            {/* Header */}
+            <div className="lis__header">
+              <span className="lis__title">💼 LinkedIn Studio</span>
+              <div className="lis__header-actions">
+                <a href="/linkedin-posts" target="_blank" rel="noreferrer" className="lis__posts-link">
+                  Ver todos os posts →
+                </a>
+                <button className="lis__close" onClick={() => setShowLinkedinStudio(false)}>✕</button>
+              </div>
             </div>
-            <textarea
-              className="li-modal__textarea"
-              value={linkedinPost}
-              onChange={(e) => setLinkedinPost(e.target.value)}
-              rows={14}
-              spellCheck
-            />
-            <div className="li-modal__footer">
-              <span className="li-modal__chars">{linkedinPost.length} caracteres</span>
-              <button
-                className="li-modal__copy"
-                onClick={() => {
-                  navigator.clipboard.writeText(linkedinPost);
-                  setLinkedinCopied(true);
-                  setTimeout(() => setLinkedinCopied(false), 2000);
-                }}
+
+            {/* Topic focus */}
+            <div className="lis__section">
+              <label className="lis__label">Foco do post</label>
+              <select
+                className="lis__select"
+                value={liTopicFocus}
+                onChange={(e) => setLiTopicFocus(e.target.value)}
               >
-                {linkedinCopied ? "✓ Copiado!" : "📋 Copiar"}
-              </button>
-              <button className="li-modal__regen" onClick={doGenerateLinkedin} disabled={generatingLinkedin}>
-                {generatingLinkedin ? <><span className="rg2__spinner" /> Gerando…</> : "🔄 Regenerar"}
-              </button>
+                <option value="">Resumo geral do roadmap</option>
+                {roadmap?.phases.flatMap((p) => [
+                  <option key={`phase:${p.id}`} value={`phase:${p.id}`} style={{ fontWeight: 700 }}>
+                    📌 {p.title}
+                  </option>,
+                  ...p.topics.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      &nbsp;&nbsp;&nbsp;└ {t.title}
+                    </option>
+                  )),
+                ])}
+              </select>
             </div>
+
+            {/* Custom prompt + audio */}
+            <div className="lis__section">
+              <label className="lis__label">
+                Instrução customizada <span className="lis__optional">(opcional)</span>
+              </label>
+              <div className="lis__prompt-row">
+                <textarea
+                  className="lis__prompt-input"
+                  rows={3}
+                  placeholder="Ex: foco em casos práticos, mencione a lib X, seja mais direto, inclua uma história pessoal…"
+                  value={liCustomPrompt}
+                  onChange={(e) => setLiCustomPrompt(e.target.value)}
+                />
+                <button
+                  className={`lis__mic${liIsListening ? " lis__mic--active" : ""}`}
+                  type="button"
+                  onClick={liIsListening ? liStopListening : liStartListening}
+                  title={liIsListening ? "Parar gravação" : "Ditado por voz"}
+                >
+                  🎙
+                </button>
+              </div>
+              {liTranscript && <div className="lis__transcript">{liTranscript}</div>}
+              <div className="lis__elements">
+                {[
+                  { label: "+ Hashtags", text: "Inclua hashtags relevantes e populares" },
+                  { label: "+ CTA",      text: "Adicione uma chamada para ação forte ao final" },
+                  { label: "+ Emojis",   text: "Use emojis para tornar o post mais visual" },
+                  { label: "+ Métricas", text: "Inclua dados e métricas concretos para dar credibilidade" },
+                ].map((btn) => (
+                  <button key={btn.label} type="button" className="lis__elem-btn" onClick={() => liAppendElement(btn.text)}>
+                    {btn.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Generate */}
+            <button className="lis__gen-btn" type="button" onClick={doGenerateLinkedin} disabled={generatingLinkedin}>
+              {generatingLinkedin ? <><span className="rg2__spinner" /> Gerando post…</> : "✨ Gerar Post"}
+            </button>
+            {linkedinError && <span className="lis__error">{linkedinError}</span>}
+
+            {/* Post preview */}
+            {linkedinPost && (
+              <div className="lis__preview">
+                <div className="lis__preview-header">
+                  <span className="lis__label">Post gerado</span>
+                  <span className={`lis__chars${linkedinPost.length > 1300 ? " lis__chars--over" : ""}`}>
+                    {linkedinPost.length} / 1300
+                  </span>
+                </div>
+                <textarea
+                  className="lis__post-textarea"
+                  rows={10}
+                  value={linkedinPost}
+                  onChange={(e) => setLinkedinPost(e.target.value)}
+                  spellCheck
+                />
+                <div className="lis__preview-actions">
+                  <button
+                    className="lis__copy-btn"
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(linkedinPost);
+                      setLinkedinCopied(true);
+                      setTimeout(() => setLinkedinCopied(false), 2000);
+                    }}
+                  >
+                    {linkedinCopied ? "✓ Copiado!" : "📋 Copiar"}
+                  </button>
+                  <button className="lis__regen-btn" type="button" onClick={doGenerateLinkedin} disabled={generatingLinkedin}>
+                    {generatingLinkedin ? <><span className="rg2__spinner" /> Gerando…</> : "🔄 Regenerar"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Saved posts */}
+            {savedPosts.length > 0 && (
+              <details className="lis__details">
+                <summary className="lis__summary">📁 Posts salvos ({savedPosts.length})</summary>
+                <div className="lis__saved-list">
+                  {savedPosts.map((p) => (
+                    <div key={p.id} className="lis__saved-item">
+                      <div className="lis__saved-meta">
+                        <span className="lis__saved-topic">{p.topic_focus || "Geral"}</span>
+                        <span className="lis__saved-date">
+                          {new Date(p.created_at).toLocaleDateString("pt-BR")}
+                        </span>
+                      </div>
+                      <p className="lis__saved-preview">{p.content.slice(0, 130)}…</p>
+                      <div className="lis__saved-actions">
+                        <button className="lis__saved-use" type="button" onClick={() => setLinkedinPost(p.content)}>
+                          Usar este
+                        </button>
+                        <button className="lis__saved-del" type="button" onClick={() => doDeleteSavedPost(p.id)}>
+                          🗑
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
+
+            {/* Cron scheduler */}
+            <details className="lis__details">
+              <summary className="lis__summary">⏰ Agendamento automático de posts</summary>
+              <div className="lis__cron-section">
+                <div className="lis__cron-row">
+                  <select className="lis__cron-sel" value={liCronSchedule} onChange={(e) => setLiCronSchedule(e.target.value)}>
+                    <option value="daily">Diário</option>
+                    <option value="weekly">Semanal</option>
+                    <option value="biweekly">Quinzenal</option>
+                    <option value="monthly">Mensal</option>
+                  </select>
+                  <button className="lis__cron-add" type="button" onClick={doCreateLiCron} disabled={creatingCron}>
+                    {creatingCron ? <><span className="rg2__spinner" /> Criando…</> : "+ Agendar"}
+                  </button>
+                </div>
+                {liCrons.length > 0 && (
+                  <div className="lis__cron-list">
+                    {liCrons.map((c) => (
+                      <div key={c.id} className="lis__cron-item">
+                        <span className="lis__cron-badge">{c.schedule}</span>
+                        {c.topic_focus && <span className="lis__cron-topic">{c.topic_focus}</span>}
+                        {c.next_run_at && (
+                          <span className="lis__cron-next">
+                            Próximo: {new Date(c.next_run_at).toLocaleDateString("pt-BR")}
+                          </span>
+                        )}
+                        <button className="lis__cron-del" type="button" onClick={() => doDeleteLiCron(c.id)}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </details>
+
           </div>
         </div>
       )}
@@ -1762,6 +2804,57 @@ export function RoadmapGenerator() {
 
         .rg2__saving { font-size: .78rem; color: var(--text-tertiary); }
         .rg2__saved-ok { font-size: .78rem; color: var(--success); font-weight: 700; }
+        .rg2__help-btn {
+          width: 22px; height: 22px; border-radius: 50%;
+          border: 1.5px solid var(--border); background: none;
+          color: var(--text-secondary); font-size: .8rem; font-weight: 700;
+          cursor: pointer; display: flex; align-items: center; justify-content: center;
+          flex-shrink: 0; transition: border-color 120ms, color 120ms;
+          margin-left: auto;
+        }
+        .rg2__help-btn:hover { border-color: var(--primary); color: var(--primary); }
+
+        /* ── How it works modal ── */
+        .hiw__overlay {
+          position: fixed; inset: 0; background: rgba(0,0,0,.55);
+          display: flex; align-items: center; justify-content: center;
+          z-index: 1000;
+        }
+        .hiw__modal {
+          background: var(--surface); border: 1px solid var(--border);
+          border-radius: var(--radius-lg); width: min(540px, 92vw);
+          max-height: 80vh; overflow-y: auto;
+          box-shadow: 0 20px 60px rgba(0,0,0,.4);
+        }
+        .hiw__header {
+          display: flex; align-items: center; justify-content: space-between;
+          padding: 1rem 1.25rem .75rem; border-bottom: 1px solid var(--border);
+        }
+        .hiw__title { font-size: 1rem; font-weight: 700; color: var(--text); }
+        .hiw__close {
+          background: none; border: none; color: var(--text-secondary);
+          font-size: 1rem; cursor: pointer; padding: .2rem .4rem;
+          border-radius: var(--radius-sm); transition: color 100ms;
+        }
+        .hiw__close:hover { color: var(--text); }
+        .hiw__body { padding: 1.25rem; display: flex; flex-direction: column; gap: 1rem; }
+        .hiw__step {
+          display: flex; gap: .85rem; align-items: flex-start;
+        }
+        .hiw__step-num {
+          flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%;
+          background: var(--primary); color: #fff;
+          font-size: .75rem; font-weight: 700;
+          display: flex; align-items: center; justify-content: center;
+          margin-top: .1rem;
+        }
+        .hiw__step strong { display: block; font-size: .88rem; color: var(--text); margin-bottom: .25rem; }
+        .hiw__step p { font-size: .82rem; color: var(--text-secondary); margin: 0; line-height: 1.55; }
+        .hiw__step code {
+          font-family: monospace; font-size: .78rem;
+          background: var(--bg); border: 1px solid var(--border);
+          padding: .1rem .35rem; border-radius: 3px; color: var(--primary);
+        }
 
         /* Body: sidebar + right */
         .rg2__body {
@@ -1839,6 +2932,27 @@ export function RoadmapGenerator() {
         .rg2__canvas {
           position: relative; min-width: 0; min-height: 0;
           transition: flex 200ms ease;
+        }
+
+        /* Export panel */
+        .rg2__export-panel {
+          display: flex; gap: .4rem;
+        }
+        .rg2__export-btn {
+          display: flex; align-items: center; gap: .3rem;
+          background: var(--surface); border: 1px solid var(--border);
+          border-radius: var(--radius-sm); padding: .3rem .7rem;
+          font-size: .76rem; font-weight: 700; color: var(--text-secondary);
+          cursor: pointer; box-shadow: var(--shadow-sm);
+          transition: border-color 120ms, color 120ms;
+          white-space: nowrap;
+        }
+        .rg2__export-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+        .rg2__export-btn:disabled { opacity: .5; cursor: not-allowed; }
+        .rg2__export-spin {
+          display: inline-block; width: 11px; height: 11px;
+          border: 2px solid var(--border); border-top-color: var(--primary);
+          border-radius: 50%; animation: rg2spin .7s linear infinite;
         }
 
         /* Floating meta */
@@ -1951,6 +3065,17 @@ export function RoadmapGenerator() {
           border: 1.5px solid;
           padding: .6rem .75rem;
         }
+        .rmn--child {
+          width: 195px;
+          opacity: .92;
+        }
+        .rmn__child-badge {
+          display: inline-flex; align-items: center; gap: 3px;
+          font-size: .58rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase;
+          border: 1px solid; border-radius: 4px;
+          padding: 1px 5px; margin-bottom: .3rem;
+          line-height: 1.6;
+        }
         .rmn__topic-title {
           font-size: .79rem; font-weight: 700; color: var(--text);
           line-height: 1.3; margin-bottom: .3rem;
@@ -1974,6 +3099,28 @@ export function RoadmapGenerator() {
           transition: border-color 110ms, color 110ms; text-align: left;
         }
         .rmn__res-review-btn:hover { border-color: #58a6ff; color: #58a6ff; }
+
+        .rmn__node-actions {
+          display: flex; gap: .3rem; margin-top: .35rem; flex-wrap: wrap;
+        }
+        .rmn__expand-btn, .rmn__chat-btn {
+          display: flex; align-items: center; gap: .3rem;
+          flex: 1; min-width: 0;
+          background: none; border: 1px dashed; border-radius: 4px;
+          padding: .22rem .5rem; cursor: pointer;
+          font-size: .65rem; font-weight: 700;
+          transition: background 110ms, opacity 110ms;
+        }
+        .rmn__expand-btn:hover:not(:disabled), .rmn__chat-btn:hover { background: rgba(255,255,255,.06); }
+        .rmn__expand-btn:disabled { opacity: .5; cursor: not-allowed; }
+        .rmn__expand-plus {
+          font-size: .85rem; font-weight: 900; line-height: 1;
+        }
+        .rmn__expand-spin {
+          display: inline-block; width: 9px; height: 9px;
+          border: 1.5px solid rgba(255,255,255,.2); border-top-color: currentColor;
+          border-radius: 50%; animation: rg2spin .7s linear infinite;
+        }
 
         /* ── KB Side Panel ── */
         .kb-panel {
@@ -2192,9 +3339,16 @@ export function RoadmapGenerator() {
           border-bottom: 1px solid var(--border);
           flex-shrink: 0;
         }
+        .rg2__strip-row {
+          display: flex; align-items: center; justify-content: space-between;
+          padding: .25rem .75rem .25rem 1.25rem; gap: .5rem;
+        }
+        .rg2__strip-actions {
+          display: flex; align-items: center; gap: .5rem; flex-shrink: 0;
+        }
         .rg2__expand-toggle {
-          width: 100%; text-align: left; background: none; border: none;
-          padding: .4rem 1.25rem; font-size: .78rem; font-weight: 700;
+          background: none; border: none; flex: 1; text-align: left;
+          padding: .3rem 0; font-size: .78rem; font-weight: 700;
           color: var(--text-secondary); cursor: pointer; transition: color 110ms;
         }
         .rg2__expand-toggle:hover { color: var(--primary); }
@@ -2239,48 +3393,184 @@ export function RoadmapGenerator() {
         .rg2__linkedin-btn:hover:not(:disabled) { background: #0a66c2; color: #fff; }
         .rg2__linkedin-btn:disabled { opacity: .5; cursor: not-allowed; }
 
-        /* ── LinkedIn Modal ── */
-        .li-modal__overlay {
+        /* ── LinkedIn Studio Modal ── */
+        .lis__overlay {
           position: fixed; inset: 0; background: rgba(0,0,0,.55);
           display: flex; align-items: center; justify-content: center;
-          z-index: 1000;
+          z-index: 1000; padding: 1rem;
         }
-        .li-modal {
+        .lis__modal {
           background: var(--surface); border: 1px solid var(--border);
-          border-radius: var(--radius); width: min(640px, 92vw);
-          display: flex; flex-direction: column; gap: .75rem; padding: 1.25rem;
-          box-shadow: 0 8px 32px rgba(0,0,0,.25);
+          border-radius: var(--radius); width: min(720px, 96vw);
+          max-height: 90vh; overflow-y: auto;
+          display: flex; flex-direction: column; gap: .9rem; padding: 1.4rem;
+          box-shadow: 0 12px 40px rgba(0,0,0,.28);
         }
-        .li-modal__header { display: flex; align-items: center; justify-content: space-between; }
-        .li-modal__title { font-size: .95rem; font-weight: 700; color: var(--text); }
-        .li-modal__close {
-          background: none; border: none; font-size: 1rem;
-          color: var(--text-secondary); cursor: pointer; padding: .2rem .4rem;
+        .lis__header {
+          display: flex; align-items: center; justify-content: space-between;
+          padding-bottom: .7rem; border-bottom: 1px solid var(--border); flex-shrink: 0;
         }
-        .li-modal__close:hover { color: var(--text); }
-        .li-modal__textarea {
+        .lis__title { font-size: 1rem; font-weight: 700; color: var(--text); }
+        .lis__header-actions { display: flex; align-items: center; gap: .6rem; }
+        .lis__posts-link {
+          font-size: .75rem; color: #0a66c2; text-decoration: none; font-weight: 600;
+          padding: .2rem .5rem; border-radius: 5px; transition: background .12s;
+        }
+        .lis__posts-link:hover { background: #e8f0fe; }
+        .lis__close {
+          background: none; border: none; font-size: 1.1rem;
+          color: var(--text-secondary); cursor: pointer; padding: .2rem .4rem; border-radius: 4px;
+        }
+        .lis__close:hover { background: #f1f5f9; color: var(--text); }
+        .lis__section { display: flex; flex-direction: column; gap: .45rem; }
+        .lis__label { font-size: .78rem; font-weight: 700; color: var(--text-secondary); }
+        .lis__optional { font-weight: 400; opacity: .7; }
+        .lis__select {
+          border: 1px solid var(--border); border-radius: var(--radius-sm);
+          background: var(--bg); color: var(--text); font-size: .84rem;
+          padding: .4rem .65rem; outline: none; transition: border-color .13s;
+          font-family: inherit;
+        }
+        .lis__select:focus { border-color: #0a66c2; }
+        .lis__prompt-row { display: flex; gap: .5rem; align-items: flex-start; }
+        .lis__prompt-input {
+          flex: 1; resize: vertical; border: 1px solid var(--border);
+          border-radius: var(--radius-sm); background: var(--bg);
+          color: var(--text); font-size: .83rem; line-height: 1.5;
+          padding: .5rem .7rem; font-family: inherit; outline: none; transition: border-color .13s;
+        }
+        .lis__prompt-input:focus { border-color: #0a66c2; }
+        .lis__mic {
+          width: 36px; height: 36px; flex-shrink: 0;
+          border-radius: 50%; border: 1.5px solid var(--border);
+          background: var(--bg); cursor: pointer;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 1rem; transition: background .13s, border-color .13s;
+        }
+        .lis__mic:hover { background: #f1f5f9; border-color: #94a3b8; }
+        .lis__mic--active { background: #ef4444; border-color: #ef4444; animation: rcPulse 1s infinite; }
+        .lis__transcript {
+          font-size: .75rem; color: #64748b; font-style: italic; padding: .25rem .4rem;
+          background: #f8fafc; border-radius: 5px; border: 1px solid #e2e8f0;
+        }
+        .lis__elements { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .15rem; }
+        .lis__elem-btn {
+          border: 1px solid #cbd5e1; border-radius: 20px; background: var(--bg);
+          color: #475569; font-size: .73rem; font-weight: 600; padding: .2rem .65rem;
+          cursor: pointer; transition: border-color .12s, color .12s, background .12s;
+        }
+        .lis__elem-btn:hover { border-color: #0a66c2; color: #0a66c2; background: #e8f0fe; }
+        .lis__gen-btn {
+          display: flex; align-items: center; justify-content: center; gap: .45rem;
+          background: #0a66c2; color: #fff; border: none;
+          border-radius: var(--radius-sm); padding: .55rem 1.4rem;
+          font-size: .88rem; font-weight: 700; cursor: pointer; transition: background .13s;
+          align-self: flex-start;
+        }
+        .lis__gen-btn:hover:not(:disabled) { background: #004182; }
+        .lis__gen-btn:disabled { opacity: .5; cursor: not-allowed; }
+        .lis__error { font-size: .75rem; color: var(--danger); }
+        .lis__preview {
+          display: flex; flex-direction: column; gap: .5rem;
+          background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: .9rem;
+        }
+        .lis__preview-header { display: flex; align-items: center; justify-content: space-between; }
+        .lis__chars { font-size: .72rem; color: #64748b; }
+        .lis__chars--over { color: #ef4444; font-weight: 700; }
+        .lis__post-textarea {
           width: 100%; resize: vertical; border: 1px solid var(--border);
-          border-radius: var(--radius-sm); background: var(--bg-alt);
-          color: var(--text); font-size: .85rem; line-height: 1.55;
-          padding: .65rem .8rem; font-family: inherit;
+          border-radius: var(--radius-sm); background: var(--surface);
+          color: var(--text); font-size: .84rem; line-height: 1.6;
+          padding: .65rem .8rem; font-family: inherit; outline: none; transition: border-color .13s;
         }
-        .li-modal__textarea:focus { outline: none; border-color: #0a66c2; }
-        .li-modal__footer { display: flex; align-items: center; gap: .6rem; }
-        .li-modal__chars { font-size: .72rem; color: var(--text-secondary); margin-right: auto; }
-        .li-modal__copy, .li-modal__regen {
+        .lis__post-textarea:focus { border-color: #0a66c2; }
+        .lis__preview-actions { display: flex; gap: .5rem; }
+        .lis__copy-btn, .lis__regen-btn {
           display: flex; align-items: center; gap: .3rem;
           border-radius: var(--radius-sm); font-size: .78rem; font-weight: 600;
-          padding: .3rem .8rem; cursor: pointer; transition: background 110ms, color 110ms;
+          padding: .3rem .8rem; cursor: pointer; transition: background .11s, color .11s;
         }
-        .li-modal__copy {
+        .lis__copy-btn {
           background: none; border: 1px solid var(--border); color: var(--text-secondary);
         }
-        .li-modal__copy:hover { border-color: #58a6ff; color: #58a6ff; }
-        .li-modal__regen {
+        .lis__copy-btn:hover { border-color: #58a6ff; color: #58a6ff; }
+        .lis__regen-btn {
           background: #0a66c2; border: 1px solid #0a66c2; color: #fff;
         }
-        .li-modal__regen:hover:not(:disabled) { background: #004182; border-color: #004182; }
-        .li-modal__regen:disabled { opacity: .5; cursor: not-allowed; }
+        .lis__regen-btn:hover:not(:disabled) { background: #004182; border-color: #004182; }
+        .lis__regen-btn:disabled { opacity: .5; cursor: not-allowed; }
+        .lis__details {
+          border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+        }
+        .lis__summary {
+          font-size: .8rem; font-weight: 700; color: var(--text-secondary);
+          padding: .55rem .9rem; cursor: pointer; list-style: none;
+          background: var(--bg); transition: background .12s;
+          display: flex; align-items: center; gap: .4rem;
+        }
+        .lis__summary:hover { background: #f1f5f9; }
+        .lis__summary::-webkit-details-marker { display: none; }
+        .lis__saved-list {
+          display: flex; flex-direction: column; gap: .4rem;
+          padding: .6rem .8rem; background: #fafbfc;
+        }
+        .lis__saved-item {
+          background: var(--surface); border: 1px solid #e2e8f0; border-radius: 8px;
+          padding: .65rem .8rem; display: flex; flex-direction: column; gap: .3rem;
+        }
+        .lis__saved-meta { display: flex; align-items: center; gap: .5rem; }
+        .lis__saved-topic {
+          font-size: .7rem; font-weight: 700; color: #0a66c2;
+          background: #e8f0fe; border-radius: 4px; padding: 1px 6px;
+        }
+        .lis__saved-date { font-size: .68rem; color: #94a3b8; margin-left: auto; }
+        .lis__saved-preview { font-size: .78rem; color: #475569; line-height: 1.45; margin: 0; }
+        .lis__saved-actions { display: flex; gap: .4rem; align-items: center; }
+        .lis__saved-use {
+          border: 1px solid #0a66c2; border-radius: 5px; background: none;
+          color: #0a66c2; font-size: .73rem; font-weight: 600; padding: .18rem .6rem;
+          cursor: pointer; transition: background .11s, color .11s;
+        }
+        .lis__saved-use:hover { background: #0a66c2; color: #fff; }
+        .lis__saved-del {
+          background: none; border: none; cursor: pointer;
+          color: #94a3b8; font-size: .9rem; padding: .15rem .3rem;
+          border-radius: 4px; transition: color .11s;
+        }
+        .lis__saved-del:hover { color: #ef4444; }
+        .lis__cron-section { padding: .65rem .9rem; background: #fafbfc; display: flex; flex-direction: column; gap: .5rem; }
+        .lis__cron-row { display: flex; gap: .5rem; align-items: center; }
+        .lis__cron-sel {
+          border: 1px solid var(--border); border-radius: var(--radius-sm);
+          background: var(--bg); color: var(--text); font-size: .82rem;
+          padding: .3rem .55rem; outline: none; font-family: inherit;
+        }
+        .lis__cron-add {
+          display: flex; align-items: center; gap: .3rem;
+          border: 1px solid #22c55e; border-radius: var(--radius-sm);
+          background: none; color: #16a34a; font-size: .78rem; font-weight: 700;
+          padding: .3rem .75rem; cursor: pointer; transition: background .11s, color .11s;
+        }
+        .lis__cron-add:hover:not(:disabled) { background: #22c55e; color: #fff; }
+        .lis__cron-add:disabled { opacity: .5; cursor: not-allowed; }
+        .lis__cron-list { display: flex; flex-direction: column; gap: .3rem; }
+        .lis__cron-item {
+          display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+          background: var(--surface); border: 1px solid #e2e8f0;
+          border-radius: 6px; padding: .45rem .65rem;
+        }
+        .lis__cron-badge {
+          font-size: .7rem; font-weight: 700; background: #dcfce7; color: #16a34a;
+          border-radius: 4px; padding: 1px 7px;
+        }
+        .lis__cron-topic { font-size: .75rem; color: #475569; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .lis__cron-next { font-size: .7rem; color: #94a3b8; white-space: nowrap; }
+        .lis__cron-del {
+          background: none; border: none; cursor: pointer; color: #94a3b8;
+          font-size: .8rem; padding: .1rem .3rem; border-radius: 4px; margin-left: auto;
+          transition: color .11s;
+        }
+        .lis__cron-del:hover { color: #ef4444; }
 
         /* ── Edit node form ── */
         .kb-panel__edit-section {
@@ -2526,6 +3816,67 @@ export function RoadmapGenerator() {
           font-size: 1.15rem; line-height: 1; transition: all 120ms; flex-shrink: 0;
         }
         .code-modal__close:hover { border-color: #f85149; color: #f85149; }
+        .code-modal__run-btn {
+          display: flex; align-items: center; gap: .3rem;
+          background: #1a3a1a; border: 1px solid #3fb950; border-radius: 5px;
+          color: #3fb950; padding: .32rem .8rem; cursor: pointer;
+          font-size: .78rem; font-weight: 700; transition: all 120ms; flex-shrink: 0;
+          white-space: nowrap;
+        }
+        .code-modal__run-btn:hover:not(:disabled) { background: #3fb950; color: #0d1117; }
+        .code-modal__run-btn:disabled { opacity: .5; cursor: not-allowed; }
+        .code-modal__run-btn--sm { padding: .28rem .55rem; font-size: .85rem; }
+
+        /* Terminal panel */
+        .code-modal__terminal {
+          border: 1px solid #238636; border-radius: 6px; overflow: hidden;
+          margin: .75rem .75rem 0; background: #010409; flex-shrink: 0;
+        }
+        .code-modal__terminal-header {
+          display: flex; align-items: center; gap: .5rem;
+          padding: .35rem .75rem; background: #161b22; border-bottom: 1px solid #238636;
+        }
+        .code-modal__terminal-title { font-size: .76rem; font-weight: 700; color: #3fb950; flex: 1; }
+        .code-modal__terminal-badge {
+          font-size: .68rem; color: #8b949e; background: #21262d;
+          padding: .1rem .4rem; border-radius: 3px; font-family: monospace;
+        }
+        .code-modal__terminal-close {
+          background: none; border: none; color: #8b949e; cursor: pointer;
+          font-size: .95rem; padding: 0 .2rem; line-height: 1;
+        }
+        .code-modal__terminal-close:hover { color: #f85149; }
+        .code-modal__stdin-row {
+          display: flex; align-items: center; gap: .4rem;
+          padding: .35rem .6rem; border-bottom: 1px solid #21262d; background: #0d1117;
+        }
+        .code-modal__stdin-label { font-size: .68rem; color: #8b949e; font-family: monospace; flex-shrink: 0; }
+        .code-modal__stdin-input {
+          flex: 1; background: transparent; border: none; outline: none;
+          color: #cdd9e5; font-size: .75rem; font-family: monospace;
+        }
+        .code-modal__stdin-input::placeholder { color: #3d444d; }
+        .code-modal__terminal-body {
+          padding: .65rem .85rem; min-height: 60px; max-height: 260px; overflow-y: auto;
+        }
+        .code-modal__terminal-body--loading {
+          display: flex; align-items: center; gap: .5rem;
+          color: #8b949e; font-size: .78rem;
+        }
+        .code-modal__terminal-out {
+          margin: 0; font-family: "Fira Code", Consolas, monospace;
+          font-size: .76rem; color: #cdd9e5; white-space: pre-wrap; word-break: break-all;
+        }
+        .code-modal__terminal-err {
+          margin: .4rem 0 0; font-family: "Fira Code", Consolas, monospace;
+          font-size: .76rem; color: #f85149; white-space: pre-wrap; word-break: break-all;
+        }
+        .code-modal__terminal-empty { font-size: .76rem; color: #3d444d; font-style: italic; }
+        .code-modal__terminal-exit {
+          margin-top: .5rem; font-size: .68rem; color: #3d444d;
+          font-family: monospace; border-top: 1px solid #21262d; padding-top: .35rem;
+        }
+        .code-modal__spin--green { border-color: rgba(63,185,80,.25); border-top-color: #3fb950; }
         .code-modal__spin {
           width: 12px; height: 12px;
           border: 1.5px solid rgba(88,166,255,.25); border-top-color: #58a6ff;
@@ -2554,6 +3905,207 @@ export function RoadmapGenerator() {
           background: transparent;
         }
         .code-modal__line { min-height: 1.75em; }
+
+        /* ── Interaction mode toggle ─────────────────────────────────── */
+        .rg2__mode-panel {
+          display: flex; flex-direction: column; gap: 4px;
+          background: var(--surface, #fff);
+          border: 1px solid #e2e8f0;
+          border-radius: 8px; padding: 4px;
+          box-shadow: 0 2px 8px rgba(0,0,0,.08);
+        }
+        .rg2__mode-btn {
+          width: 32px; height: 32px; border: none; border-radius: 6px;
+          background: transparent; cursor: pointer;
+          font-size: 1rem; display: flex; align-items: center; justify-content: center;
+          color: #64748b; transition: background .15s, color .15s;
+        }
+        .rg2__mode-btn:hover { background: #f1f5f9; color: #1e293b; }
+        .rg2__mode-btn--active {
+          background: #4f7df3; color: #fff;
+        }
+        .rg2__mode-btn--active:hover { background: #3b6de0; color: #fff; }
+
+        /* ── Checklist button ───────────────────────────────────────────── */
+        .rg2__checklist-btn {
+          padding: .35rem .8rem; border-radius: 7px; border: 1.5px solid #8b5cf6;
+          background: transparent; color: #8b5cf6; font-size: .78rem; font-weight: 600;
+          cursor: pointer; transition: background .15s, color .15s;
+        }
+        .rg2__checklist-btn:hover,
+        .rg2__checklist-btn--active { background: #8b5cf6; color: #fff; }
+
+        /* ── Checklist panel ─────────────────────────────────────────────── */
+        .cl-panel {
+          position: absolute; left: 0; top: 0; bottom: 0;
+          width: 300px; z-index: 50;
+          display: flex; flex-direction: column;
+          background: var(--surface, #fff);
+          border-right: 1px solid #e2e8f0;
+          box-shadow: 4px 0 24px rgba(0,0,0,.08);
+        }
+        .cl-panel__header {
+          display: flex; align-items: center; justify-content: space-between;
+          padding: .75rem 1rem; border-bottom: 1px solid #e2e8f0;
+          background: #f8fafc; flex-shrink: 0;
+        }
+        .cl-panel__title { font-size: .82rem; font-weight: 700; color: #1e293b; }
+        .cl-panel__close {
+          border: none; background: transparent; cursor: pointer;
+          font-size: 1.1rem; color: #94a3b8; padding: 2px 6px; border-radius: 4px;
+        }
+        .cl-panel__close:hover { background: #f1f5f9; color: #1e293b; }
+        .cl-panel__progress {
+          display: flex; align-items: center; gap: 8px;
+          padding: .55rem 1rem; border-bottom: 1px solid #f1f5f9; flex-shrink: 0;
+        }
+        .cl-panel__progress-bar {
+          flex: 1; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden;
+        }
+        .cl-panel__progress-fill {
+          height: 100%; background: #22c55e; border-radius: 3px;
+          transition: width .3s ease;
+        }
+        .cl-panel__progress-label { font-size: .7rem; color: #64748b; white-space: nowrap; font-weight: 600; }
+        .cl-panel__list { flex: 1; overflow-y: auto; padding: .4rem 0; }
+
+        /* checklist items */
+        .cl-item {
+          display: flex; align-items: flex-start; gap: 7px;
+          padding: .3rem .75rem; cursor: pointer;
+          transition: background .1s; user-select: none;
+        }
+        .cl-item:hover { background: #f8fafc; }
+        .cl-item--phase {
+          font-size: .76rem; font-weight: 700; color: #334155;
+          border-top: 1px solid #f1f5f9; margin-top: .25rem;
+        }
+        .cl-item--phase:first-child { border-top: none; margin-top: 0; }
+        .cl-item--topic  { font-size: .74rem; color: #475569; }
+        .cl-item--subtopic { font-size: .71rem; color: #64748b; }
+        .cl-item__cb { flex-shrink: 0; margin-top: 2px; accent-color: #22c55e; cursor: pointer; }
+        .cl-item__title { flex: 1; line-height: 1.4; }
+        .cl-item__count {
+          font-size: .65rem; color: #94a3b8; white-space: nowrap;
+          background: #f1f5f9; border-radius: 8px; padding: 1px 6px;
+        }
+        .cl-item--done .cl-item__title {
+          text-decoration: line-through; color: #94a3b8;
+        }
+
+        /* done node on canvas */
+        .rmn--done { background: #f0fdf4 !important; }
+        .rmn__done-badge {
+          display: inline-flex; align-items: center; gap: 3px;
+          font-size: .58rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+          color: #16a34a; border: 1px solid #bbf7d0; background: #dcfce7;
+          border-radius: 4px; padding: 1px 5px; margin-bottom: .3rem; line-height: 1.6;
+        }
+
+        /* ── Roadmap Chat button ────────────────────────────────────────── */
+        .rg2__chat-btn {
+          padding: .35rem .8rem; border-radius: 7px; border: 1.5px solid #22a06b;
+          background: transparent; color: #22a06b; font-size: .78rem; font-weight: 600;
+          cursor: pointer; transition: background .15s, color .15s;
+        }
+        .rg2__chat-btn:hover { background: #22a06b; color: #fff; }
+
+        /* ── Roadmap Chat Panel ──────────────────────────────────────────── */
+        .rc-panel {
+          position: absolute; right: 0; top: 0; bottom: 0;
+          width: 380px; z-index: 50;
+          display: flex; flex-direction: column;
+          background: var(--surface, #fff);
+          border-left: 1px solid #e2e8f0;
+          box-shadow: -4px 0 24px rgba(0,0,0,.10);
+        }
+        .rc-panel__drop-hint {
+          display: flex; align-items: center; justify-content: center; gap: 8px;
+          padding: .35rem .75rem; margin: 0 .75rem .3rem;
+          background: #eff6ff; border: 1.5px dashed #93c5fd; border-radius: 7px;
+          color: #3b82f6; font-size: .72rem; font-weight: 600;
+          pointer-events: none; flex-shrink: 0;
+        }
+        .rc-panel__header {
+          display: flex; align-items: center; justify-content: space-between;
+          padding: .75rem 1rem; border-bottom: 1px solid #e2e8f0;
+          background: #f8fafc; flex-shrink: 0;
+        }
+        .rc-panel__title { font-size: .82rem; font-weight: 700; color: #1e293b; }
+        .rc-panel__clear {
+          border: none; background: transparent; cursor: pointer;
+          font-size: .95rem; color: #94a3b8; padding: 2px 4px; border-radius: 4px;
+        }
+        .rc-panel__clear:hover { color: #ef4444; background: #fee2e2; }
+        .rc-panel__close {
+          border: none; background: transparent; cursor: pointer;
+          font-size: 1.1rem; color: #94a3b8; line-height: 1; padding: 2px 6px; border-radius: 4px;
+        }
+        .rc-panel__close:hover { background: #f1f5f9; color: #1e293b; }
+        .rc-panel__messages {
+          flex: 1; overflow-y: auto; padding: .75rem 1rem; display: flex; flex-direction: column; gap: .6rem;
+        }
+        .rc-panel__hint { font-size: .78rem; color: #94a3b8; text-align: center; padding: 1rem 0; }
+        .rc-msg { display: flex; flex-direction: column; max-width: 88%; }
+        .rc-msg--user  { align-self: flex-end; align-items: flex-end; }
+        .rc-msg--assistant { align-self: flex-start; align-items: flex-start; }
+        .rc-msg__bubble {
+          padding: .55rem .8rem; border-radius: 12px; font-size: .8rem; line-height: 1.55;
+          white-space: pre-wrap; word-break: break-word;
+        }
+        .rc-msg--user      .rc-msg__bubble { background: #4f7df3; color: #fff; border-bottom-right-radius: 3px; }
+        .rc-msg--assistant .rc-msg__bubble { background: #f1f5f9; color: #1e293b; border-bottom-left-radius: 3px; }
+        .rc-msg__time { font-size: .65rem; color: #94a3b8; margin-top: 2px; padding: 0 4px; }
+        .rc-msg__typing { display: flex; gap: 4px; align-items: center; min-height: 1.4em; }
+        .rc-dot {
+          width: 6px; height: 6px; border-radius: 50%; background: #94a3b8;
+          animation: rcDotBounce .9s infinite ease-in-out;
+        }
+        .rc-dot:nth-child(2) { animation-delay: .15s; }
+        .rc-dot:nth-child(3) { animation-delay: .3s; }
+        @keyframes rcDotBounce { 0%,80%,100% { transform: scale(.7); opacity:.5; } 40% { transform: scale(1); opacity:1; } }
+        .rc-panel__pin {
+          display: flex; align-items: center; gap: 6px;
+          background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px;
+          padding: 5px 8px; font-size: .75rem; color: #2563eb; flex-shrink: 0;
+        }
+        .rc-panel__pin-label { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .rc-panel__pin-clear {
+          border: none; background: transparent; cursor: pointer;
+          font-size: 1rem; color: #93c5fd; line-height: 1; padding: 0 2px;
+        }
+        .rc-panel__pin-clear:hover { color: #2563eb; }
+        .rc-panel__footer {
+          flex-shrink: 0; padding: .6rem .75rem; border-top: 1px solid #e2e8f0;
+          display: flex; flex-direction: column; gap: .45rem; background: #f8fafc;
+        }
+        .rc-panel__input-row { display: flex; gap: 6px; align-items: flex-end; }
+        .rc-panel__input {
+          flex: 1; resize: none; border: 1.5px solid #e2e8f0; border-radius: 8px;
+          padding: .45rem .6rem; font-size: .8rem; line-height: 1.45; outline: none;
+          font-family: inherit; transition: border-color .15s;
+        }
+        .rc-panel__input:focus { border-color: #4f7df3; }
+        .rc-panel__mic {
+          flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%; border: 1.5px solid #e2e8f0;
+          background: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center;
+          color: #64748b; transition: background .15s, border-color .15s, color .15s;
+        }
+        .rc-panel__mic:hover { background: #f1f5f9; border-color: #cbd5e1; }
+        .rc-panel__mic--active { background: #ef4444; border-color: #ef4444; color: #fff; animation: rcPulse 1s infinite; }
+        @keyframes rcPulse { 0%,100% { box-shadow: 0 0 0 0 #ef444440; } 50% { box-shadow: 0 0 0 6px #ef444400; } }
+        .rc-panel__send {
+          align-self: flex-end; padding: .4rem .9rem; border-radius: 7px;
+          border: none; background: #4f7df3; color: #fff;
+          font-size: .78rem; font-weight: 600; cursor: pointer; transition: background .15s;
+          display: flex; align-items: center; gap: 4px;
+        }
+        .rc-panel__send:hover:not(:disabled) { background: #3b6de0; }
+        .rc-panel__send:disabled { background: #cbd5e1; cursor: not-allowed; }
+        .rc-panel__spin {
+          width: 12px; height: 12px; border: 2px solid #fff4; border-top-color: #fff;
+          border-radius: 50%; animation: spin .7s linear infinite; display: inline-block;
+        }
       `}</style>
     </div>
   );

@@ -23,11 +23,12 @@ Regras obrigatórias:
 ## user_prompt_template
 
 Tópico: {title}
+Descrição: {description}
 
 Trechos da base de conhecimento sobre este tópico (use apenas os relevantes ao tópico):
 {content}
 
-Gere 5 pares de pergunta e resposta EXCLUSIVAMENTE sobre o tópico "{title}".
+Gere 5 pares de pergunta e resposta EXCLUSIVAMENTE sobre o tópico "{title}" conforme descrito acima.
 
 Retorne APENAS este JSON (sem markdown):
 {{"qa_pairs": [{{"question": "<pergunta clara e objetiva>", "answer": "<resposta completa citando o conteúdo>", "sources": ["<título do documento 1>", "<título do documento 2>"], "difficulty": "conceitual" | "prática" | "desafiadora"}}]}}
