@@ -105,6 +105,26 @@ ORDER BY length(path) ASC
 LIMIT 1
 """
 
+# ── Cypher — full roadmap context ─────────────────────────────────────────────
+
+_FULL_ROADMAP_CONTEXT = """
+MATCH (g:RoadmapGoal {roadmap_id: $roadmap_id})
+OPTIONAL MATCH (g)-[:HAS_PHASE]->(ph:RoadmapPhase)
+OPTIONAL MATCH (ph)-[:HAS_TOPIC]->(t:RoadmapTopic)
+OPTIONAL MATCH (t)-[:EXPANDED_TO]->(st:RoadmapTopic)
+RETURN
+  g.title        AS goal_title,
+  g.goal         AS goal,
+  ph.title       AS phase_title,
+  ph.duration    AS phase_duration,
+  ph.phase_index AS phase_index,
+  t.title        AS topic_title,
+  t.description  AS topic_desc,
+  t.node_id      AS topic_id,
+  collect(DISTINCT {title: st.title, description: st.description}) AS subtopics
+ORDER BY ph.phase_index, t.title
+"""
+
 
 def _get_driver(url: str, user: str, password: str) -> Any:
     try:
@@ -232,5 +252,64 @@ class RoadmapGraphService:
         desc = record["description"] or ""
         if desc:
             lines.append(f"📝 Descrição: {desc}")
+
+        return "\n".join(lines)
+
+    def get_full_roadmap_context(self, roadmap_id: str) -> str:
+        """
+        Returns the entire roadmap graph as structured text for injection into
+        the LLM chat prompt — all phases, topics and expanded subtopics.
+        """
+        with self._driver.session(database=self._db) as s:
+            records = list(s.run(_FULL_ROADMAP_CONTEXT, roadmap_id=roadmap_id))
+
+        if not records:
+            return ""
+
+        # Extract goal info from first row
+        goal_title = records[0]["goal_title"] or ""
+        goal       = records[0]["goal"] or ""
+
+        # Group by phase
+        phases: dict[str, dict] = {}
+        for rec in records:
+            ph_title = rec["phase_title"]
+            if not ph_title:
+                continue
+            ph_key = f"{rec['phase_index']}:{ph_title}"
+            if ph_key not in phases:
+                phases[ph_key] = {
+                    "title":    ph_title,
+                    "duration": rec["phase_duration"] or "",
+                    "index":    rec["phase_index"] if rec["phase_index"] is not None else 999,
+                    "topics":   [],
+                }
+            t_title = rec["topic_title"]
+            if t_title:
+                subtopics = [
+                    st for st in (rec["subtopics"] or [])
+                    if st and st.get("title")
+                ]
+                phases[ph_key]["topics"].append({
+                    "title":     t_title,
+                    "desc":      rec["topic_desc"] or "",
+                    "subtopics": subtopics,
+                })
+
+        lines: list[str] = [
+            f"Roadmap: {goal_title}",
+            f"Objetivo: {goal}",
+            "",
+        ]
+        for ph in sorted(phases.values(), key=lambda p: p["index"]):
+            dur = f" ({ph['duration']})" if ph["duration"] else ""
+            lines.append(f"## Fase: {ph['title']}{dur}")
+            for t in ph["topics"]:
+                desc = f" — {t['desc']}" if t["desc"] else ""
+                lines.append(f"  • {t['title']}{desc}")
+                for st in t["subtopics"]:
+                    st_desc = f": {st['description']}" if st.get("description") else ""
+                    lines.append(f"    ◦ {st['title']}{st_desc}")
+            lines.append("")
 
         return "\n".join(lines)

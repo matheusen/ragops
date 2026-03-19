@@ -2568,16 +2568,27 @@ def code_execute(
 # ---------------------------------------------------------------------------
 
 def _build_roadmap_context(doc: dict) -> str:
-    """Serializa o roadmap em texto compacto para o prompt."""
+    """Serializa o roadmap completo (fases, tópicos e subtópicos expandidos) para o prompt."""
     lines = [
         f"Título: {doc.get('title', '')}",
         f"Objetivo: {doc.get('goal', '')}",
         "",
     ]
+
+    # Index expanded nodes by parent_id for quick lookup
+    expanded_by_parent: dict[str, list[dict]] = {}
+    for exp in (doc.get("expanded_nodes") or []):
+        pid = exp.get("parent_id", "")
+        if pid:
+            expanded_by_parent.setdefault(pid, []).append(exp)
+
     for phase in (doc.get("phases") or []):
         lines.append(f"Fase: {phase.get('title','')} ({phase.get('duration','')})")
         for topic in (phase.get("topics") or []):
-            lines.append(f"  • {topic.get('title','')}: {topic.get('description','')[:120]}")
+            tid = topic.get("id", "")
+            lines.append(f"  • {topic.get('title','')}: {topic.get('description','')}")
+            for sub in expanded_by_parent.get(tid, []):
+                lines.append(f"    ◦ {sub.get('title','')}: {sub.get('description','')}")
     return "\n".join(lines)
 
 
@@ -2618,21 +2629,26 @@ def roadmap_chat(
     chat_doc = chats.find_one({"roadmap_id": roadmap_id}) or {}
     history: list[dict] = chat_doc.get("messages", [])
 
-    # ── Contexto do grafo Neo4j (pai, filhos, irmãos do nó pinado) ───────────
+    # ── Contexto do grafo Neo4j ────────────────────────────────────────────────
+    # Se há nó pinado: vizinhança detalhada do nó.
+    # Se não há nó pinado: contexto estrutural completo do roadmap (todos os nós).
     graph_context = ""
-    if node_title:
-        graph = _roadmap_graph()
-        if graph:
-            try:
-                # Try to find the node_id from node_context if available
-                _nc_id = node_context.get("id", "")
-                if _nc_id:
-                    graph_context = graph.get_node_neighbourhood(roadmap_id, _nc_id)
-            except Exception:
-                pass
-            finally:
-                graph.close()
-    if graph_context:
+    graph = _roadmap_graph()
+    if graph:
+        try:
+            _nc_id = node_context.get("id", "")
+            if _nc_id:
+                graph_context = graph.get_node_neighbourhood(roadmap_id, _nc_id)
+            else:
+                graph_context = graph.get_full_roadmap_context(roadmap_id)
+        except Exception:
+            pass
+        finally:
+            graph.close()
+    if graph_context and not node_title:
+        # Full graph replaces the MongoDB-serialized context (more complete)
+        roadmap_context = graph_context
+    elif graph_context and node_title:
         question_for_llm = f"{graph_context}\n\n{question_for_llm}"
 
     # ── Busca contexto da KB (articles + books) ───────────────────────────────

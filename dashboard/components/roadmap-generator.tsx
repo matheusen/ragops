@@ -2272,7 +2272,7 @@ export function RoadmapGenerator() {
           placeholder="Descreva seu objetivo… (ex: engenheiro de software avançado em Java, Spring Boot e IA)"
           value={goal}
           onChange={(e) => setGoal(e.target.value)}
-          rows={1}
+          rows={3}
           disabled={loading}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); generate(); } }}
         />
@@ -2285,7 +2285,7 @@ export function RoadmapGenerator() {
               onClick={() => setProvider(p.id)}
               disabled={loading}
             >
-              <span>{p.icon}</span><span>{p.label}</span>
+              {p.label}
             </button>
           ))}
         </div>
@@ -2297,7 +2297,7 @@ export function RoadmapGenerator() {
         >
           {loading
             ? <><span className="rg2__spinner" />Gerando…</>
-            : <>🗺️ Gerar Roadmap</>}
+            : "Gerar Roadmap"}
         </button>
         {saving && <span className="rg2__saving">Salvando…</span>}
         {savedId && !saving && <span className="rg2__saved-ok">✓ Salvo</span>}
@@ -2378,7 +2378,7 @@ export function RoadmapGenerator() {
                 disabled={reviewing}
                 title="Revisa e corrige as referências de cada tópico com base na KB real"
               >
-                {reviewing ? <><span className="rg2__spinner" /> Revisando…</> : "🔍 Revisar referências"}
+                {reviewing ? <><span className="rg2__spinner" /> Revisando…</> : "Revisar referências"}
               </button>
               <button
                 className="rg2__linkedin-btn"
@@ -2386,7 +2386,7 @@ export function RoadmapGenerator() {
                 onClick={openLinkedinStudio}
                 title="LinkedIn Studio — gerar e agendar posts"
               >
-                💼 LinkedIn Studio
+                LinkedIn Studio
               </button>
               <button
                 className={`rg2__checklist-btn${showChecklist ? " rg2__checklist-btn--active" : ""}`}
@@ -2394,7 +2394,7 @@ export function RoadmapGenerator() {
                 onClick={() => setShowChecklist(v => !v)}
                 title="Ver checklist de progresso"
               >
-                ☑ Checklist
+                Checklist
               </button>
               <button
                 className="rg2__chat-btn"
@@ -2402,7 +2402,7 @@ export function RoadmapGenerator() {
                 onClick={() => setShowChat(v => !v)}
                 title="Chat com tutor sobre este roadmap"
               >
-                💬 Chat
+                Chat
               </button>
             </div>
           </div>
@@ -2753,14 +2753,14 @@ export function RoadmapGenerator() {
         /* ── Roadmap v2 layout ── */
         .rg2 {
           display: flex; flex-direction: column;
-          height: calc(100vh - var(--topbar-h));
+          height: 100%;
           overflow: hidden; gap: 0;
         }
 
         /* Config strip */
         .rg2__strip {
-          display: flex; flex-wrap: wrap; align-items: center; gap: .75rem;
-          padding: .75rem 1.25rem;
+          display: flex; flex-wrap: wrap; align-items: flex-start; gap: .75rem;
+          padding: .85rem 1.25rem;
           background: var(--surface);
           border-bottom: 1px solid var(--border);
           flex-shrink: 0;
@@ -2768,9 +2768,9 @@ export function RoadmapGenerator() {
         .rg2__goal-input {
           flex: 1; min-width: 260px; resize: none;
           border: 1px solid var(--border); border-radius: var(--radius-md);
-          padding: .5rem .85rem; font-size: .9rem; color: var(--text);
+          padding: .65rem 1rem; font-size: .9rem; color: var(--text);
           background: var(--bg); outline: none; transition: border-color 140ms;
-          line-height: 1.4;
+          line-height: 1.6; min-height: 72px;
         }
         .rg2__goal-input:focus { border-color: var(--primary); }
         .rg2__goal-input:disabled { opacity: .6; }
@@ -3375,22 +3375,22 @@ export function RoadmapGenerator() {
         .rg2__expand-err { font-size: .72rem; color: var(--danger); }
         .rg2__review-btn {
           display: flex; align-items: center; gap: .35rem;
-          background: none; border: 1px solid var(--border); border-radius: var(--radius-sm);
-          color: var(--text-secondary); padding: .28rem .75rem;
-          font-size: .78rem; font-weight: 600; cursor: pointer; white-space: nowrap;
-          transition: border-color 120ms, color 120ms;
+          background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
+          color: var(--text-secondary); padding: .3rem .7rem;
+          font-size: .8rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+          transition: border-color 110ms, color 110ms;
         }
-        .rg2__review-btn:hover:not(:disabled) { border-color: #58a6ff; color: #58a6ff; }
+        .rg2__review-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
         .rg2__review-btn:disabled { opacity: .5; cursor: not-allowed; }
         .rg2__review-ok { font-size: .72rem; color: var(--success); }
         .rg2__linkedin-btn {
           display: flex; align-items: center; gap: .35rem;
-          background: none; border: 1px solid #0a66c2; border-radius: var(--radius-sm);
-          color: #0a66c2; padding: .28rem .75rem;
-          font-size: .78rem; font-weight: 600; cursor: pointer; white-space: nowrap;
-          transition: background 120ms, color 120ms;
+          background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
+          color: var(--text-secondary); padding: .3rem .7rem;
+          font-size: .8rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+          transition: border-color 110ms, color 110ms;
         }
-        .rg2__linkedin-btn:hover:not(:disabled) { background: #0a66c2; color: #fff; }
+        .rg2__linkedin-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
         .rg2__linkedin-btn:disabled { opacity: .5; cursor: not-allowed; }
 
         /* ── LinkedIn Studio Modal ── */
@@ -3928,12 +3928,13 @@ export function RoadmapGenerator() {
 
         /* ── Checklist button ───────────────────────────────────────────── */
         .rg2__checklist-btn {
-          padding: .35rem .8rem; border-radius: 7px; border: 1.5px solid #8b5cf6;
-          background: transparent; color: #8b5cf6; font-size: .78rem; font-weight: 600;
-          cursor: pointer; transition: background .15s, color .15s;
+          background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
+          color: var(--text-secondary); padding: .3rem .7rem;
+          font-size: .8rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+          transition: border-color 110ms, color 110ms, background 110ms;
         }
-        .rg2__checklist-btn:hover,
-        .rg2__checklist-btn--active { background: #8b5cf6; color: #fff; }
+        .rg2__checklist-btn:hover { border-color: var(--primary); color: var(--primary); }
+        .rg2__checklist-btn--active { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
 
         /* ── Checklist panel ─────────────────────────────────────────────── */
         .cl-panel {
@@ -4004,11 +4005,12 @@ export function RoadmapGenerator() {
 
         /* ── Roadmap Chat button ────────────────────────────────────────── */
         .rg2__chat-btn {
-          padding: .35rem .8rem; border-radius: 7px; border: 1.5px solid #22a06b;
-          background: transparent; color: #22a06b; font-size: .78rem; font-weight: 600;
-          cursor: pointer; transition: background .15s, color .15s;
+          background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
+          color: var(--text-secondary); padding: .3rem .7rem;
+          font-size: .8rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+          transition: border-color 110ms, color 110ms;
         }
-        .rg2__chat-btn:hover { background: #22a06b; color: #fff; }
+        .rg2__chat-btn:hover { border-color: var(--primary); color: var(--primary); }
 
         /* ── Roadmap Chat Panel ──────────────────────────────────────────── */
         .rc-panel {

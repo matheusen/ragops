@@ -47,6 +47,16 @@ export async function saveSettingAction(
   }
 }
 
+export async function setThemeAction(theme: "light" | "dark"): Promise<void> {
+  await saveSetting("UI_THEME", theme);
+}
+
+export async function getThemeAction(): Promise<"light" | "dark"> {
+  const { getSettingsOverrides } = await import("@/lib/settings-store");
+  const overrides = await getSettingsOverrides();
+  return (overrides["UI_THEME"] as "light" | "dark") || "light";
+}
+
 export async function createPromptAction(
   _previousState: PromptActionState,
   formData: FormData,
