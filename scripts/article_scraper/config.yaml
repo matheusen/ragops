@@ -1,0 +1,146 @@
+# ══════════════════════════════════════════════════════════
+#  Article Scraper — Configuração (Selenium puro)
+#  Acessa os sites diretamente com browser automatizado.
+# ══════════════════════════════════════════════════════════
+
+# ── Browser ──────────────────────────────────────────────
+browser:
+  headless: true          # false = ver o browser em tempo real
+  window_width: 1400
+  window_height: 900
+  page_load_timeout: 30   # segundos
+  implicit_wait: 5
+
+# ── Diretórios de saída ──────────────────────────────────
+output:
+  base_dir: "./results"
+  metadata_dir: "metadata"
+  downloads_dir: "downloads"
+  reports_dir: "reports"
+  screenshots_dir: "screenshots"   # screenshots em caso de erro
+
+# ── Queries de busca ─────────────────────────────────────
+queries:
+  - query: "large language models software engineering"
+    max_results: 30
+  - query: "retrieval augmented generation RAG"
+    max_results: 30
+  - query: "Java microservices architecture"
+    max_results: 20
+  - query: "machine learning software development"
+    max_results: 25
+  - query: "artificial intelligence code generation"
+    max_results: 30
+  - query: "graph neural networks knowledge"
+    max_results: 20
+  - query: "Spring Boot distributed systems"
+    max_results: 20
+  - query: "natural language processing programming"
+    max_results: 25
+  # Novas queries
+  - query: "LLM fine-tuning instruction tuning"
+    max_results: 25
+  - query: "transformer architecture attention mechanism"
+    max_results: 25
+  - query: "vector database semantic search embedding"
+    max_results: 25
+  - query: "software architecture design patterns microservices"
+    max_results: 20
+  - query: "automated software testing LLM"
+    max_results: 20
+  - query: "code review static analysis machine learning"
+    max_results: 20
+  - query: "knowledge graph question answering"
+    max_results: 20
+  - query: "continual learning catastrophic forgetting"
+    max_results: 20
+  - query: "prompt engineering in-context learning"
+    max_results: 25
+  - query: "diffusion models generative AI"
+    max_results: 20
+
+# ── Fontes ───────────────────────────────────────────────
+sources:
+
+  arxiv:
+    enabled: true
+    max_per_query: 25
+    # Filtro por categoria (deixe vazio = todas)
+    # cs.AI, cs.SE, cs.LG, cs.IR, cs.PL, cs.CL, cs.NE
+    category_filter: "cs.AI OR cs.SE OR cs.LG OR cs.IR"
+    sort: "relevance"           # relevance | lastUpdatedDate | submittedDate
+    start_year: 2018
+
+  ieee:
+    enabled: true
+    max_per_query: 20
+    start_year: 2018
+    # Tipo: "" = todos | Journals | Conferences | Early Access
+    content_type: ""
+    # Delay extra pois IEEE tem proteção antibot
+    extra_delay: 3
+
+  semantic_scholar:
+    enabled: true
+    max_per_query: 20
+    start_year: 2018
+    sort: "Relevance"           # Relevance | Publication Date | Citation Count
+
+  acm:
+    enabled: true
+    max_per_query: 20
+    start_year: 2018
+    # Tipo: "" = todos | research-article | review-article
+    content_type: ""
+
+  springer:
+    enabled: true
+    max_per_query: 20
+    start_year: 2018
+    # Disciplina: Computer Science | Artificial Intelligence | etc
+    discipline: "Computer Science"
+
+  sciencedirect:
+    enabled: true
+    max_per_query: 15
+    start_year: 2018
+
+  core:
+    enabled: true               # Aggregador open access — PDFs gratuitos
+    max_per_query: 25
+    start_year: 2018
+
+  dblp:
+    enabled: true               # Bibligrafia CS — rápido e confiável
+    max_per_query: 20
+    start_year: 2018
+
+  paperswithcode:
+    enabled: true               # ML/AI com links diretos para arXiv PDF
+    max_per_query: 20
+    start_year: 2018
+
+  capes:
+    enabled: false              # Requer VPN universitária
+    max_per_query: 20
+    start_year: 2018
+
+# ── Download de PDFs ──────────────────────────────────────
+downloads:
+  enabled: true
+  open_access_only: false       # tenta baixar todos; artigos pagos falham silenciosamente
+  timeout: 40
+  max_total: 500                # 0 = sem limite
+
+# ── Controles ─────────────────────────────────────────────
+execution:
+  # Delay humano entre ações (min/max em segundos)
+  delay_min: 1.5
+  delay_max: 3.5
+  # Delay entre queries completas
+  delay_between_queries: 5
+  skip_existing: true           # pula DOIs já coletados
+  min_year: 2015                # filtro global de ano mínimo
+  max_total_articles: 1000      # 0 = sem limite
+  # Salvar screenshot se página travar/errar
+  screenshot_on_error: true

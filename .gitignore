@@ -1,6 +1,7 @@
 # ── Local articles / research material ────────────────────────────────────────
 artigos medium/
 src/data/knowledge/
+results/
 
 # ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/

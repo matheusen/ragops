@@ -3941,33 +3941,33 @@ export function RoadmapGenerator() {
           position: absolute; left: 0; top: 0; bottom: 0;
           width: 300px; z-index: 50;
           display: flex; flex-direction: column;
-          background: var(--surface, #fff);
-          border-right: 1px solid #e2e8f0;
+          background: var(--surface);
+          border-right: 1px solid var(--border);
           box-shadow: 4px 0 24px rgba(0,0,0,.08);
         }
         .cl-panel__header {
           display: flex; align-items: center; justify-content: space-between;
-          padding: .75rem 1rem; border-bottom: 1px solid #e2e8f0;
-          background: #f8fafc; flex-shrink: 0;
+          padding: .75rem 1rem; border-bottom: 1px solid var(--border);
+          background: var(--bg); flex-shrink: 0;
         }
-        .cl-panel__title { font-size: .82rem; font-weight: 700; color: #1e293b; }
+        .cl-panel__title { font-size: .82rem; font-weight: 700; color: var(--text); }
         .cl-panel__close {
           border: none; background: transparent; cursor: pointer;
-          font-size: 1.1rem; color: #94a3b8; padding: 2px 6px; border-radius: 4px;
+          font-size: 1.1rem; color: var(--text-tertiary); padding: 2px 6px; border-radius: 4px;
         }
-        .cl-panel__close:hover { background: #f1f5f9; color: #1e293b; }
+        .cl-panel__close:hover { background: var(--border-light); color: var(--text); }
         .cl-panel__progress {
           display: flex; align-items: center; gap: 8px;
-          padding: .55rem 1rem; border-bottom: 1px solid #f1f5f9; flex-shrink: 0;
+          padding: .55rem 1rem; border-bottom: 1px solid var(--border-light); flex-shrink: 0;
         }
         .cl-panel__progress-bar {
-          flex: 1; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden;
+          flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden;
         }
         .cl-panel__progress-fill {
           height: 100%; background: #22c55e; border-radius: 3px;
           transition: width .3s ease;
         }
-        .cl-panel__progress-label { font-size: .7rem; color: #64748b; white-space: nowrap; font-weight: 600; }
+        .cl-panel__progress-label { font-size: .7rem; color: var(--text-secondary); white-space: nowrap; font-weight: 600; }
         .cl-panel__list { flex: 1; overflow-y: auto; padding: .4rem 0; }
 
         /* checklist items */
@@ -3976,22 +3976,22 @@ export function RoadmapGenerator() {
           padding: .3rem .75rem; cursor: pointer;
           transition: background .1s; user-select: none;
         }
-        .cl-item:hover { background: #f8fafc; }
+        .cl-item:hover { background: var(--bg); }
         .cl-item--phase {
-          font-size: .76rem; font-weight: 700; color: #334155;
-          border-top: 1px solid #f1f5f9; margin-top: .25rem;
+          font-size: .76rem; font-weight: 700; color: var(--text);
+          border-top: 1px solid var(--border-light); margin-top: .25rem;
         }
         .cl-item--phase:first-child { border-top: none; margin-top: 0; }
-        .cl-item--topic  { font-size: .74rem; color: #475569; }
-        .cl-item--subtopic { font-size: .71rem; color: #64748b; }
+        .cl-item--topic  { font-size: .74rem; color: var(--text-secondary); }
+        .cl-item--subtopic { font-size: .71rem; color: var(--text-secondary); }
         .cl-item__cb { flex-shrink: 0; margin-top: 2px; accent-color: #22c55e; cursor: pointer; }
         .cl-item__title { flex: 1; line-height: 1.4; }
         .cl-item__count {
-          font-size: .65rem; color: #94a3b8; white-space: nowrap;
-          background: #f1f5f9; border-radius: 8px; padding: 1px 6px;
+          font-size: .65rem; color: var(--text-tertiary); white-space: nowrap;
+          background: var(--border-light); border-radius: 8px; padding: 1px 6px;
         }
         .cl-item--done .cl-item__title {
-          text-decoration: line-through; color: #94a3b8;
+          text-decoration: line-through; color: var(--text-tertiary);
         }
 
         /* done node on canvas */
@@ -4017,37 +4017,37 @@ export function RoadmapGenerator() {
           position: absolute; right: 0; top: 0; bottom: 0;
           width: 380px; z-index: 50;
           display: flex; flex-direction: column;
-          background: var(--surface, #fff);
-          border-left: 1px solid #e2e8f0;
+          background: var(--surface);
+          border-left: 1px solid var(--border);
           box-shadow: -4px 0 24px rgba(0,0,0,.10);
         }
         .rc-panel__drop-hint {
           display: flex; align-items: center; justify-content: center; gap: 8px;
           padding: .35rem .75rem; margin: 0 .75rem .3rem;
-          background: #eff6ff; border: 1.5px dashed #93c5fd; border-radius: 7px;
-          color: #3b82f6; font-size: .72rem; font-weight: 600;
+          background: var(--primary-soft); border: 1.5px dashed var(--primary-medium); border-radius: 7px;
+          color: var(--primary); font-size: .72rem; font-weight: 600;
           pointer-events: none; flex-shrink: 0;
         }
         .rc-panel__header {
           display: flex; align-items: center; justify-content: space-between;
-          padding: .75rem 1rem; border-bottom: 1px solid #e2e8f0;
-          background: #f8fafc; flex-shrink: 0;
+          padding: .75rem 1rem; border-bottom: 1px solid var(--border);
+          background: var(--bg); flex-shrink: 0;
         }
-        .rc-panel__title { font-size: .82rem; font-weight: 700; color: #1e293b; }
+        .rc-panel__title { font-size: .82rem; font-weight: 700; color: var(--text); }
         .rc-panel__clear {
           border: none; background: transparent; cursor: pointer;
-          font-size: .95rem; color: #94a3b8; padding: 2px 4px; border-radius: 4px;
+          font-size: .95rem; color: var(--text-tertiary); padding: 2px 4px; border-radius: 4px;
         }
-        .rc-panel__clear:hover { color: #ef4444; background: #fee2e2; }
+        .rc-panel__clear:hover { color: #ef4444; background: rgba(239,68,68,.12); }
         .rc-panel__close {
           border: none; background: transparent; cursor: pointer;
-          font-size: 1.1rem; color: #94a3b8; line-height: 1; padding: 2px 6px; border-radius: 4px;
+          font-size: 1.1rem; color: var(--text-tertiary); line-height: 1; padding: 2px 6px; border-radius: 4px;
         }
-        .rc-panel__close:hover { background: #f1f5f9; color: #1e293b; }
+        .rc-panel__close:hover { background: var(--border-light); color: var(--text); }
         .rc-panel__messages {
           flex: 1; overflow-y: auto; padding: .75rem 1rem; display: flex; flex-direction: column; gap: .6rem;
         }
-        .rc-panel__hint { font-size: .78rem; color: #94a3b8; text-align: center; padding: 1rem 0; }
+        .rc-panel__hint { font-size: .78rem; color: var(--text-tertiary); text-align: center; padding: 1rem 0; }
         .rc-msg { display: flex; flex-direction: column; max-width: 88%; }
         .rc-msg--user  { align-self: flex-end; align-items: flex-end; }
         .rc-msg--assistant { align-self: flex-start; align-items: flex-start; }
@@ -4055,12 +4055,12 @@ export function RoadmapGenerator() {
           padding: .55rem .8rem; border-radius: 12px; font-size: .8rem; line-height: 1.55;
           white-space: pre-wrap; word-break: break-word;
         }
-        .rc-msg--user      .rc-msg__bubble { background: #4f7df3; color: #fff; border-bottom-right-radius: 3px; }
-        .rc-msg--assistant .rc-msg__bubble { background: #f1f5f9; color: #1e293b; border-bottom-left-radius: 3px; }
-        .rc-msg__time { font-size: .65rem; color: #94a3b8; margin-top: 2px; padding: 0 4px; }
+        .rc-msg--user      .rc-msg__bubble { background: var(--primary); color: #fff; border-bottom-right-radius: 3px; }
+        .rc-msg--assistant .rc-msg__bubble { background: var(--bg-alt); color: var(--text); border-bottom-left-radius: 3px; }
+        .rc-msg__time { font-size: .65rem; color: var(--text-tertiary); margin-top: 2px; padding: 0 4px; }
         .rc-msg__typing { display: flex; gap: 4px; align-items: center; min-height: 1.4em; }
         .rc-dot {
-          width: 6px; height: 6px; border-radius: 50%; background: #94a3b8;
+          width: 6px; height: 6px; border-radius: 50%; background: var(--text-tertiary);
           animation: rcDotBounce .9s infinite ease-in-out;
         }
         .rc-dot:nth-child(2) { animation-delay: .15s; }
@@ -4068,42 +4068,44 @@ export function RoadmapGenerator() {
         @keyframes rcDotBounce { 0%,80%,100% { transform: scale(.7); opacity:.5; } 40% { transform: scale(1); opacity:1; } }
         .rc-panel__pin {
           display: flex; align-items: center; gap: 6px;
-          background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px;
-          padding: 5px 8px; font-size: .75rem; color: #2563eb; flex-shrink: 0;
+          background: var(--primary-soft); border: 1px solid var(--primary-medium); border-radius: 8px;
+          padding: 5px 8px; font-size: .75rem; color: var(--primary); flex-shrink: 0;
         }
         .rc-panel__pin-label { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .rc-panel__pin-clear {
           border: none; background: transparent; cursor: pointer;
-          font-size: 1rem; color: #93c5fd; line-height: 1; padding: 0 2px;
+          font-size: 1rem; color: var(--text-tertiary); line-height: 1; padding: 0 2px;
         }
-        .rc-panel__pin-clear:hover { color: #2563eb; }
+        .rc-panel__pin-clear:hover { color: var(--primary); }
         .rc-panel__footer {
-          flex-shrink: 0; padding: .6rem .75rem; border-top: 1px solid #e2e8f0;
-          display: flex; flex-direction: column; gap: .45rem; background: #f8fafc;
+          flex-shrink: 0; padding: .6rem .75rem; border-top: 1px solid var(--border);
+          display: flex; flex-direction: column; gap: .45rem; background: var(--bg);
         }
         .rc-panel__input-row { display: flex; gap: 6px; align-items: flex-end; }
         .rc-panel__input {
-          flex: 1; resize: none; border: 1.5px solid #e2e8f0; border-radius: 8px;
+          flex: 1; resize: none; border: 1.5px solid var(--border); border-radius: 8px;
           padding: .45rem .6rem; font-size: .8rem; line-height: 1.45; outline: none;
           font-family: inherit; transition: border-color .15s;
+          background: var(--surface); color: var(--text);
         }
-        .rc-panel__input:focus { border-color: #4f7df3; }
+        .rc-panel__input:focus { border-color: var(--primary); }
+        .rc-panel__input::placeholder { color: var(--text-tertiary); }
         .rc-panel__mic {
-          flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%; border: 1.5px solid #e2e8f0;
-          background: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center;
-          color: #64748b; transition: background .15s, border-color .15s, color .15s;
+          flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%; border: 1.5px solid var(--border);
+          background: var(--surface); cursor: pointer; display: flex; align-items: center; justify-content: center;
+          color: var(--text-secondary); transition: background .15s, border-color .15s, color .15s;
         }
-        .rc-panel__mic:hover { background: #f1f5f9; border-color: #cbd5e1; }
+        .rc-panel__mic:hover { background: var(--border-light); border-color: var(--border); }
         .rc-panel__mic--active { background: #ef4444; border-color: #ef4444; color: #fff; animation: rcPulse 1s infinite; }
         @keyframes rcPulse { 0%,100% { box-shadow: 0 0 0 0 #ef444440; } 50% { box-shadow: 0 0 0 6px #ef444400; } }
         .rc-panel__send {
           align-self: flex-end; padding: .4rem .9rem; border-radius: 7px;
-          border: none; background: #4f7df3; color: #fff;
+          border: none; background: var(--primary); color: #fff;
           font-size: .78rem; font-weight: 600; cursor: pointer; transition: background .15s;
           display: flex; align-items: center; gap: 4px;
         }
-        .rc-panel__send:hover:not(:disabled) { background: #3b6de0; }
-        .rc-panel__send:disabled { background: #cbd5e1; cursor: not-allowed; }
+        .rc-panel__send:hover:not(:disabled) { filter: brightness(1.12); }
+        .rc-panel__send:disabled { background: var(--border); cursor: not-allowed; }
         .rc-panel__spin {
           width: 12px; height: 12px; border: 2px solid #fff4; border-top-color: #fff;
           border-radius: 50%; animation: spin .7s linear infinite; display: inline-block;
