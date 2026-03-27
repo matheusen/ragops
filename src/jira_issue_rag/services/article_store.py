@@ -32,6 +32,7 @@ from typing import Any, TYPE_CHECKING
 import httpx
 
 from jira_issue_rag.services.embeddings import EmbeddingService
+from jira_issue_rag.services.minio_store import MinioStore
 from jira_issue_rag.shared.models import (
     ArticleBenchmarkResponse,
     ArticleBenchmarkScenarioResult,
@@ -144,6 +145,7 @@ class ArticleStore:
     def __init__(self, settings: "Settings") -> None:
         self.settings = settings
         self.embeddings = EmbeddingService(settings)
+        self.minio = MinioStore(settings)
 
     def _ensure_article_tenant_scope(
         self,
@@ -485,6 +487,11 @@ class ArticleStore:
         all_topics = sorted({t for ts in topics_per_chunk for t in ts})
         all_entities = sorted({entity for es in entities_per_chunk for entity in es})
 
+        # ── MinIO — upload do PDF original ─────────────────────────────
+        minio_key: str | None = None
+        if path.suffix.lower() == ".pdf":
+            minio_key = self.minio.upload_pdf(path, doc_id)
+
         # ── Qdrant ─────────────────────────────────────────────────────
         _QDRANT_BATCH = 200  # max points per PUT to avoid payload / timeout issues
         indexed = 0
@@ -526,6 +533,7 @@ class ArticleStore:
                             "published_at": temporal_meta["published_at"],
                             "published_year": temporal_meta["published_year"],
                             "version_label": temporal_meta["version_label"],
+                            "minio_key":   minio_key,
                         },
                     })
                 for batch_start in range(0, len(points), _QDRANT_BATCH):
@@ -598,6 +606,7 @@ class ArticleStore:
                                 "published_at": temporal_meta["published_at"],
                                 "published_year": temporal_meta["published_year"],
                                 "version_label": temporal_meta["version_label"],
+                                "minio_key":   minio_key,
                             },
                         })
                     for batch_start in range(0, len(img_points), _QDRANT_BATCH):
@@ -635,6 +644,7 @@ class ArticleStore:
             chunk_stats=chunk_stats,
             warnings=ingest_warnings,
             ok=True,
+            minio_key=minio_key,
         )
 
     # ── Text extraction & chunking ────────────────────────────────────────────
@@ -2388,6 +2398,7 @@ class ArticleStore:
             graph_usefulness=assessment,
             evidence_paths=evidence_paths,
             image_path=payload.get("image_path") or None,
+            minio_key=payload.get("minio_key") or None,
         )
 
     # ── Qdrant helpers ────────────────────────────────────────────────────────

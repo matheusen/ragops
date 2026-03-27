@@ -123,6 +123,13 @@ class Settings(BaseSettings):
     # Provider used for the compression LLM in refrag mode — defaults to the primary provider.
     # Set to a cheaper/faster model (e.g. "openai" with gpt-5-mini) to keep latency low.
     distiller_provider: str = Field(default="", alias="DISTILLER_PROVIDER")
+    # MinIO — armazenamento de PDFs originais
+    minio_endpoint: str = Field(default="http://localhost:9000", alias="MINIO_ENDPOINT")
+    minio_access_key: str = Field(default="minioadmin", alias="MINIO_ACCESS_KEY")
+    minio_secret_key: str = Field(default="minioadmin", alias="MINIO_SECRET_KEY")
+    minio_bucket: str = Field(default="ragflow-pdfs", alias="MINIO_BUCKET")
+    minio_public_endpoint: str = Field(default="http://localhost:9000", alias="MINIO_PUBLIC_ENDPOINT")
+
     enable_monkeyocr_pdf_parser: bool = Field(default=False, alias="ENABLE_MONKEYOCR_PDF_PARSER")
     monkeyocr_api_url: str = Field(default="http://localhost:8001", alias="MONKEYOCR_API_URL")
     enable_docling_pdf_parser: bool = Field(default=False, alias="ENABLE_DOCLING_PDF_PARSER")

@@ -59,6 +59,11 @@ optimization = [
 graphrag = [
   "neo4j>=5.0.0"
 ]
+storage = [
+  # MinIO S3-compatible storage para PDFs originais
+  # docker compose up minio minio-init -d
+  "minio>=7.2.0"
+]
 ollm = [
   "ollm>=1.0.3"
 ]

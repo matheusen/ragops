@@ -70,6 +70,9 @@ from jira_issue_rag.shared.models import (
     ValidationExecutionResponse,
     ValidationResumeRequest,
     ValidationRequest,
+    PdfPresignedResponse,
+    PdfChunkItem,
+    PdfChunksResponse,
 )
 
 
@@ -953,7 +956,7 @@ def knowledge_graph(
         pass
 
     # Group by doc_id
-    doc_data: dict[str, dict] = defaultdict(lambda: {"title": "Unknown", "topics": set(), "chunk_count": 0, "source_path": ""})
+    doc_data: dict[str, dict] = defaultdict(lambda: {"title": "Unknown", "topics": set(), "chunk_count": 0, "source_path": "", "minio_key": None})
     for point in all_points:
         payload = point.get("payload", {})
         doc_id = payload.get("doc_id", "")
@@ -965,6 +968,8 @@ def knowledge_graph(
         doc_data[doc_id]["chunk_count"] += 1
         if not doc_data[doc_id]["source_path"]:
             doc_data[doc_id]["source_path"] = payload.get("source_path", "")
+        if not doc_data[doc_id]["minio_key"] and payload.get("minio_key"):
+            doc_data[doc_id]["minio_key"] = payload["minio_key"]
 
     nodes = [
         KnowledgeDocNode(
@@ -973,6 +978,7 @@ def knowledge_graph(
             topics=sorted(info["topics"]),
             chunk_count=info["chunk_count"],
             source_path=info["source_path"],
+            minio_key=info.get("minio_key"),
         )
         for doc_id, info in doc_data.items()
     ]
@@ -1005,6 +1011,137 @@ def knowledge_graph(
         edges=edges,
         topic_clusters=dict(topic_clusters),
     )
+
+
+# ── PDF — presigned URL e listagem de chunks com página ──────────────────────
+
+def _get_minio(settings: Settings = Depends(get_settings)):
+    from jira_issue_rag.services.minio_store import MinioStore
+    return MinioStore(settings)
+
+
+@router.get(
+    "/pdf/{doc_id}/url",
+    response_model=PdfPresignedResponse,
+    tags=["knowledge"],
+    summary="URL assinada para download do PDF original",
+    description=(
+        "Gera uma presigned URL temporária (padrão: 1 hora) para o PDF armazenado no MinIO. "
+        "O frontend pode acrescentar `#page=N` para navegar ao ponto exato do chunk."
+    ),
+)
+def pdf_presigned_url(
+    doc_id: str,
+    page: int | None = Query(default=None, description="Página destino — adicionada como fragment #page=N na URL"),
+    expires: int = Query(default=3600, ge=60, le=86400),
+    settings: Settings = Depends(get_settings),
+    article_store: ArticleStore = Depends(get_article_store),
+):
+    from jira_issue_rag.services.minio_store import MinioStore
+    minio = MinioStore(settings)
+
+    # Busca o minio_key direto no Qdrant para o doc_id
+    minio_key: str | None = None
+    if settings.qdrant_url:
+        try:
+            resp = article_store._qdrant(
+                "POST",
+                f"/collections/articles/points/scroll",
+                json_body={
+                    "filter": {"must": [{"key": "doc_id", "match": {"value": doc_id}}]},
+                    "limit": 1,
+                    "with_payload": ["minio_key"],
+                },
+            )
+            pts = (resp or {}).get("result", {}).get("points", [])
+            if pts:
+                minio_key = pts[0].get("payload", {}).get("minio_key")
+        except Exception:
+            pass
+
+    if not minio_key:
+        raise HTTPException(status_code=404, detail=f"PDF não encontrado no MinIO para doc_id={doc_id}")
+
+    url = minio.pdf_url_at_page(minio_key, page=page, expires_seconds=expires)
+    if not url:
+        raise HTTPException(status_code=503, detail="MinIO indisponível")
+
+    return PdfPresignedResponse(doc_id=doc_id, minio_key=minio_key, url=url, expires_seconds=expires)
+
+
+@router.get(
+    "/pdf/{doc_id}/chunks",
+    response_model=PdfChunksResponse,
+    tags=["knowledge"],
+    summary="Lista chunks de um documento com número de página e URL do PDF",
+    description=(
+        "Retorna todos os chunks indexados para um documento, com `page_number`, preview de conteúdo "
+        "e URL assinada apontando diretamente para a página exata no PDF original no MinIO."
+    ),
+)
+def pdf_chunks(
+    doc_id: str,
+    collection: str = Query(default="articles"),
+    settings: Settings = Depends(get_settings),
+    article_store: ArticleStore = Depends(get_article_store),
+):
+    from jira_issue_rag.services.minio_store import MinioStore
+    minio = MinioStore(settings)
+
+    chunks: list[PdfChunkItem] = []
+    title = doc_id
+    minio_key: str | None = None
+
+    if not settings.qdrant_url:
+        raise HTTPException(status_code=503, detail="Qdrant não configurado")
+
+    try:
+        offset = None
+        while True:
+            body: dict = {
+                "filter": {"must": [{"key": "doc_id", "match": {"value": doc_id}}]},
+                "limit": 250,
+                "with_payload": True,
+            }
+            if offset:
+                body["offset"] = offset
+            resp = article_store._qdrant("POST", f"/collections/{collection}/points/scroll", json_body=body)
+            result = (resp or {}).get("result", {})
+            pts = result.get("points", [])
+            next_offset = result.get("next_page_offset")
+            for pt in pts:
+                p = pt.get("payload", {})
+                if not minio_key and p.get("minio_key"):
+                    minio_key = p["minio_key"]
+                if p.get("title"):
+                    title = p["title"]
+                page_num = p.get("page_number")
+                pdf_url = minio.pdf_url_at_page(minio_key, page=page_num) if minio_key else None
+                chunks.append(PdfChunkItem(
+                    chunk_id=pt.get("id", ""),
+                    chunk_index=int(p.get("chunk_index", 0)),
+                    chunk_kind=p.get("chunk_kind", "text"),
+                    page_number=page_num,
+                    section_title=p.get("section_title"),
+                    content_preview=(p.get("content", "") or "")[:200],
+                    pdf_url=pdf_url,
+                ))
+            if not next_offset:
+                break
+            offset = next_offset
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    # Sort by chunk_index
+    chunks.sort(key=lambda c: c.chunk_index)
+
+    # Back-fill pdf_url for chunks fetched before minio_key was found
+    if minio_key:
+        for c in chunks:
+            if c.pdf_url is None:
+                c.pdf_url = minio.pdf_url_at_page(minio_key, page=c.page_number)
+
+    return PdfChunksResponse(doc_id=doc_id, title=title, minio_key=minio_key, chunks=chunks)
 
 
 @router.post(
@@ -2336,6 +2473,8 @@ def knowledge_search(
             chunk_kind=r.chunk_kind or "text",
             image_path=r.image_path,
             topics=r.topics or [],
+            minio_key=r.minio_key,
+            chunk_id=r.chunk_id,
         )
         for r in results
     ]
@@ -2405,6 +2544,8 @@ def knowledge_ask(
             chunk_kind=r.chunk_kind or "text",
             image_path=r.image_path,
             topics=r.topics or [],
+            minio_key=r.minio_key,
+            chunk_id=r.chunk_id,
         )
         for r in results
     ]

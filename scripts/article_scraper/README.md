@@ -59,7 +59,21 @@ sources:
 
 ```bash
 # Busca completa com config.yaml
+# Se kafka.enabled: true, roda como producer
+# URLs/PDFs fora de publishers/repositórios confiáveis são descartados
 python scraper.py
+
+# Producer explícito
+python scraper.py --mode producer
+
+# Compat wrapper
+python kafka_producer.py
+
+# Consumer: consome do Kafka, baixa PDFs e salva no MongoDB
+python kafka_consumer.py
+
+# Modo direto antigo, sem Kafka
+python scraper.py --mode direct
 
 # Query avulsa
 python scraper.py --query "RAG retrieval augmented generation" --sources arxiv semantic_scholar
@@ -91,6 +105,47 @@ results/
     ├── run_20240319_143022.json
     └── run_20240319_143022.csv
 ```
+
+## Kafka + MongoDB
+
+O fluxo assíncrono fica assim:
+
+1. `kafka_producer.py` faz a busca nas fontes.
+2. Cada artigo novo é salvo em `results/metadata/*.json`, persistido no MongoDB e publicado no tópico Kafka.
+3. `kafka_consumer.py` consome o tópico, verifica se o PDF já existe na pasta e só baixa o que falta.
+4. Cada PDF salvo localmente também é registrado no MongoDB/GridFS.
+
+O scraper também sanitiza links e aceita apenas domínios científicos confiáveis, como `arxiv.org`, `doi.org`, `ieee.org`, `acm.org`, `springer.com`, `sciencedirect.com`, `core.ac.uk`, `dblp.org` e publishers acadêmicos equivalentes. Links sociais ou genéricos são descartados.
+
+Hoje o entrypoint principal é `scraper.py`:
+
+- `python scraper.py` usa `producer` por padrão quando `kafka.enabled: true`
+- `python scraper.py --mode direct` mantém o fluxo antigo sem fila
+- `python kafka_producer.py` é só um wrapper compatível
+
+Configuração mínima no `config.yaml`:
+
+```yaml
+mongodb:
+  enabled: true
+  uri: "mongodb://localhost:27017"
+
+kafka:
+  bootstrap_servers:
+    - "localhost:9092"
+  topic: "article-scraper.articles"
+```
+
+Execução:
+
+```bash
+cd scripts/article_scraper
+
+python kafka_consumer.py
+python scraper.py
+```
+
+Se você quiser manter o modo antigo, use `python scraper.py --mode direct`.
 
 ## Portal CAPES (com VPN)
 

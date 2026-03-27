@@ -19,45 +19,67 @@ output:
   reports_dir: "reports"
   screenshots_dir: "screenshots"   # screenshots em caso de erro
 
+# ── Persistência ─────────────────────────────────────────
+mongodb:
+  enabled: true
+  uri: "mongodb://localhost:27017"
+  database: "ragflow"
+  collection: "scraped_articles"
+  gridfs_collection: "scraped_article_files"
+
+kafka:
+  enabled: true
+  bootstrap_servers:
+    - "localhost:9092"
+  topic: "article-scraper.articles"
+  group_id: "article-scraper-downloaders"
+  auto_offset_reset: "earliest"
+  consumer_timeout_ms: 5000
+  idle_timeout_sec: 0
+  max_poll_records: 20
+  linger_ms: 100
+  retries: 5
+  acks: "all"
+
 # ── Queries de busca ─────────────────────────────────────
 queries:
   - query: "large language models software engineering"
-    max_results: 30
+    max_results: 100
   - query: "retrieval augmented generation RAG"
-    max_results: 30
+    max_results: 100
   - query: "Java microservices architecture"
-    max_results: 20
+    max_results: 100
   - query: "machine learning software development"
-    max_results: 25
+    max_results: 100
   - query: "artificial intelligence code generation"
-    max_results: 30
+    max_results: 100
   - query: "graph neural networks knowledge"
-    max_results: 20
+    max_results: 100
   - query: "Spring Boot distributed systems"
-    max_results: 20
+    max_results: 100
   - query: "natural language processing programming"
-    max_results: 25
+    max_results: 100
   # Novas queries
   - query: "LLM fine-tuning instruction tuning"
-    max_results: 25
+    max_results: 100
   - query: "transformer architecture attention mechanism"
-    max_results: 25
+    max_results: 100
   - query: "vector database semantic search embedding"
-    max_results: 25
+    max_results: 100
   - query: "software architecture design patterns microservices"
-    max_results: 20
+    max_results: 100
   - query: "automated software testing LLM"
-    max_results: 20
+    max_results: 100
   - query: "code review static analysis machine learning"
-    max_results: 20
+    max_results: 100
   - query: "knowledge graph question answering"
-    max_results: 20
+    max_results: 100
   - query: "continual learning catastrophic forgetting"
-    max_results: 20
+    max_results: 100
   - query: "prompt engineering in-context learning"
-    max_results: 25
+    max_results: 100
   - query: "diffusion models generative AI"
-    max_results: 20
+    max_results: 100
 
 # ── Fontes ───────────────────────────────────────────────
 sources:

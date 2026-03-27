@@ -121,6 +121,45 @@ services:
       timeout: 8s
       retries: 5
 
+  # ── MinIO — armazenamento de objetos S3-compatible para PDFs originais ────────
+  # Console: http://localhost:9001  (login: minioadmin / minioadmin)
+  # API S3:  http://localhost:9000  →  MINIO_ENDPOINT=http://localhost:9000
+  # Bucket padrão criado automaticamente: "ragflow-pdfs"
+  minio:
+    image: minio/minio:latest
+    container_name: ragops-minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Console web
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── MinIO Init — cria bucket padrão na primeira vez ─────────────────────────
+  minio-init:
+    image: minio/mc:latest
+    container_name: ragops-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set local http://minio:9000 minioadmin minioadmin &&
+        mc mb --ignore-existing local/ragflow-pdfs &&
+        mc anonymous set download local/ragflow-pdfs &&
+        echo 'Bucket ragflow-pdfs criado com sucesso.'
+      "
+    restart: "no"
+
   # ── MonkeyOCR v1.5 — extração de PDFs complexos (SRR paradigm) ──────────────
   # Este servico ESTA no docker compose.
   # Ele nao sobe no `docker compose up -d` padrao porque:
@@ -179,5 +218,6 @@ volumes:
   mongodb_data:
   ollama_data:
   piston_data:
+  minio_data:
   monkeyocr_models:
   monkeyocr_output:

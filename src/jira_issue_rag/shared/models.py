@@ -511,6 +511,7 @@ class ArticleIngestResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     ok: bool = True
     error: str | None = None
+    minio_key: str | None = None  # chave S3 do PDF original no MinIO
 
 
 class ArticleSearchRequest(BaseModel):
@@ -577,6 +578,7 @@ class ArticleSearchResult(BaseModel):
     graph_usefulness: GraphUsefulnessAssessment | None = None
     evidence_paths: list[ArticleEvidencePath] = Field(default_factory=list)
     image_path: str | None = None
+    minio_key: str | None = None  # chave S3 do PDF original no MinIO
 
 
 class ArticleRelatedRequest(BaseModel):
@@ -681,6 +683,7 @@ class KnowledgeDocNode(BaseModel):
     topics: list[str] = Field(default_factory=list)
     chunk_count: int = 0
     source_path: str = ""
+    minio_key: str | None = None  # chave S3 do PDF original no MinIO
 
 
 class KnowledgeGraphEdge(BaseModel):
@@ -694,6 +697,31 @@ class KnowledgeGraphResponse(BaseModel):
     nodes: list[KnowledgeDocNode] = Field(default_factory=list)
     edges: list[KnowledgeGraphEdge] = Field(default_factory=list)
     topic_clusters: dict[str, list[str]] = Field(default_factory=dict)
+
+
+class PdfPresignedResponse(BaseModel):
+    doc_id: str
+    minio_key: str
+    url: str  # URL assinada para download direto
+    expires_seconds: int = 3600
+
+
+class PdfChunkItem(BaseModel):
+    chunk_id: str
+    chunk_index: int
+    chunk_kind: str = "text"
+    page_number: int | None = None
+    section_title: str | None = None
+    content_preview: str = ""  # primeiros 200 chars
+    score: float = 0.0
+    pdf_url: str | None = None  # URL assinada com #page=N
+
+
+class PdfChunksResponse(BaseModel):
+    doc_id: str
+    title: str
+    minio_key: str | None = None
+    chunks: list[PdfChunkItem] = Field(default_factory=list)
 
 
 class RoadmapGenerateRequest(BaseModel):
@@ -750,6 +778,8 @@ class KnowledgeChunkResult(BaseModel):
     chunk_kind: str = "text"
     image_path: str | None = None
     topics: list[str] = Field(default_factory=list)
+    minio_key: str | None = None  # chave S3 do PDF original no MinIO
+    chunk_id: str | None = None   # ID do chunk no Qdrant
 
 
 class KnowledgeSearchResponse(BaseModel):

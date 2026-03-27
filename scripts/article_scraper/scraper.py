@@ -30,11 +30,15 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 from urllib.parse import quote_plus, urljoin, urlparse
 
 import requests
 import yaml
 from bs4 import BeautifulSoup
+from kafka import KafkaProducer
+from gridfs import GridFS
+from pymongo import MongoClient
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
@@ -52,6 +56,57 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 console = Console()
+
+
+DEFAULT_MONGODB_URI = "mongodb://localhost:27017"
+DEFAULT_KAFKA_BOOTSTRAP = ["localhost:9092"]
+DEFAULT_KAFKA_TOPIC = "article-scraper.articles"
+TRUSTED_ARTICLE_HOST_SUFFIXES = (
+    "arxiv.org",
+    "doi.org",
+    "ieee.org",
+    "semanticscholar.org",
+    "acm.org",
+    "springer.com",
+    "springernature.com",
+    "sciencedirect.com",
+    "elsevier.com",
+    "core.ac.uk",
+    "dblp.org",
+    "paperswithcode.com",
+    "openreview.net",
+    "nature.com",
+    "sciencemag.org",
+    "wiley.com",
+    "onlinelibrary.wiley.com",
+    "tandfonline.com",
+    "sagepub.com",
+    "frontiersin.org",
+    "mdpi.com",
+    "plos.org",
+    "biomedcentral.com",
+    "jmlr.org",
+    "aclweb.org",
+    "aclanthology.org",
+    "aaai.org",
+    "siam.org",
+    "cambridge.org",
+    "oup.com",
+)
+UNWANTED_ARTICLE_HOSTS = {
+    "linkedin.com",
+    "www.linkedin.com",
+    "twitter.com",
+    "www.twitter.com",
+    "x.com",
+    "www.x.com",
+    "facebook.com",
+    "www.facebook.com",
+    "instagram.com",
+    "www.instagram.com",
+    "youtube.com",
+    "www.youtube.com",
+}
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -824,10 +879,164 @@ def scrape_capes(driver: webdriver.Chrome, query: str, cfg: dict,
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Storage helpers
+# ──────────────────────────────────────────────────────────────────────────────
+
+def sanitize_filename(value: str, fallback: str = "untitled", limit: int = 80) -> str:
+    cleaned = re.sub(r'[\\/*?:"<>|]', "_", (value or "").strip())
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
+    return (cleaned or fallback)[:limit]
+
+
+def article_json_path(article: dict, metadata_dir: Path) -> Path:
+    return metadata_dir / f"{sanitize_filename(article['id'])}.json"
+
+
+def article_pdf_path(article: dict, downloads_dir: Path) -> Path:
+    base_name = article.get("doi", "") or article.get("title", "") or article["id"]
+    return downloads_dir / f"{sanitize_filename(base_name)}.pdf"
+
+
+def is_unwanted_article_url(url: str) -> bool:
+    if not url or not url.startswith("http"):
+        return True
+    host = urlparse(url).netloc.lower()
+    return host in UNWANTED_ARTICLE_HOSTS
+
+
+def is_trusted_article_url(url: str) -> bool:
+    if not url or not url.startswith("http"):
+        return False
+    host = urlparse(url).netloc.lower()
+    if host in UNWANTED_ARTICLE_HOSTS:
+        return False
+    return any(host == suffix or host.endswith(f".{suffix}") for suffix in TRUSTED_ARTICLE_HOST_SUFFIXES)
+
+
+def sanitize_article_links(article: dict) -> dict | None:
+    cleaned = dict(article)
+    article_url = cleaned.get("url", "").strip()
+    pdf_url = cleaned.get("pdf_url", "").strip()
+
+    if article_url and not is_trusted_article_url(article_url):
+        cleaned["url"] = ""
+    if pdf_url and not is_trusted_article_url(pdf_url):
+        cleaned["pdf_url"] = ""
+        cleaned["open_access"] = False
+
+    if cleaned.get("url") or cleaned.get("pdf_url") or cleaned.get("doi"):
+        return cleaned
+    return None
+
+
+class MongoArticleStore:
+    def __init__(self, cfg: dict):
+        mongo_cfg = cfg.get("mongodb", {})
+        self.enabled = bool(mongo_cfg.get("enabled", True))
+        self.uri = (mongo_cfg.get("uri") or DEFAULT_MONGODB_URI).strip()
+        self.db_name = mongo_cfg.get("database", "ragflow")
+        self.collection_name = mongo_cfg.get("collection", "scraped_articles")
+        self.fs_collection = mongo_cfg.get("gridfs_collection", "scraped_article_files")
+        self.client: MongoClient | None = None
+        self.collection = None
+        self.fs: GridFS | None = None
+
+        if not self.enabled:
+            return
+
+        self.client = MongoClient(self.uri, serverSelectionTimeoutMS=5000)
+        db = self.client[self.db_name]
+        self.collection = db[self.collection_name]
+        self.fs = GridFS(db, collection=self.fs_collection)
+        self.collection.create_index("id", unique=True)
+        self.collection.create_index("doi", sparse=True)
+        self.collection.create_index("source")
+
+    def close(self) -> None:
+        if self.client is not None:
+            self.client.close()
+
+    def get_article(self, article_id: str) -> dict | None:
+        if self.collection is None:
+            return None
+        return self.collection.find_one({"id": article_id})
+
+    def article_exists(self, article_id: str) -> bool:
+        if self.collection is None:
+            return False
+        return self.collection.count_documents({"id": article_id}, limit=1) > 0
+
+    def load_existing_ids(self) -> set[str]:
+        if self.collection is None:
+            return set()
+        return {doc["id"] for doc in self.collection.find({}, {"id": 1, "_id": 0}) if doc.get("id")}
+
+    def upsert_article(self, article: dict) -> None:
+        if self.collection is None:
+            return
+        payload = dict(article)
+        payload["updated_at"] = datetime.now(timezone.utc).isoformat()
+        self.collection.update_one(
+            {"id": article["id"]},
+            {"$set": payload, "$setOnInsert": {"created_at": payload["updated_at"]}},
+            upsert=True,
+        )
+
+    def store_pdf_bytes(self, article: dict, filename: str, content: bytes) -> str | None:
+        if self.fs is None or self.collection is None:
+            return None
+
+        sha1 = hashlib.sha1(content).hexdigest()
+        existing = self.get_article(article["id"]) or {}
+        if existing.get("pdf_sha1") == sha1 and existing.get("pdf_gridfs_id"):
+            return str(existing["pdf_gridfs_id"])
+
+        if existing.get("pdf_gridfs_id"):
+            try:
+                self.fs.delete(existing["pdf_gridfs_id"])
+            except Exception:
+                pass
+
+        file_id = self.fs.put(
+            content,
+            filename=filename,
+            contentType="application/pdf",
+            article_id=article["id"],
+            title=article.get("title", ""),
+            doi=article.get("doi", ""),
+            source=article.get("source", ""),
+            downloaded_at=datetime.now(timezone.utc).isoformat(),
+        )
+        self.collection.update_one(
+            {"id": article["id"]},
+            {
+                "$set": {
+                    "pdf_gridfs_id": file_id,
+                    "pdf_sha1": sha1,
+                    "pdf_size": len(content),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+            },
+            upsert=True,
+        )
+        return str(file_id)
+
+    def register_pdf_from_path(self, article: dict, path: Path) -> str | None:
+        if not path.exists():
+            return None
+        return self.store_pdf_bytes(article, path.name, path.read_bytes())
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # PDF download
 # ──────────────────────────────────────────────────────────────────────────────
 
-def download_pdf(article: dict, downloads_dir: Path, timeout: int = 40) -> str | None:
+def download_pdf(
+    article: dict,
+    downloads_dir: Path,
+    timeout: int = 40,
+    mongo_store: MongoArticleStore | None = None,
+) -> str | None:
     pdf_url = article.get("pdf_url", "")
     if not pdf_url or not pdf_url.startswith("http"):
         return None
@@ -835,13 +1044,25 @@ def download_pdf(article: dict, downloads_dir: Path, timeout: int = 40) -> str |
     # 1. Metadata já registrou um caminho local válido?
     existing_local = article.get("pdf_local", "")
     if existing_local and Path(existing_local).exists():
+        if mongo_store:
+            mongo_store.register_pdf_from_path(article, Path(existing_local))
         console.print(f"    [dim]↓ já existe (pdf_local): {Path(existing_local).name}[/]")
         return existing_local
 
+    # 1.1 MongoDB já registrou um caminho local válido?
+    if mongo_store:
+        existing_article = mongo_store.get_article(article["id"])
+        if existing_article:
+            mongo_pdf_local = existing_article.get("pdf_local", "")
+            if mongo_pdf_local and Path(mongo_pdf_local).exists():
+                console.print(f"    [dim]↓ já existe (mongo): {Path(mongo_pdf_local).name}[/]")
+                return mongo_pdf_local
+
     # 2. Arquivo já existe no disco pelo nome derivado?
-    safe = re.sub(r'[\\/*?:"<>|]', "_", article.get("doi", "") or article.get("title", "untitled"))[:80]
-    dest = downloads_dir / f"{safe}.pdf"
+    dest = article_pdf_path(article, downloads_dir)
     if dest.exists():
+        if mongo_store:
+            mongo_store.register_pdf_from_path(article, dest)
         console.print(f"    [dim]↓ já existe (arquivo): {dest.name}[/]")
         return str(dest)
 
@@ -854,6 +1075,8 @@ def download_pdf(article: dict, downloads_dir: Path, timeout: int = 40) -> str |
             content = b"".join(r.iter_content(8192))
             if b"%PDF" in content[:32]:
                 dest.write_bytes(content)
+                if mongo_store:
+                    mongo_store.store_pdf_bytes(article, dest.name, content)
                 return str(dest)
             else:
                 console.print(f"[dim]PDF inválido (HTML?): {pdf_url[:80]}[/]")
@@ -868,7 +1091,7 @@ def download_pdf(article: dict, downloads_dir: Path, timeout: int = 40) -> str |
 # Persistence
 # ──────────────────────────────────────────────────────────────────────────────
 
-def load_existing_ids(metadata_dir: Path) -> set[str]:
+def load_existing_ids(metadata_dir: Path, mongo_store: MongoArticleStore | None = None) -> set[str]:
     ids: set[str] = set()
     for f in metadata_dir.glob("*.json"):
         try:
@@ -877,13 +1100,16 @@ def load_existing_ids(metadata_dir: Path) -> set[str]:
                 ids.add(d["id"])
         except Exception:
             pass
+    if mongo_store:
+        ids |= mongo_store.load_existing_ids()
     return ids
 
 
-def save_article(article: dict, metadata_dir: Path) -> None:
-    safe = re.sub(r'[\\/*?:"<>|]', "_", article["id"])[:80]
-    path = metadata_dir / f"{safe}.json"
+def save_article(article: dict, metadata_dir: Path, mongo_store: MongoArticleStore | None = None) -> None:
+    path = article_json_path(article, metadata_dir)
     path.write_text(json.dumps(article, ensure_ascii=False, indent=2), encoding="utf-8")
+    if mongo_store:
+        mongo_store.upsert_article(article)
 
 
 def save_report(articles: list[dict], reports_dir: Path, run_id: str) -> None:
@@ -1193,7 +1419,7 @@ def scrape_dblp(driver: webdriver.Chrome, query: str, cfg: dict,
             text = a.get_text(strip=True).lower()
             if "doi.org" in href:
                 doi = href.replace("https://doi.org/", "").replace("http://doi.org/", "")
-            if not art_url and href.startswith("http"):
+            if not art_url and href.startswith("http") and not is_unwanted_article_url(href):
                 art_url = href
             if ("pdf" in text or href.endswith(".pdf")) and (
                 "arxiv.org" in href or href.endswith(".pdf")
@@ -1366,12 +1592,193 @@ def setup_dirs(cfg: dict) -> tuple[Path, Path, Path, Path, Path]:
     return base, meta, dl, rep, shots
 
 
+def resolve_enabled_sources(cfg: dict, args: argparse.Namespace) -> list[str]:
+    sources_cfg = cfg.get("sources", {})
+    if args.sources:
+        return args.sources
+    return [s for s, c in sources_cfg.items() if c.get("enabled", False)]
+
+
+def resolve_queries(cfg: dict, args: argparse.Namespace) -> list[dict]:
+    if args.query:
+        return [{"query": args.query, "max_results": args.max or 30}]
+    return cfg.get("queries", [])
+
+
+def maybe_create_mongo_store(cfg: dict) -> MongoArticleStore | None:
+    mongo_cfg = cfg.get("mongodb", {})
+    if not mongo_cfg.get("enabled", True):
+        return None
+    try:
+        store = MongoArticleStore(cfg)
+        if store.client is not None:
+            store.client.admin.command({"ping": 1})
+        return store
+    except Exception as err:
+        console.print(f"[yellow]MongoDB indisponível, seguindo sem persistência no banco: {err}[/]")
+        return None
+
+
+def build_kafka_producer(cfg: dict) -> tuple[KafkaProducer, str]:
+    kafka_cfg = cfg.get("kafka", {})
+    bootstrap_servers = kafka_cfg.get("bootstrap_servers") or DEFAULT_KAFKA_BOOTSTRAP
+    topic = kafka_cfg.get("topic") or DEFAULT_KAFKA_TOPIC
+    producer = KafkaProducer(
+        bootstrap_servers=bootstrap_servers,
+        value_serializer=lambda value: json.dumps(value, ensure_ascii=False).encode("utf-8"),
+        key_serializer=lambda value: value.encode("utf-8"),
+        linger_ms=int(kafka_cfg.get("linger_ms", 100)),
+        retries=int(kafka_cfg.get("retries", 5)),
+        acks=kafka_cfg.get("acks", "all"),
+    )
+    return producer, topic
+
+
+def scrape_articles(
+    driver: webdriver.Chrome,
+    cfg: dict,
+    args: argparse.Namespace,
+    metadata_dir: Path,
+    downloads_dir: Path,
+    reports_dir: Path,
+    screenshots_dir: Path,
+    mongo_store: MongoArticleStore | None = None,
+    publish_article: Callable[[dict], None] | None = None,
+    persist_before_publish: bool = True,
+    download_pdfs: bool = True,
+) -> tuple[list[dict], int, int]:
+    browser_cfg = cfg.get("browser", {})
+    exec_cfg = cfg.get("execution", {})
+    exec_cfg.setdefault("delay_min", 1.5)
+    exec_cfg.setdefault("delay_max", 3.5)
+    exec_cfg.setdefault("delay_between_queries", 5)
+    exec_cfg.setdefault("skip_existing", True)
+    exec_cfg.setdefault("min_year", 0)
+    exec_cfg.setdefault("max_total_articles", 0)
+    exec_cfg.setdefault("screenshot_on_error", True)
+
+    dl_cfg = cfg.get("downloads", {})
+    do_download = download_pdfs and dl_cfg.get("enabled", True) and not args.no_download
+    oa_only = dl_cfg.get("open_access_only", True)
+    dl_timeout = int(dl_cfg.get("timeout", 40))
+    max_dl = int(dl_cfg.get("max_total", 0))
+
+    sources_cfg = cfg.get("sources", {})
+    enabled = resolve_enabled_sources(cfg, args)
+    queries = resolve_queries(cfg, args)
+
+    if not queries:
+        console.print("[red]Nenhuma query configurada.[/]")
+        sys.exit(1)
+
+    existing_ids = load_existing_ids(metadata_dir, mongo_store) if exec_cfg["skip_existing"] else set()
+    if existing_ids:
+        console.print(f"[dim]{len(existing_ids)} artigos existentes — serão pulados[/]\n")
+
+    all_collected: list[dict] = []
+    total_new = 0
+    total_dl = 0
+    max_total = int(exec_cfg["max_total_articles"])
+    min_year = int(exec_cfg["min_year"])
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("{task.completed}/{task.total}"),
+        TimeElapsedColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Queries", total=len(queries))
+
+        for q_item in queries:
+            if max_total and total_new >= max_total:
+                break
+
+            q_text = q_item.get("query", "")
+            q_max = args.max or q_item.get("max_results", 20)
+            progress.update(task, description=f"[cyan]{q_text[:55]}…")
+            console.print(f"\n[bold]Query:[/] {q_text}")
+
+            for source_name in enabled:
+                if max_total and total_new >= max_total:
+                    break
+
+                src_cfg = sources_cfg.get(source_name, {})
+                if not src_cfg.get("enabled", True):
+                    continue
+
+                fn = SOURCE_FN.get(source_name)
+                if not fn:
+                    continue
+
+                limit = min(q_max, src_cfg.get("max_per_query", q_max))
+                console.print(f"  [dim]→[/] [bold]{source_name}[/] (max {limit})")
+
+                try:
+                    found = fn(driver, q_text, src_cfg, limit, exec_cfg)
+                except Exception as e:
+                    console.print(f"    [red]✗ Erro: {e}[/]")
+                    if exec_cfg["screenshot_on_error"]:
+                        screenshot_on_error(driver, source_name, screenshots_dir)
+                    human_delay(2, 4)
+                    continue
+
+                found = deduplicate(found)
+                trusted_found: list[dict] = []
+                discarded_untrusted = 0
+                for article in found:
+                    sanitized = sanitize_article_links(article)
+                    if sanitized is None:
+                        discarded_untrusted += 1
+                        continue
+                    trusted_found.append(sanitized)
+                found = trusted_found
+                if min_year:
+                    found = [a for a in found if (a.get("year") or 0) >= min_year]
+
+                new = [a for a in found if a["id"] not in existing_ids]
+                console.print(
+                    f"    [green]✓[/] {len(found)} confiáveis, {len(new)} novos"
+                    + (f", {discarded_untrusted} descartados por host" if discarded_untrusted else "")
+                )
+
+                for article in new:
+                    if persist_before_publish:
+                        save_article(article, metadata_dir, mongo_store)
+                    if publish_article:
+                        publish_article(article)
+                    if not persist_before_publish:
+                        save_article(article, metadata_dir, mongo_store)
+
+                    existing_ids.add(article["id"])
+                    all_collected.append(article)
+                    total_new += 1
+
+                    if do_download and (not oa_only or article.get("open_access")):
+                        if not max_dl or total_dl < max_dl:
+                            dest = download_pdf(article, downloads_dir, dl_timeout, mongo_store)
+                            if dest:
+                                article["pdf_local"] = dest
+                                save_article(article, metadata_dir, mongo_store)
+                                total_dl += 1
+                                console.print(f"    [green]↓[/] {Path(dest).name}")
+
+                human_delay(exec_cfg["delay_min"], exec_cfg["delay_max"])
+
+            progress.advance(task)
+            time.sleep(exec_cfg["delay_between_queries"])
+
+    return all_collected, total_new, total_dl
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Article Scraper — Selenium")
     parser.add_argument("--config",   default="config.yaml")
     parser.add_argument("--query",    default="", help="Query avulsa")
     parser.add_argument("--sources",  nargs="+",  help="Fontes a usar")
     parser.add_argument("--max",      type=int, default=0)
+    parser.add_argument("--mode",     choices=("producer", "direct"), default="", help="producer = publica no Kafka; direct = baixa PDFs no mesmo processo")
     parser.add_argument("--headless", default="", help="true/false (override config)")
     parser.add_argument("--no-download", action="store_true")
     parser.add_argument("--list-existing", action="store_true")
@@ -1386,9 +1793,10 @@ def main() -> None:
 
     cfg = load_config(str(config_path))
     base_dir, metadata_dir, downloads_dir, reports_dir, screenshots_dir = setup_dirs(cfg)
+    mongo_store = maybe_create_mongo_store(cfg)
 
     if args.list_existing:
-        ids = load_existing_ids(metadata_dir)
+        ids = load_existing_ids(metadata_dir, mongo_store)
         console.print(f"[cyan]{len(ids)} artigos coletados em {metadata_dir}[/]")
         for uid in sorted(ids)[:60]:
             console.print(f"  {uid}")
@@ -1399,32 +1807,11 @@ def main() -> None:
     if args.headless.lower() in ("true", "false"):
         browser_cfg["headless"] = args.headless.lower() == "true"
 
-    exec_cfg = cfg.get("execution", {})
-    exec_cfg.setdefault("delay_min", 1.5)
-    exec_cfg.setdefault("delay_max", 3.5)
-    exec_cfg.setdefault("delay_between_queries", 5)
-    exec_cfg.setdefault("skip_existing", True)
-    exec_cfg.setdefault("min_year", 0)
-    exec_cfg.setdefault("max_total_articles", 0)
-    exec_cfg.setdefault("screenshot_on_error", True)
-
-    dl_cfg = cfg.get("downloads", {})
-    do_download = dl_cfg.get("enabled", True) and not args.no_download
-    oa_only  = dl_cfg.get("open_access_only", True)
-    dl_timeout = int(dl_cfg.get("timeout", 40))
-    max_dl   = int(dl_cfg.get("max_total", 0))
-
-    sources_cfg = cfg.get("sources", {})
-
-    if args.sources:
-        enabled = args.sources
-    else:
-        enabled = [s for s, c in sources_cfg.items() if c.get("enabled", False)]
-
-    queries = (
-        [{"query": args.query, "max_results": args.max or 30}]
-        if args.query else cfg.get("queries", [])
-    )
+    enabled = resolve_enabled_sources(cfg, args)
+    queries = resolve_queries(cfg, args)
+    kafka_cfg = cfg.get("kafka", {})
+    kafka_enabled = bool(kafka_cfg.get("enabled", False))
+    run_mode = args.mode or ("producer" if kafka_enabled else "direct")
 
     if not queries:
         console.print("[red]Nenhuma query configurada.[/]")
@@ -1432,6 +1819,7 @@ def main() -> None:
 
     console.print(Panel.fit(
         f"[bold cyan]Article Scraper[/] — Selenium\n"
+        f"Modo: [green]{run_mode}[/]\n"
         f"Fontes:  [green]{', '.join(enabled)}[/]\n"
         f"Queries: [yellow]{len(queries)}[/]  |  "
         f"Headless: {'sim' if browser_cfg.get('headless', True) else '[yellow]não[/]'}\n"
@@ -1439,107 +1827,79 @@ def main() -> None:
         border_style="cyan",
     ))
 
-    existing_ids = load_existing_ids(metadata_dir) if exec_cfg["skip_existing"] else set()
-    if existing_ids:
-        console.print(f"[dim]{len(existing_ids)} artigos existentes — serão pulados[/]\n")
-
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-    all_collected: list[dict] = []
-    total_new  = 0
-    total_dl   = 0
-    max_total  = int(exec_cfg["max_total_articles"])
-    min_year   = int(exec_cfg["min_year"])
 
     # Inicia browser (único para toda a sessão)
     console.print("[dim]Iniciando Chrome...[/]")
     driver = build_driver(browser_cfg)
+    producer: KafkaProducer | None = None
+    topic = kafka_cfg.get("topic") or DEFAULT_KAFKA_TOPIC
+    published = 0
 
     try:
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TextColumn("{task.completed}/{task.total}"),
-            TimeElapsedColumn(),
-            console=console,
-        ) as progress:
-            task = progress.add_task("Queries", total=len(queries))
+        if run_mode == "producer":
+            producer, topic = build_kafka_producer(cfg)
 
-            for q_item in queries:
-                if max_total and total_new >= max_total:
-                    break
+            def publish_article(article: dict) -> None:
+                nonlocal published
+                assert producer is not None
+                producer.send(topic, key=article["id"], value=article)
+                published += 1
 
-                q_text  = q_item.get("query", "")
-                q_max   = args.max or q_item.get("max_results", 20)
-                progress.update(task, description=f"[cyan]{q_text[:55]}…")
-                console.print(f"\n[bold]Query:[/] {q_text}")
-
-                for source_name in enabled:
-                    if max_total and total_new >= max_total:
-                        break
-
-                    src_cfg = sources_cfg.get(source_name, {})
-                    if not src_cfg.get("enabled", True):
-                        continue
-
-                    fn = SOURCE_FN.get(source_name)
-                    if not fn:
-                        continue
-
-                    limit = min(q_max, src_cfg.get("max_per_query", q_max))
-                    console.print(f"  [dim]→[/] [bold]{source_name}[/] (max {limit})")
-
-                    try:
-                        found = fn(driver, q_text, src_cfg, limit, exec_cfg)
-                    except Exception as e:
-                        console.print(f"    [red]✗ Erro: {e}[/]")
-                        if exec_cfg["screenshot_on_error"]:
-                            screenshot_on_error(driver, source_name, screenshots_dir)
-                        human_delay(2, 4)
-                        continue
-
-                    found = deduplicate(found)
-                    if min_year:
-                        found = [a for a in found if (a.get("year") or 0) >= min_year]
-
-                    new = [a for a in found if a["id"] not in existing_ids]
-                    console.print(f"    [green]✓[/] {len(found)} encontrados, {len(new)} novos")
-
-                    for article in new:
-                        save_article(article, metadata_dir)
-                        existing_ids.add(article["id"])
-                        all_collected.append(article)
-                        total_new += 1
-
-                        # PDF
-                        if do_download and (not oa_only or article.get("open_access")):
-                            if not max_dl or total_dl < max_dl:
-                                dest = download_pdf(article, downloads_dir, dl_timeout)
-                                if dest:
-                                    article["pdf_local"] = dest
-                                    save_article(article, metadata_dir)
-                                    total_dl += 1
-                                    console.print(f"    [green]↓[/] {Path(dest).name}")
-
-                    human_delay(exec_cfg["delay_min"], exec_cfg["delay_max"])
-
-                progress.advance(task)
-                time.sleep(exec_cfg["delay_between_queries"])
-
+            all_collected, total_new, total_dl = scrape_articles(
+                driver,
+                cfg,
+                args,
+                metadata_dir,
+                downloads_dir,
+                reports_dir,
+                screenshots_dir,
+                mongo_store=mongo_store,
+                publish_article=publish_article,
+                persist_before_publish=True,
+                download_pdfs=False,
+            )
+            producer.flush()
+        else:
+            all_collected, total_new, total_dl = scrape_articles(
+                driver,
+                cfg,
+                args,
+                metadata_dir,
+                downloads_dir,
+                reports_dir,
+                screenshots_dir,
+                mongo_store=mongo_store,
+                download_pdfs=True,
+            )
     finally:
         driver.quit()
+        if producer is not None:
+            producer.close()
+        if mongo_store:
+            mongo_store.close()
 
     if all_collected:
         save_report(all_collected, reports_dir, run_id)
 
-    console.print(Panel.fit(
-        f"[bold green]Concluído![/]\n"
-        f"Novos artigos:  [yellow]{total_new}[/]\n"
-        f"PDFs baixados:  [yellow]{total_dl}[/]\n"
-        f"Metadados:  [dim]{metadata_dir.resolve()}[/]\n"
-        f"Downloads:  [dim]{downloads_dir.resolve()}[/]",
-        border_style="green",
-    ))
+    if run_mode == "producer":
+        console.print(Panel.fit(
+            f"[bold green]Producer concluído![/]\n"
+            f"Novos artigos:  [yellow]{total_new}[/]\n"
+            f"Artigos publicados:  [yellow]{published}[/]\n"
+            f"Kafka topic:  [dim]{topic}[/]\n"
+            f"Metadados:  [dim]{metadata_dir.resolve()}[/]",
+            border_style="green",
+        ))
+    else:
+        console.print(Panel.fit(
+            f"[bold green]Concluído![/]\n"
+            f"Novos artigos:  [yellow]{total_new}[/]\n"
+            f"PDFs baixados:  [yellow]{total_dl}[/]\n"
+            f"Metadados:  [dim]{metadata_dir.resolve()}[/]\n"
+            f"Downloads:  [dim]{downloads_dir.resolve()}[/]",
+            border_style="green",
+        ))
 
     if all_collected:
         print_table(all_collected)

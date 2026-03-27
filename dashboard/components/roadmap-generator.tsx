@@ -21,6 +21,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { getApiBase } from "@/lib/api-base";
+import { PdfViewerModal } from "./pdf-viewer-modal";
 
 const API_BASE = getApiBase();
 
@@ -94,6 +95,8 @@ interface KbChunk {
   chunk_kind: string;
   topics: string[];
   image_path?: string | null;
+  minio_key?: string | null;
+  chunk_id?: string;
 }
 
 interface AskResult {
@@ -992,6 +995,9 @@ function KbPanel({ query, topicId, topicTitle, topicData, roadmapId, provider, o
   const [answers,  setAnswers]  = useState<AskResult[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
+  // PDF viewer state
+  const [pdfModal, setPdfModal] = useState<{ docId: string; docTitle: string; page?: number; chunkId?: string } | null>(null);
+
   // Edit node
   const [showEdit,      setShowEdit]      = useState(false);
   const [editTitle,     setEditTitle]     = useState(topicData?.title ?? "");
@@ -1533,6 +1539,24 @@ function KbPanel({ query, topicId, topicTitle, topicData, roadmapId, provider, o
                   <span className="kb-chunk__book">{chunk.title}</span>
                   {chunk.page_number && <span className="kb-chunk__page">pág {chunk.page_number}</span>}
                   {chunk.section_title && <span className="kb-chunk__section">{chunk.section_title}</span>}
+                  {chunk.minio_key && (
+                    <button
+                      type="button"
+                      title="Abrir PDF no ponto exato"
+                      onClick={() => setPdfModal({ docId: chunk.doc_id, docTitle: chunk.title, page: chunk.page_number ?? undefined, chunkId: chunk.chunk_id })}
+                      style={{
+                        background: "rgba(79,125,243,.12)", border: "none", borderRadius: 4,
+                        cursor: "pointer", padding: "2px 7px", color: "#4f7df3",
+                        fontSize: 10, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 3,
+                      }}
+                    >
+                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                      </svg>
+                      PDF
+                    </button>
+                  )}
                 </div>
                 <div className="kb-chunk__score-wrap">
                   <div className="kb-chunk__score-bar">
@@ -1571,6 +1595,15 @@ function KbPanel({ query, topicId, topicTitle, topicData, roadmapId, provider, o
         roadmapId={roadmapId}
         topicTitle={topicTitle}
         provider={provider}
+      />
+    )}
+    {pdfModal && (
+      <PdfViewerModal
+        docId={pdfModal.docId}
+        docTitle={pdfModal.docTitle}
+        initialPage={pdfModal.page}
+        initialChunkId={pdfModal.chunkId}
+        onClose={() => setPdfModal(null)}
       />
     )}
     </>

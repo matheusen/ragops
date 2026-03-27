@@ -1,0 +1,224 @@
+# ══════════════════════════════════════════════════════════════════════════════
+#  Article Scraper — Configuração BULK (coleta em grande escala)
+#
+#  Estratégia:
+#    1. arXiv API         → 100/query, open access, PDF garantido
+#    2. Semantic Scholar  → 100/query, citationCount como filtro de qualidade
+#    3. PapersWithCode    → ML/AI focado, links diretos para arXiv PDF
+#    4. CORE              → agregador open access, breadth
+#    5. DBLP              → CS bibliography, rápido
+#
+#  Uso:
+#    python scraper.py --config config_bulk.yaml
+#    python scraper.py --config config_bulk.yaml --query "RAG LLM" --max 200
+#    python scraper.py --config config_bulk.yaml --sources arxiv semantic_scholar
+#
+#  Meta: ~2.000–5.000 artigos por execução completa (dependendo das queries).
+#  Após coletar, use o ingest_pipeline.py para ingerir no RAG:
+#    python ingest_pipeline.py --results-dir results
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── Browser ───────────────────────────────────────────────────────────────────
+browser:
+  headless: true
+  window_width: 1400
+  window_height: 900
+  page_load_timeout: 45
+  implicit_wait: 5
+
+# ── Saída ─────────────────────────────────────────────────────────────────────
+output:
+  base_dir: "./results"
+  metadata_dir: "metadata"
+  downloads_dir: "downloads"
+  reports_dir: "reports"
+  screenshots_dir: "screenshots"
+
+# ── Queries ───────────────────────────────────────────────────────────────────
+# Cada query roda em TODAS as fontes ativas.
+# Com 9 fontes × 100 por fonte × 40 queries ≈ 36.000 candidatos
+# Após dedup e filtro de ano → ~5.000–8.000 únicos realistas.
+queries:
+
+  # ── LLMs & Foundation Models ────────────────────────────────────────────────
+  - query: "large language models survey"
+    max_results: 200
+  - query: "GPT instruction following fine-tuning"
+    max_results: 150
+  - query: "LLM reasoning chain-of-thought"
+    max_results: 150
+  - query: "prompt engineering few-shot in-context learning"
+    max_results: 150
+  - query: "LLM alignment RLHF human feedback"
+    max_results: 150
+  - query: "LLM agents tool use autonomous"
+    max_results: 150
+  - query: "multimodal large language model vision"
+    max_results: 100
+  - query: "LLM hallucination factuality"
+    max_results: 100
+  - query: "open source LLM Llama Mistral"
+    max_results: 100
+
+  # ── RAG & Retrieval ──────────────────────────────────────────────────────────
+  - query: "retrieval augmented generation RAG"
+    max_results: 200
+  - query: "dense retrieval embedding semantic search"
+    max_results: 150
+  - query: "hybrid retrieval sparse dense BM25"
+    max_results: 100
+  - query: "knowledge graph question answering LLM"
+    max_results: 150
+  - query: "vector database similarity search scalable"
+    max_results: 100
+  - query: "long context LLM retrieval"
+    max_results: 100
+  - query: "corrective RAG self-RAG adaptive retrieval"
+    max_results: 100
+  - query: "GraphRAG graph neural network retrieval"
+    max_results: 100
+
+  # ── Engenharia de Software & AI ─────────────────────────────────────────────
+  - query: "large language models software engineering"
+    max_results: 200
+  - query: "AI code generation GitHub Copilot"
+    max_results: 150
+  - query: "automated code review static analysis"
+    max_results: 100
+  - query: "software testing bug detection LLM"
+    max_results: 100
+  - query: "software architecture microservices design patterns"
+    max_results: 100
+  - query: "DevOps MLOps continuous integration AI"
+    max_results: 100
+  - query: "issue tracking bug report software quality"
+    max_results: 100
+
+  # ── ML & Deep Learning ───────────────────────────────────────────────────────
+  - query: "transformer architecture attention mechanism"
+    max_results: 150
+  - query: "graph neural networks knowledge representation"
+    max_results: 100
+  - query: "continual learning catastrophic forgetting"
+    max_results: 100
+  - query: "reinforcement learning from human feedback"
+    max_results: 100
+  - query: "diffusion models generative AI"
+    max_results: 100
+  - query: "neural network compression quantization"
+    max_results: 100
+
+  # ── NLP & Information Extraction ─────────────────────────────────────────────
+  - query: "natural language processing information extraction"
+    max_results: 100
+  - query: "named entity recognition relation extraction"
+    max_results: 100
+  - query: "summarization abstractive extractive"
+    max_results: 100
+  - query: "question answering reading comprehension"
+    max_results: 100
+
+  # ── Sistemas & Infraestrutura ────────────────────────────────────────────────
+  - query: "distributed systems consensus fault tolerance"
+    max_results: 100
+  - query: "Spring Boot Java microservices cloud"
+    max_results: 100
+  - query: "Kubernetes container orchestration"
+    max_results: 100
+  - query: "observability monitoring logging distributed"
+    max_results: 100
+
+  # ── Segurança & Qualidade ────────────────────────────────────────────────────
+  - query: "software security vulnerability detection AI"
+    max_results: 100
+  - query: "code quality technical debt refactoring"
+    max_results: 100
+
+# ── Fontes ────────────────────────────────────────────────────────────────────
+sources:
+
+  # arXiv API — melhor fonte para bulk: sem bot detection, open access,
+  # PDF sempre disponível, 3s de delay obrigatório entre requests.
+  arxiv:
+    enabled: true
+    max_per_query: 100        # arXiv API suporta até 100 por página
+    sort: "relevance"         # relevance | lastUpdatedDate | submittedDate
+    start_year: 2019
+
+  # Semantic Scholar — API Graph, 1 req/s sem chave (gratuito).
+  # Com chave (signup gratuito em semanticscholar.org/product/api):
+  #   adicione header: X-API-KEY=<sua_chave>  → 10 req/s
+  semantic_scholar:
+    enabled: true
+    max_per_query: 100        # máximo da API sem chave
+    start_year: 2019
+    sort: "Relevance"
+
+  # PapersWithCode — ML/AI focado, links diretos para PDFs no arXiv.
+  # Selenium, mas sem bot detection agressivo.
+  paperswithcode:
+    enabled: true
+    max_per_query: 50
+    start_year: 2019
+
+  # CORE — agregador open access, muitos PDFs disponíveis gratuitamente.
+  core:
+    enabled: true
+    max_per_query: 50
+    start_year: 2019
+
+  # DBLP — CS bibliography, rápido, sem bot detection.
+  dblp:
+    enabled: true
+    max_per_query: 30
+    start_year: 2019
+
+  # IEEE — tem bot detection; usar com cautela em bulk.
+  # Habilite apenas se tiver acesso institucional.
+  ieee:
+    enabled: false            # desabilitado no bulk — bot detection agressivo
+    max_per_query: 20
+    start_year: 2019
+    extra_delay: 5
+
+  # ACM — tem captcha em volume alto.
+  acm:
+    enabled: false            # desabilitado no bulk
+    max_per_query: 20
+    start_year: 2019
+
+  # Springer — ok para consultas moderadas.
+  springer:
+    enabled: false            # desabilitado no bulk — slow
+    max_per_query: 20
+    start_year: 2019
+    discipline: "Computer Science"
+
+  # ScienceDirect — artigos pagos na maioria.
+  sciencedirect:
+    enabled: false
+    max_per_query: 15
+    start_year: 2019
+
+  # CAPES — requer VPN universitária.
+  capes:
+    enabled: false
+    max_per_query: 20
+    start_year: 2019
+
+# ── Download de PDFs ──────────────────────────────────────────────────────────
+downloads:
+  enabled: true
+  open_access_only: true      # bulk: baixa só open access (evita falhas de autenticação)
+  timeout: 60
+  max_total: 0                # 0 = sem limite
+
+# ── Controles de execução ─────────────────────────────────────────────────────
+execution:
+  delay_min: 1.5
+  delay_max: 3.0
+  delay_between_queries: 4
+  skip_existing: true         # essencial em bulk — não re-processa DOIs já coletados
+  min_year: 2019
+  max_total_articles: 0       # 0 = sem limite (colete tudo)
+  screenshot_on_error: false  # desativa screenshots em bulk para economizar disco

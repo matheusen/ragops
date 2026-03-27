@@ -17,6 +17,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { getApiBase } from "@/lib/api-base";
+import { PdfViewerModal } from "./pdf-viewer-modal";
 
 const API_BASE = getApiBase();
 
@@ -28,6 +29,7 @@ interface DocNode {
   topics: string[];
   chunk_count: number;
   source_path: string;
+  minio_key?: string | null;
 }
 
 interface GraphEdge {
@@ -43,9 +45,28 @@ interface GraphData {
   topic_clusters: Record<string, string[]>;
 }
 
+interface PdfInfo {
+  docId: string;
+  docTitle: string;
+  page?: number;
+  chunkId?: string;
+}
+
 // ── Custom node: document card ─────────────────────────────────────────────
 
-function DocCardNode({ data }: { data: { label: string; topics: string[]; chunks: number; highlighted: boolean; dimmed: boolean } }) {
+function DocCardNode({
+  data,
+}: {
+  data: {
+    label: string;
+    topics: string[];
+    chunks: number;
+    highlighted: boolean;
+    dimmed: boolean;
+    hasPdf: boolean;
+    onOpenPdf: () => void;
+  };
+}) {
   return (
     <div
       style={{
@@ -85,7 +106,35 @@ function DocCardNode({ data }: { data: { label: string; topics: string[]; chunks
           <span style={{ fontSize: 10, color: "#8b92a5" }}>+{data.topics.length - 4}</span>
         )}
       </div>
-      <div style={{ fontSize: 10, color: "#8b92a5" }}>{data.chunks} chunks</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ fontSize: 10, color: "#8b92a5" }}>{data.chunks} chunks</span>
+        {data.hasPdf && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); data.onOpenPdf(); }}
+            title="Abrir PDF original"
+            style={{
+              background: "rgba(79,125,243,.12)",
+              border: "none",
+              borderRadius: 5,
+              cursor: "pointer",
+              padding: "3px 7px",
+              color: "#4f7df3",
+              fontSize: 10,
+              fontWeight: 700,
+              display: "flex",
+              alignItems: "center",
+              gap: 3,
+            }}
+          >
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+            </svg>
+            PDF
+          </button>
+        )}
+      </div>
       <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
     </div>
   );
@@ -123,29 +172,24 @@ function TopicHubNode({ data }: { data: { label: string; count: number; highligh
   );
 }
 
-const NODE_TYPES: NodeTypes = {
-  docCard: DocCardNode,
-  topicHub: TopicHubNode,
-};
+// ── Layout helper ─────────────────────────────────────────────────────────
 
-// ── Layout helper: simple force-like grid ─────────────────────────────────
-
-function computeLayout(docs: DocNode[], clusters: Record<string, string[]>) {
+function computeLayout(
+  docs: DocNode[],
+  clusters: Record<string, string[]>,
+  onOpenPdf: (docId: string, docTitle: string) => void,
+) {
   const flowNodes: Node[] = [];
   const flowEdges: Edge[] = [];
 
-  // Filter clusters that connect 2+ docs
   const significantTopics = Object.entries(clusters)
     .filter(([, docIds]) => docIds.length >= 2)
     .sort(([, a], [, b]) => b.length - a.length)
     .slice(0, 12);
 
-  const topicNodeIds = new Set<string>();
-
   // Place topic hubs on left column
   significantTopics.forEach(([topic, docIds], i) => {
     const nid = `topic::${topic}`;
-    topicNodeIds.add(nid);
     flowNodes.push({
       id: nid,
       type: "topicHub",
@@ -169,6 +213,8 @@ function computeLayout(docs: DocNode[], clusters: Record<string, string[]>) {
         chunks: doc.chunk_count,
         highlighted: false,
         dimmed: false,
+        hasPdf: !!doc.minio_key,
+        onOpenPdf: () => onOpenPdf(doc.doc_id, doc.title),
       },
     });
   });
@@ -188,11 +234,15 @@ function computeLayout(docs: DocNode[], clusters: Record<string, string[]>) {
     });
   });
 
-  // Doc → doc edges (shared topics, weight >= 0.2)
-  // (from graph edges, already computed backend side)
-
   return { flowNodes, flowEdges };
 }
+
+// ── Node types (stable reference) ─────────────────────────────────────────
+
+const NODE_TYPES: NodeTypes = {
+  docCard: DocCardNode,
+  topicHub: TopicHubNode,
+};
 
 // ── Main component ─────────────────────────────────────────────────────────
 
@@ -203,8 +253,13 @@ export function KnowledgeMindmap() {
   const [search, setSearch] = useState("");
   const [searchResult, setSearchResult] = useState<string[] | null>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [pdfInfo, setPdfInfo] = useState<PdfInfo | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+
+  const openPdf = useCallback((docId: string, docTitle: string, page?: number, chunkId?: string) => {
+    setPdfInfo({ docId, docTitle, page, chunkId });
+  }, []);
 
   // Load graph data
   useEffect(() => {
@@ -213,13 +268,13 @@ export function KnowledgeMindmap() {
       .then((r) => r.json())
       .then((data: GraphData) => {
         setGraph(data);
-        const { flowNodes, flowEdges } = computeLayout(data.nodes, data.topic_clusters);
+        const { flowNodes, flowEdges } = computeLayout(data.nodes, data.topic_clusters, openPdf);
         setNodes(flowNodes);
         setEdges(flowEdges);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [setNodes, setEdges]);
+  }, [setNodes, setEdges, openPdf]);
 
   // Add doc-doc edges from backend graph
   useEffect(() => {
@@ -378,6 +433,22 @@ export function KnowledgeMindmap() {
             <span>{selectedDoc.chunk_count} chunks indexados</span>
             {selectedDoc.source_path && <span title={selectedDoc.source_path}>📄 {selectedDoc.source_path.split(/[\\/]/).pop()}</span>}
           </div>
+
+          {/* PDF open button */}
+          {selectedDoc.minio_key && (
+            <button
+              type="button"
+              className="mindmap__pdf-btn"
+              onClick={() => openPdf(selectedDoc.doc_id, selectedDoc.title)}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+              </svg>
+              Abrir PDF original com chunks
+            </button>
+          )}
+
           <div className="mindmap__detail-topics">
             {selectedDoc.topics.map((t) => (
               <span key={t} className="mindmap__topic-tag" onClick={() => { setSearch(t); handleSearch(); }}>
@@ -385,6 +456,8 @@ export function KnowledgeMindmap() {
               </span>
             ))}
           </div>
+
+          {/* Related docs */}
           {(() => {
             const related = graph.edges.filter((e) => e.source === selectedDoc.doc_id || e.target === selectedDoc.doc_id).sort((a, b) => b.weight - a.weight).slice(0, 5);
             if (!related.length) return null;
@@ -398,6 +471,18 @@ export function KnowledgeMindmap() {
                     <div key={e.source + e.target} className="mindmap__related-item" onClick={() => setSelectedNode(otherId)}>
                       <strong>{otherDoc?.title ?? otherId}</strong>
                       <span>{e.shared_topics.slice(0, 2).join(", ")}</span>
+                      {otherDoc?.minio_key && (
+                        <button
+                          type="button"
+                          onClick={(ev) => { ev.stopPropagation(); openPdf(otherId, otherDoc.title); }}
+                          style={{
+                            background: "none", border: "none", cursor: "pointer",
+                            color: "var(--primary, #4f7df3)", fontSize: 10, padding: 0,
+                          }}
+                        >
+                          📄 PDF
+                        </button>
+                      )}
                     </div>
                   );
                 })}
@@ -405,6 +490,17 @@ export function KnowledgeMindmap() {
             );
           })()}
         </div>
+      )}
+
+      {/* PDF Viewer Modal */}
+      {pdfInfo && (
+        <PdfViewerModal
+          docId={pdfInfo.docId}
+          docTitle={pdfInfo.docTitle}
+          initialPage={pdfInfo.page}
+          initialChunkId={pdfInfo.chunkId}
+          onClose={() => setPdfInfo(null)}
+        />
       )}
 
       <style>{`
@@ -442,6 +538,13 @@ export function KnowledgeMindmap() {
         }
         .mindmap__detail-title { margin: 0 0 .5rem; font-size: 1rem; font-weight: 700; color: var(--text); }
         .mindmap__detail-meta { display: flex; gap: 1rem; font-size: .8rem; color: var(--text-secondary); margin-bottom: .75rem; }
+        .mindmap__pdf-btn {
+          display: flex; align-items: center; gap: .4rem;
+          background: var(--primary); color: #fff; border: none; border-radius: var(--radius-sm);
+          padding: .4rem .85rem; font-size: .8rem; font-weight: 600; cursor: pointer;
+          margin-bottom: .75rem; width: 100%;
+        }
+        .mindmap__pdf-btn:hover { opacity: .88; }
         .mindmap__detail-topics { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: 1rem; }
         .mindmap__topic-tag {
           background: var(--primary-soft); color: var(--primary); border-radius: 20px;

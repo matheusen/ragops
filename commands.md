@@ -91,3 +91,4 @@ curl.exe -i -sS -X POST "http://localhost:8000/api/v1/validate/upload" `
   -F "provider=mock" `
   -F "files=@examples/input/PAY-1421/payment_logs.txt"
 ```
+ python scripts/article_scraper/kafka_consumer.py --from-beginning
