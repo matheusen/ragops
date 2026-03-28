@@ -37,6 +37,9 @@ dspy-ai>=2.6.0
 # Agendamento de tarefas (cron jobs LinkedIn)
 apscheduler>=3.10.0
 
+# Geração de PDF (IEEE paper)
+reportlab>=4.0.0
+
 # Dependências de Desenvolvimento e Teste
 pytest>=8.4.0
 pytest-asyncio>=1.1.0

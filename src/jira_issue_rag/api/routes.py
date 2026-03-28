@@ -2913,3 +2913,351 @@ def update_roadmap_progress(roadmap_id: str, body: dict):
 def get_default_provider(settings: Settings = Depends(get_settings)):
     return {"provider": settings.default_provider}
 
+
+# ── IEEE Paper ────────────────────────────────────────────────────────────────
+
+def _build_ieee_pdf(paper_text: str, title: str, authors: str) -> bytes:
+    """Renders paper_text as a two-column IEEE-style PDF using reportlab."""
+    import re as _re
+    from io import BytesIO
+
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import inch
+    from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer
+    from reportlab.platypus.flowables import BalancedColumns
+
+    buf = BytesIO()
+    PAGE_W, _ = letter
+    MARGIN = 0.75 * inch
+
+    doc = SimpleDocTemplate(
+        buf, pagesize=letter,
+        leftMargin=MARGIN, rightMargin=MARGIN,
+        topMargin=MARGIN, bottomMargin=MARGIN,
+    )
+
+    base = getSampleStyleSheet()
+
+    S_TITLE = ParagraphStyle("IEEETitle", parent=base["Title"],
+        fontSize=16, leading=20, spaceAfter=4,
+        alignment=TA_CENTER, fontName="Times-Bold")
+    S_AUTHOR = ParagraphStyle("IEEEAuthor", parent=base["Normal"],
+        fontSize=10, leading=14, spaceAfter=10,
+        alignment=TA_CENTER, fontName="Times-Italic")
+    S_SECTION = ParagraphStyle("IEEESection", parent=base["Normal"],
+        fontSize=10, leading=13, spaceBefore=10, spaceAfter=3,
+        fontName="Times-Bold", alignment=TA_CENTER)
+    S_SUBSECTION = ParagraphStyle("IEEESubsec", parent=base["Normal"],
+        fontSize=9, leading=12, spaceBefore=6, spaceAfter=2,
+        fontName="Times-BoldItalic", alignment=TA_LEFT)
+    S_BODY = ParagraphStyle("IEEEBody", parent=base["Normal"],
+        fontSize=9, leading=12, spaceAfter=4,
+        fontName="Times-Roman", alignment=TA_JUSTIFY, firstLineIndent=18)
+    S_BODY_NI = ParagraphStyle("IEEEBodyNI", parent=S_BODY, firstLineIndent=0)
+    S_REF = ParagraphStyle("IEEERef", parent=base["Normal"],
+        fontSize=8, leading=10, spaceAfter=3,
+        fontName="Times-Roman", alignment=TA_LEFT,
+        leftIndent=14, firstLineIndent=-14)
+    S_KW = ParagraphStyle("IEEEKw", parent=base["Normal"],
+        fontSize=9, leading=11, spaceAfter=6,
+        fontName="Times-Italic", alignment=TA_JUSTIFY)
+
+    story: list = []
+
+    # ── Full-width title block ─────────────────────────────────────────────
+    story.append(Paragraph(title or "IEEE Paper", S_TITLE))
+    if authors:
+        story.append(Paragraph(authors, S_AUTHOR))
+    story.append(HRFlowable(width="100%", thickness=1,
+                             color=colors.black, spaceAfter=6))
+
+    # ── Parse paper text into column flowables ─────────────────────────────
+    # Patterns
+    sec_re  = _re.compile(
+        r"^((?:[IVX]+)\.\s+\S.+|ABSTRACT|Abstract|KEYWORDS|Keywords|REFERENCES|References)",
+        _re.IGNORECASE,
+    )
+    subsec_re = _re.compile(
+        r"^([A-Z]\.|[0-9]+\))\s+\S.+",
+    )
+    ref_item_re = _re.compile(r"^\[\d+\]\s+")
+
+    col_content: list = []
+    in_refs = False
+    in_keywords = False
+
+    lines = paper_text.splitlines()
+    i = 0
+
+    def flush_para(buf_lines: list[str], is_refs: bool, is_kw: bool) -> None:
+        text = " ".join(buf_lines).strip()
+        if not text:
+            return
+        if is_refs:
+            # Each [N] starts a new reference entry
+            entries = _re.split(r"(?=\[\d+\])", text)
+            for entry in entries:
+                entry = entry.strip()
+                if entry:
+                    col_content.append(Paragraph(entry, S_REF))
+        elif is_kw:
+            col_content.append(Paragraph(text, S_KW))
+        else:
+            col_content.append(Paragraph(text, S_BODY))
+
+    para_buf: list[str] = []
+
+    while i < len(lines):
+        line = lines[i].strip()
+        i += 1
+
+        if not line:
+            flush_para(para_buf, in_refs, in_keywords)
+            para_buf = []
+            continue
+
+        if sec_re.match(line):
+            flush_para(para_buf, in_refs, in_keywords)
+            para_buf = []
+            in_keywords = bool(_re.match(r"^keywords", line, _re.IGNORECASE))
+            in_refs = bool(_re.match(r"^references", line, _re.IGNORECASE))
+            col_content.append(Spacer(1, 4))
+            col_content.append(Paragraph(line.upper(), S_SECTION))
+            continue
+
+        if subsec_re.match(line):
+            flush_para(para_buf, in_refs, in_keywords)
+            para_buf = []
+            col_content.append(Paragraph(line, S_SUBSECTION))
+            continue
+
+        # Reference items inline (e.g. [1] Smith, ...)
+        if in_refs and ref_item_re.match(line):
+            flush_para(para_buf, in_refs, in_keywords)
+            para_buf = []
+            para_buf.append(line)
+            continue
+
+        para_buf.append(line)
+
+    flush_para(para_buf, in_refs, in_keywords)
+
+    # ── Two-column layout ──────────────────────────────────────────────────
+    try:
+        story.append(BalancedColumns(
+            col_content, nCols=2,
+            needed=36, spaceBefore=0, spaceAfter=0,
+        ))
+    except Exception:
+        story.extend(col_content)
+
+    doc.build(story)
+    return buf.getvalue()
+
+
+def _ieee_collect_kb_sources(
+    store: "ArticleStore",
+    queries: list[str],
+    top_k_per_query: int = 5,
+    max_articles: int = 20,
+    snippet_chars: int = 600,
+) -> tuple[list[dict], str, str]:
+    """
+    Multi-query KB search that:
+    - Runs one search per query string
+    - Deduplicates by doc_id, keeping the richest chunks
+    - Returns (articles_meta, kb_sources_text, reference_list_text)
+
+    articles_meta entries: {ref_num, doc_id, title, year, source_path, global_context, snippets}
+    kb_sources_text: labeled excerpts for the LLM prompt
+    reference_list_text: numbered reference list for the LLM prompt
+    """
+    from collections import defaultdict
+
+    # doc_id → {title, year, source_path, global_context, snippets: [str]}
+    doc_map: dict[str, dict] = defaultdict(lambda: {
+        "title": "", "year": None, "source_path": "", "global_context": "", "snippets": [],
+    })
+
+    for q in queries:
+        try:
+            results = store.search(query=q, top_k=top_k_per_query, collection="articles")
+        except Exception:
+            continue
+        for r in results:
+            # ArticleSearchResult may be a model instance or a dict
+            def _get(obj: object, key: str, default: object = "") -> object:
+                if hasattr(obj, key):
+                    return getattr(obj, key) or default
+                if isinstance(obj, dict):
+                    return obj.get(key) or default
+                return default
+
+            doc_id = str(_get(r, "doc_id", ""))
+            if not doc_id:
+                continue
+            entry = doc_map[doc_id]
+            if not entry["title"]:
+                entry["title"] = str(_get(r, "canonical_title") or _get(r, "title") or doc_id)
+            if not entry["year"]:
+                entry["year"] = _get(r, "published_year", None)
+            if not entry["source_path"]:
+                entry["source_path"] = str(_get(r, "source_path", ""))
+            if not entry["global_context"]:
+                gc = str(_get(r, "global_context", ""))
+                if gc:
+                    entry["global_context"] = gc[:300]
+
+            snippet = str(_get(r, "content", "") or _get(r, "text", ""))
+            section = str(_get(r, "section_title", ""))
+            if snippet and len(entry["snippets"]) < 4:
+                label = f"[{section}] " if section else ""
+                entry["snippets"].append(f"{label}{snippet[:snippet_chars]}")
+
+        if len(doc_map) >= max_articles:
+            break
+
+    # Trim to max_articles, sorted by number of snippets (richest first)
+    ranked = sorted(doc_map.items(), key=lambda kv: len(kv[1]["snippets"]), reverse=True)
+    ranked = ranked[:max_articles]
+
+    articles_meta = []
+    kb_sources_lines: list[str] = []
+    ref_list_lines: list[str] = []
+
+    for ref_num, (doc_id, info) in enumerate(ranked, start=1):
+        title  = info["title"] or doc_id
+        year   = info["year"] or "n.d."
+        src    = info["source_path"]
+        # Derive a short source label from file path
+        src_label = src.split("/")[-1].split("\\")[-1].replace(".pdf", "").replace("_", " ") if src else "Knowledge Base"
+
+        articles_meta.append({
+            "ref_num": ref_num, "doc_id": doc_id, "title": title,
+            "year": year, "source_path": src, "snippets": info["snippets"],
+        })
+
+        # KB sources block for prompt
+        combined_snippets = "\n  ".join(info["snippets"]) if info["snippets"] else info["global_context"] or "(no excerpt)"
+        kb_sources_lines.append(
+            f"--- Source [{ref_num}]: {title} ({year}) ---\n  {combined_snippets}"
+        )
+
+        # IEEE reference entry
+        ref_list_lines.append(
+            f"[{ref_num}] \"{title},\" {src_label}, {year}."
+        )
+
+    kb_sources_text  = "\n\n".join(kb_sources_lines) if kb_sources_lines else "No knowledge base sources found."
+    reference_list_text = "\n".join(ref_list_lines) if ref_list_lines else "No references found."
+
+    return articles_meta, kb_sources_text, reference_list_text
+
+
+@router.post(
+    "/roadmap/{roadmap_id}/ieee-paper",
+    tags=["knowledge"],
+    summary="Gera um artigo IEEE em PDF com base no roadmap e na KB",
+)
+def generate_ieee_paper(
+    roadmap_id: str,
+    body: dict,
+    store: ArticleStore = Depends(get_article_store),
+    workflow: ValidationWorkflow = Depends(get_workflow),
+):
+    col = _roadmap_col()
+    doc = col.find_one({"id": roadmap_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Roadmap não encontrado")
+
+    provider      = body.get("provider", "gemini")
+    authors       = (body.get("authors") or "").strip()
+    custom_prompt = (body.get("custom_prompt") or "").strip()
+    paper_title   = (body.get("paper_title") or "").strip()
+    language      = body.get("language", "en")  # "en" or "pt"
+
+    roadmap_title = doc.get("title", doc.get("goal", ""))
+    goal          = doc.get("goal", roadmap_title)
+    phases        = doc.get("phases", [])
+
+    if not paper_title:
+        paper_title = roadmap_title
+
+    # ── Build roadmap summary ──────────────────────────────────────────────
+    phase_lines: list[str] = []
+    all_topic_titles: list[str] = []
+    for p in phases:
+        topic_list = p.get("topics", [])
+        t_names = "; ".join(t.get("title", "") for t in topic_list)
+        phase_lines.append(
+            f"Phase: {p.get('title', '')} ({p.get('duration', '')})\n  Topics: {t_names}"
+        )
+        for t in topic_list:
+            all_topic_titles.append(t.get("title", ""))
+            if t.get("description"):
+                phase_lines.append(f"  - {t['title']}: {t['description'][:250]}")
+
+    roadmap_summary = "\n".join(phase_lines)
+
+    # ── Multi-query KB search ──────────────────────────────────────────────
+    # One query per topic + one general goal query → richest possible coverage
+    search_queries: list[str] = [goal]
+    for tt in all_topic_titles[:15]:   # cap to avoid excessive queries
+        if tt:
+            search_queries.append(f"{tt} {goal[:60]}")
+
+    _, kb_sources_text, reference_list_text = _ieee_collect_kb_sources(
+        store=store,
+        queries=search_queries,
+        top_k_per_query=6,
+        max_articles=20,
+        snippet_chars=700,
+    )
+
+    # ── Call LLM ──────────────────────────────────────────────────────────
+    try:
+        result = workflow.execute_prompt(
+            PromptExecutionRequest(
+                prompt_name="ieee_paper",
+                content=goal,
+                provider=provider,
+                title=paper_title,
+                metadata={
+                    "authors": authors or "Anonymous",
+                    "goal": goal,
+                    "kb_sources": kb_sources_text,
+                    "roadmap_summary": roadmap_summary,
+                    "reference_list": reference_list_text,
+                    "custom_instructions": custom_prompt or "None",
+                    "language": "Brazilian Portuguese (pt-BR)" if language == "pt" else "English",
+                },
+            )
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    paper_text = result.output_text.strip()
+
+    # ── Generate PDF ───────────────────────────────────────────────────────
+    try:
+        pdf_bytes = _build_ieee_pdf(paper_text, paper_title, authors or "Anonymous")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {exc}") from exc
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+    tmp.write(pdf_bytes)
+    tmp.close()
+
+    safe_title = "".join(c if c.isalnum() or c in "_ -" else "_" for c in paper_title)[:60]
+    filename = f"ieee_{safe_title}.pdf"
+
+    return FileResponse(
+        tmp.name,
+        media_type="application/pdf",
+        filename=filename,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+

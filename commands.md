@@ -94,3 +94,7 @@ curl.exe -i -sS -X POST "http://localhost:8000/api/v1/validate/upload" `
  python scripts/article_scraper/kafka_consumer.py --from-beginning
 
  & c:/Users/mengl/Documents/GitHub/ragflow/.venv/Scripts/python.exe C:\Users\mengl\Documents\GitHub\ragflow\scripts\article_scraper\batch_download.py --unpaywall-email mengl@example.com
+
+ python -m uvicorn jira_issue_rag.main:app --reload --host 0.0.0.0 --port 8004
+ .\.venv\Scripts\Activate.ps1
+python -m uvicorn jira_issue_rag.main:app --reload --host 0.0.0.0 --port 8004

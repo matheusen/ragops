@@ -1825,6 +1825,15 @@ export function RoadmapGenerator() {
   const [liCronSchedule,     setLiCronSchedule]     = useState("weekly");
   const [creatingCron,       setCreatingCron]       = useState(false);
 
+  // IEEE Paper state
+  const [showIeeePaper,    setShowIeeePaper]    = useState(false);
+  const [ieeePaperTitle,   setIeeePaperTitle]   = useState("");
+  const [ieeeAuthors,      setIeeeAuthors]      = useState("");
+  const [ieeeCustomPrompt, setIeeeCustomPrompt] = useState("");
+  const [ieeeLang,         setIeeeLanguage]     = useState<"en" | "pt">("en");
+  const [generatingIeee,   setGeneratingIeee]   = useState(false);
+  const [ieeeError,        setIeeeError]        = useState("");
+
   // How it works modal
   const [showHowItWorks, setShowHowItWorks] = useState(false);
 
@@ -2012,6 +2021,44 @@ export function RoadmapGenerator() {
     const id = savedIdRef.current;
     if (id) { loadSavedPosts(id); loadLiCrons(id); }
   }, [loadSavedPosts, loadLiCrons]);
+
+  const doGenerateIeeePaper = async () => {
+    if (!savedIdRef.current) return;
+    setGeneratingIeee(true);
+    setIeeeError("");
+    try {
+      const res = await fetch(`${API_BASE}/roadmap/${savedIdRef.current}/ieee-paper`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider,
+          paper_title: ieeePaperTitle,
+          authors: ieeeAuthors,
+          custom_prompt: ieeeCustomPrompt,
+          language: ieeeLang,
+        }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error((d as { detail?: string })?.detail || `HTTP ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const disposition = res.headers.get("content-disposition") ?? "";
+      const match = disposition.match(/filename="([^"]+)"/);
+      a.href = url;
+      a.download = match?.[1] ?? "ieee_paper.pdf";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e: unknown) {
+      setIeeeError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setGeneratingIeee(false);
+    }
+  };
 
   const doGenerateLinkedin = async () => {
     if (!savedIdRef.current) return;
@@ -2422,6 +2469,14 @@ export function RoadmapGenerator() {
                 LinkedIn Studio
               </button>
               <button
+                className="rg2__ieee-btn"
+                type="button"
+                onClick={() => { setShowIeeePaper(true); setIeeeError(""); }}
+                title="Gerar artigo científico IEEE em PDF"
+              >
+                IEEE Paper
+              </button>
+              <button
                 className={`rg2__checklist-btn${showChecklist ? " rg2__checklist-btn--active" : ""}`}
                 type="button"
                 onClick={() => setShowChecklist(v => !v)}
@@ -2777,6 +2832,93 @@ export function RoadmapGenerator() {
                 )}
               </div>
             </details>
+
+          </div>
+        </div>
+      )}
+
+      {/* ── IEEE Paper Modal ── */}
+      {showIeeePaper && (
+        <div className="ieee__overlay" onClick={() => setShowIeeePaper(false)}>
+          <div className="ieee__modal" onClick={(e) => e.stopPropagation()}>
+
+            <div className="ieee__header">
+              <span className="ieee__title">📄 Gerar Artigo IEEE</span>
+              <button className="ieee__close" type="button" onClick={() => setShowIeeePaper(false)}>✕</button>
+            </div>
+
+            <div className="ieee__section">
+              <label className="ieee__label">Título do paper <span className="ieee__optional">(opcional)</span></label>
+              <input
+                className="ieee__input"
+                type="text"
+                placeholder={roadmap?.title ?? "Título gerado automaticamente pelo LLM"}
+                value={ieeePaperTitle}
+                onChange={(e) => setIeeePaperTitle(e.target.value)}
+              />
+            </div>
+
+            <div className="ieee__section">
+              <label className="ieee__label">Autores <span className="ieee__optional">(opcional)</span></label>
+              <input
+                className="ieee__input"
+                type="text"
+                placeholder="Ex: João Silva, Maria Souza — UFMG, Belo Horizonte, Brasil"
+                value={ieeeAuthors}
+                onChange={(e) => setIeeeAuthors(e.target.value)}
+              />
+            </div>
+
+            <div className="ieee__section">
+              <label className="ieee__label">Idioma do paper</label>
+              <div className="ieee__lang-row">
+                <button
+                  type="button"
+                  className={`ieee__lang-btn${ieeeLang === "en" ? " ieee__lang-btn--active" : ""}`}
+                  onClick={() => setIeeeLanguage("en")}
+                >
+                  🇺🇸 English
+                </button>
+                <button
+                  type="button"
+                  className={`ieee__lang-btn${ieeeLang === "pt" ? " ieee__lang-btn--active" : ""}`}
+                  onClick={() => setIeeeLanguage("pt")}
+                >
+                  🇧🇷 Português
+                </button>
+              </div>
+            </div>
+
+            <div className="ieee__section">
+              <label className="ieee__label">Instruções customizadas <span className="ieee__optional">(opcional)</span></label>
+              <textarea
+                className="ieee__textarea"
+                rows={3}
+                placeholder="Ex: foque em aplicações práticas, adicione mais exemplos de código, use referências de 2020 em diante…"
+                value={ieeeCustomPrompt}
+                onChange={(e) => setIeeeCustomPrompt(e.target.value)}
+              />
+            </div>
+
+            <div className="ieee__info">
+              <span>📚</span>
+              <span>
+                Paper no padrão IEEE de duas colunas — Abstract, Introduction, Background, Methodology, Results &amp; Discussion, Conclusion e References — gerado com base no roadmap e nos artigos da base de conhecimento.
+                {ieeeLang === "pt" && <strong> O texto será escrito em português.</strong>}
+              </span>
+            </div>
+
+            <button
+              className="ieee__gen-btn"
+              type="button"
+              onClick={doGenerateIeeePaper}
+              disabled={generatingIeee}
+            >
+              {generatingIeee
+                ? <><span className="rg2__spinner" /> Gerando PDF…</>
+                : "📄 Gerar & Baixar PDF"}
+            </button>
+            {ieeeError && <span className="ieee__error">{ieeeError}</span>}
 
           </div>
         </div>
@@ -4143,6 +4285,82 @@ export function RoadmapGenerator() {
           width: 12px; height: 12px; border: 2px solid #fff4; border-top-color: #fff;
           border-radius: 50%; animation: spin .7s linear infinite; display: inline-block;
         }
+
+        /* ── IEEE Paper button ── */
+        .rg2__ieee-btn {
+          padding: .35rem .85rem; border-radius: var(--radius-sm);
+          border: 1px solid #d97706; color: #d97706;
+          background: transparent; font-size: .8rem; font-weight: 600;
+          cursor: pointer; transition: all 120ms; white-space: nowrap;
+        }
+        .rg2__ieee-btn:hover { background: #fef3c7; border-color: #b45309; color: #b45309; }
+
+        /* ── IEEE Paper Modal ── */
+        .ieee__overlay {
+          position: fixed; inset: 0; background: rgba(0,0,0,.55);
+          display: flex; align-items: center; justify-content: center;
+          z-index: 1100; padding: 1rem;
+        }
+        .ieee__modal {
+          background: var(--surface); border: 1px solid var(--border);
+          border-radius: var(--radius-lg); box-shadow: 0 20px 60px rgba(0,0,0,.3);
+          width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto;
+          padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;
+        }
+        .ieee__header {
+          display: flex; align-items: center; justify-content: space-between;
+          padding-bottom: .75rem; border-bottom: 1px solid var(--border);
+        }
+        .ieee__title { font-size: 1rem; font-weight: 700; color: var(--text); }
+        .ieee__close {
+          border: none; background: transparent; cursor: pointer;
+          font-size: 1rem; color: var(--text-tertiary); padding: 2px 6px;
+          border-radius: 4px; transition: background 100ms;
+        }
+        .ieee__close:hover { background: var(--border-light); color: var(--text); }
+        .ieee__section { display: flex; flex-direction: column; gap: .35rem; }
+        .ieee__label { font-size: .78rem; font-weight: 600; color: var(--text-secondary); }
+        .ieee__optional { font-weight: 400; color: var(--text-tertiary); }
+        .ieee__input {
+          border: 1px solid var(--border); border-radius: var(--radius-sm);
+          padding: .5rem .75rem; font-size: .85rem; background: var(--bg);
+          color: var(--text); outline: none; transition: border-color 140ms; width: 100%;
+        }
+        .ieee__input:focus { border-color: #d97706; }
+        .ieee__textarea {
+          border: 1px solid var(--border); border-radius: var(--radius-sm);
+          padding: .5rem .75rem; font-size: .85rem; background: var(--bg);
+          color: var(--text); outline: none; resize: vertical; transition: border-color 140ms;
+          font-family: inherit; width: 100%;
+        }
+        .ieee__textarea:focus { border-color: #d97706; }
+        .ieee__info {
+          display: flex; gap: .5rem; align-items: flex-start;
+          background: #fffbeb; border: 1px solid #fde68a; border-radius: var(--radius-sm);
+          padding: .65rem .85rem; font-size: .78rem; color: #92400e; line-height: 1.5;
+        }
+        .ieee__gen-btn {
+          display: flex; align-items: center; justify-content: center; gap: .4rem;
+          background: #d97706; color: #fff; border: none;
+          border-radius: var(--radius-md); padding: .6rem 1.2rem;
+          font-size: .88rem; font-weight: 700; cursor: pointer;
+          transition: opacity 120ms;
+        }
+        .ieee__gen-btn:hover:not(:disabled) { opacity: .88; }
+        .ieee__gen-btn:disabled { opacity: .45; cursor: not-allowed; }
+        .ieee__lang-row { display: flex; gap: .5rem; }
+        .ieee__lang-btn {
+          flex: 1; padding: .4rem .6rem; border-radius: var(--radius-sm);
+          border: 1px solid var(--border); background: var(--bg);
+          color: var(--text-secondary); font-size: .82rem; cursor: pointer;
+          transition: all 120ms; font-weight: 500;
+        }
+        .ieee__lang-btn:hover { border-color: #d97706; color: #d97706; }
+        .ieee__lang-btn--active {
+          background: #fef3c7; border-color: #d97706;
+          color: #92400e; font-weight: 700;
+        }
+        .ieee__error { font-size: .78rem; color: #dc2626; }
       `}</style>
     </div>
   );
