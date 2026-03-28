@@ -1417,8 +1417,11 @@ def scrape_dblp(driver: webdriver.Chrome, query: str, cfg: dict,
         for a in item.select("nav.publ li a, .publ-list a"):
             href = a.get("href", "")
             text = a.get_text(strip=True).lower()
-            if "doi.org" in href:
-                doi = href.replace("https://doi.org/", "").replace("http://doi.org/", "")
+            # Match only URLs that ARE a doi.org link (not social-share URLs that
+            # contain doi.org as an encoded query parameter).
+            doi_m = re.match(r"https?://(?:dx\.)?doi\.org/(10\.\S+)", href)
+            if doi_m and not doi:
+                doi = doi_m.group(1)
             if not art_url and href.startswith("http") and not is_unwanted_article_url(href):
                 art_url = href
             if ("pdf" in text or href.endswith(".pdf")) and (

@@ -92,3 +92,5 @@ curl.exe -i -sS -X POST "http://localhost:8000/api/v1/validate/upload" `
   -F "files=@examples/input/PAY-1421/payment_logs.txt"
 ```
  python scripts/article_scraper/kafka_consumer.py --from-beginning
+
+ & c:/Users/mengl/Documents/GitHub/ragflow/.venv/Scripts/python.exe C:\Users\mengl\Documents\GitHub\ragflow\scripts\article_scraper\batch_download.py --unpaywall-email mengl@example.com
