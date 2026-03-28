@@ -63,6 +63,9 @@ interface RoadmapTopic {
   description: string;
   resources: string[];
   prerequisites: string[];
+  learning_objective?: string;
+  difficulty?: number;
+  estimated_time?: string;
 }
 
 interface RoadmapPhase {
@@ -128,6 +131,7 @@ function buildLayout(
   onReviewRefs?: () => void,
   onExpand?: (topicId: string, title: string, description: string, color: string) => void,
   onChat?: (topicId: string, title: string, description: string) => void,
+  onExplain?: (topicId: string, title: string, description: string) => void,
 ) {
   const nodes: ReturnType<typeof makeNode>[] = [];
   const edges: ReturnType<typeof makeEdge>[] = [];
@@ -177,6 +181,9 @@ function buildLayout(
         description: topic.description,
         resources: topic.resources,
         color,
+        learning_objective: topic.learning_objective,
+        difficulty: topic.difficulty,
+        estimated_time: topic.estimated_time,
         onSearch: () => onTopicSearch(topic.title, topic.id),
         onResourceSearch: (r: string) => onTopicSearch(r),
         onReviewRefs,
@@ -185,6 +192,9 @@ function buildLayout(
           : undefined,
         onChat: onChat
           ? () => onChat(topic.id, topic.title, topic.description)
+          : undefined,
+        onExplain: onExplain
+          ? () => onExplain(topic.id, topic.title, topic.description)
           : undefined,
       }));
 
@@ -237,19 +247,54 @@ function PhaseNode({ data }: NodeProps) {
   );
 }
 
+// ── Learning Status ───────────────────────────────────────────────────────────
+type LearningStatus = "nao_iniciado" | "estudando" | "praticando" | "dominado" | "ensinei";
+
+const STATUS_ORDER: LearningStatus[] = ["nao_iniciado", "estudando", "praticando", "dominado", "ensinei"];
+
+const STATUS_META: Record<LearningStatus, { label: string; short: string; color: string; bg: string }> = {
+  nao_iniciado: { label: "Não iniciado", short: "—",    color: "#94a3b8", bg: "#f1f5f9" },
+  estudando:    { label: "Estudando",    short: "📖",   color: "#3b82f6", bg: "#eff6ff" },
+  praticando:   { label: "Praticando",   short: "✏️",   color: "#f59e0b", bg: "#fffbeb" },
+  dominado:     { label: "Dominado",     short: "✓",    color: "#22c55e", bg: "#f0fdf4" },
+  ensinei:      { label: "Ensinei",      short: "🎓",   color: "#9333ea", bg: "#faf5ff" },
+};
+
+function normalizeStatus(val: unknown): LearningStatus {
+  if (val === true)  return "dominado";
+  if (!val)          return "nao_iniciado";
+  if (STATUS_ORDER.includes(val as LearningStatus)) return val as LearningStatus;
+  return "nao_iniciado";
+}
+
+function isDoneStatus(s: LearningStatus): boolean {
+  return s === "dominado" || s === "ensinei";
+}
+
+function nextStatus(s: LearningStatus): LearningStatus {
+  const i = STATUS_ORDER.indexOf(s);
+  return STATUS_ORDER[(i + 1) % STATUS_ORDER.length];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 function TopicNode({ data }: NodeProps) {
   const color        = data.color as string;
   const onSearch     = data.onSearch as () => void;
   const onResSearch  = data.onResourceSearch as (r: string) => void;
   const onReviewRefs = data.onReviewRefs as (() => void) | undefined;
-  const onExpand     = data.onExpand as (() => void) | undefined;
-  const onChat       = data.onChat as (() => void) | undefined;
+  const onExpand     = data.onExpand   as (() => void) | undefined;
+  const onChat       = data.onChat     as (() => void) | undefined;
+  const onExplain    = data.onExplain  as (() => void) | undefined;
   const resources    = data.resources as string[];
   const title        = data.title as string;
   const desc         = data.description as string;
   const importance   = data.interviewImportance as "high" | "medium" | undefined;
   const tip          = data.interviewTip as string | undefined;
   const expanding    = data.expanding as boolean | undefined;
+  const difficulty   = data.difficulty as number | undefined;
+  const estimatedTime = data.estimated_time as string | undefined;
+  const learningObjective = data.learning_objective as string | undefined;
 
   const isExpanded = !!(data.isExpanded as boolean | undefined);
   const isDone     = !!(data.isDone     as boolean | undefined);
@@ -315,6 +360,25 @@ function TopicNode({ data }: NodeProps) {
           )}
         </div>
       )}
+      {(difficulty || estimatedTime || learningObjective) && (
+        <div className="rmn__enrich-meta">
+          {learningObjective && (
+            <div className="rmn__objective" title={learningObjective}>
+              🎯 {learningObjective.length > 70 ? learningObjective.slice(0, 70) + "…" : learningObjective}
+            </div>
+          )}
+          <div className="rmn__enrich-row">
+            {difficulty && (
+              <span className="rmn__diff-stars">
+                {"★".repeat(difficulty)}{"☆".repeat(5 - difficulty)}
+              </span>
+            )}
+            {estimatedTime && (
+              <span className="rmn__time-badge">⏱ {estimatedTime}</span>
+            )}
+          </div>
+        </div>
+      )}
       <div className="rmn__node-actions">
         {onExpand && (
           <button
@@ -340,6 +404,19 @@ function TopicNode({ data }: NodeProps) {
               <path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"/>
             </svg>
             Chat
+          </button>
+        )}
+        {onExplain && (
+          <button
+            className="rmn__explain-btn"
+            style={{ borderColor: color + "88", color }}
+            onClick={(e) => { e.stopPropagation(); onExplain(); }}
+            title="Explicar este tópico em 6 perspectivas"
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2a7 7 0 0 1 7 7c0 2.6-1.4 4.9-3.5 6.2V17a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1v-1.8A7 7 0 0 1 12 2zm-1.5 16h3v1.5a1.5 1.5 0 0 1-3 0V18z"/>
+            </svg>
+            Explicar
           </button>
         )}
       </div>
@@ -377,13 +454,12 @@ interface ChecklistItem {
 interface ChecklistPanelProps {
   roadmap: RoadmapData;
   expandedRecords: Record<string, { parent_id: string; title: string; description: string; color: string }>;
-  progress: Record<string, boolean>;
-  onToggle: (id: string, checked: boolean) => void;
+  progress: Record<string, LearningStatus>;
+  onToggle: (id: string, status: LearningStatus) => void;
   onClose: () => void;
 }
 
 function ChecklistPanel({ roadmap, expandedRecords, progress, onToggle, onClose }: ChecklistPanelProps) {
-  // Build tree from roadmap + expanded nodes
   const tree: ChecklistItem[] = roadmap.phases.map((phase) => {
     const topics: ChecklistItem[] = phase.topics.map((topic) => {
       const subtopics: ChecklistItem[] = Object.entries(expandedRecords)
@@ -394,37 +470,49 @@ function ChecklistPanel({ roadmap, expandedRecords, progress, onToggle, onClose 
     return { id: phase.id, title: phase.title, type: "phase" as const, children: topics };
   });
 
-  // Count totals
   const allTopicIds = tree.flatMap(ph =>
     ph.children.flatMap(t => [t.id, ...t.children.map(s => s.id)])
   );
-  const doneCount  = allTopicIds.filter(id => progress[id]).length;
+  const doneCount  = allTopicIds.filter(id => isDoneStatus(progress[id] ?? "nao_iniciado")).length;
   const totalCount = allTopicIds.length;
   const pct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
 
+  // Count per-status for the legend
+  const statusCounts = STATUS_ORDER.map(s => ({
+    s,
+    count: allTopicIds.filter(id => (progress[id] ?? "nao_iniciado") === s).length,
+  })).filter(x => x.count > 0);
+
   const renderItem = (item: ChecklistItem, depth: number) => {
-    const done = !!progress[item.id];
-    const childIds = item.children.flatMap(c => [c.id, ...c.children.map(s => s.id)]);
-    const childDone  = childIds.filter(id => progress[id]).length;
+    const status    = progress[item.id] ?? "nao_iniciado";
+    const meta      = STATUS_META[status];
+    const isDone    = isDoneStatus(status);
+    const childIds  = item.children.flatMap(c => [c.id, ...c.children.map(s => s.id)]);
+    const childDone = childIds.filter(id => isDoneStatus(progress[id] ?? "nao_iniciado")).length;
     const childTotal = childIds.length;
+
+    const isPhase = item.type === "phase";
 
     return (
       <div key={item.id}>
-        <label
-          className={`cl-item cl-item--${item.type} ${done ? "cl-item--done" : ""}`}
+        <div
+          className={`cl-item cl-item--${item.type} ${isDone ? "cl-item--done" : ""}`}
           style={{ paddingLeft: `${0.5 + depth * 1.1}rem` }}
         >
-          <input
-            type="checkbox"
-            className="cl-item__cb"
-            checked={done}
-            onChange={e => onToggle(item.id, e.target.checked)}
-          />
           <span className="cl-item__title">{item.title}</span>
-          {item.type === "phase" && childTotal > 0 && (
+          {isPhase && childTotal > 0 ? (
             <span className="cl-item__count">{childDone}/{childTotal}</span>
-          )}
-        </label>
+          ) : !isPhase ? (
+            <button
+              className="cl-item__status-btn"
+              style={{ background: meta.bg, color: meta.color, borderColor: meta.color + "55" }}
+              onClick={() => onToggle(item.id, nextStatus(status))}
+              title={`${meta.label} — clique para avançar`}
+            >
+              {meta.short} <span className="cl-item__status-label">{meta.label}</span>
+            </button>
+          ) : null}
+        </div>
         {item.children.map(child => renderItem(child, depth + 1))}
       </div>
     );
@@ -437,13 +525,26 @@ function ChecklistPanel({ roadmap, expandedRecords, progress, onToggle, onClose 
         <button className="cl-panel__close" onClick={onClose}>×</button>
       </div>
 
-      {/* Overall progress bar */}
       <div className="cl-panel__progress">
         <div className="cl-panel__progress-bar">
           <div className="cl-panel__progress-fill" style={{ width: `${pct}%` }} />
         </div>
         <span className="cl-panel__progress-label">{doneCount}/{totalCount} · {pct}%</span>
       </div>
+
+      {statusCounts.length > 0 && (
+        <div className="cl-panel__legend">
+          {statusCounts.map(({ s, count }) => (
+            <span
+              key={s}
+              className="cl-panel__legend-item"
+              style={{ color: STATUS_META[s].color }}
+            >
+              {STATUS_META[s].short} {count}
+            </span>
+          ))}
+        </div>
+      )}
 
       <div className="cl-panel__list">
         {tree.map(phase => renderItem(phase, 0))}
@@ -1789,7 +1890,7 @@ export function RoadmapGenerator() {
 
   // Checklist state
   const [showChecklist, setShowChecklist] = useState(false);
-  const [progress, setProgress] = useState<Record<string, boolean>>({});
+  const [progress, setProgress] = useState<Record<string, LearningStatus>>({});
   const saveProgressTick = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Chat state
@@ -1825,6 +1926,39 @@ export function RoadmapGenerator() {
   const [liCronSchedule,     setLiCronSchedule]     = useState("weekly");
   const [creatingCron,       setCreatingCron]       = useState(false);
 
+  // Presentation Mode state
+  const [showPresentation,       setShowPresentation]       = useState(false);
+  const [presentationData,       setPresentationData]       = useState<{
+    roadmap_title: string;
+    slides: { index: number; title: string; subtitle: string; content: string; bullets: string[] | null; highlight: string | null }[];
+  } | null>(null);
+  const [presentationSlide,      setPresentationSlide]      = useState(0);
+  const [generatingPresentation, setGeneratingPresentation] = useState(false);
+  const [presentationError,      setPresentationError]      = useState("");
+
+  // Teaching Studio state
+  const [showTeaching,       setShowTeaching]       = useState(false);
+  const [teachingPlan,       setTeachingPlan]        = useState<{
+    didactic_sequence: string; lesson_plan: string;
+    mentorship_script: string; review_questions: string;
+  } | null>(null);
+  const [teachingTab,        setTeachingTab]         = useState<"didactic_sequence"|"lesson_plan"|"mentorship_script"|"review_questions">("didactic_sequence");
+  const [generatingTeaching, setGeneratingTeaching]  = useState(false);
+  const [teachingCustom,     setTeachingCustom]      = useState("");
+  const [teachingError,      setTeachingError]       = useState("");
+  const [teachingCopied,     setTeachingCopied]      = useState(false);
+
+  // Explain Node state
+  const [showExplain,    setShowExplain]    = useState(false);
+  const [explainLoading, setExplainLoading] = useState(false);
+  const [explainData,    setExplainData]    = useState<{
+    topic_id: string; topic_title: string;
+    beginner: string; technical: string; analogy: string;
+    real_case: string; code_example: string; common_mistakes: string;
+  } | null>(null);
+  const [explainTab,  setExplainTab]  = useState<"beginner"|"technical"|"analogy"|"real_case"|"code_example"|"common_mistakes">("beginner");
+  const [explainError, setExplainError] = useState("");
+
   // IEEE Paper state
   const [showIeeePaper,    setShowIeeePaper]    = useState(false);
   const [ieeePaperTitle,   setIeeePaperTitle]   = useState("");
@@ -1833,6 +1967,11 @@ export function RoadmapGenerator() {
   const [ieeeLang,         setIeeeLanguage]     = useState<"en" | "pt">("en");
   const [generatingIeee,   setGeneratingIeee]   = useState(false);
   const [ieeeError,        setIeeeError]        = useState("");
+
+  // Node Card Enrichment state
+  const [enriching,   setEnriching]   = useState(false);
+  const [enrichError, setEnrichError] = useState("");
+  const [enrichedAt,  setEnrichedAt]  = useState<string | null>(null);
 
   // How it works modal
   const [showHowItWorks, setShowHowItWorks] = useState(false);
@@ -1879,7 +2018,7 @@ export function RoadmapGenerator() {
   // Sync progress → node data.isDone so TopicNode can render done state
   useEffect(() => {
     setNodes(nds => nds.map(n => {
-      const done = !!progress[n.id];
+      const done = isDoneStatus(progress[n.id] ?? "nao_iniciado");
       if (!!n.data.isDone === done) return n;
       return { ...n, data: { ...n.data, isDone: done } };
     }));
@@ -1892,6 +2031,20 @@ export function RoadmapGenerator() {
       .then((d) => { if (d.provider) setProvider(d.provider); })
       .catch(() => {});
   }, []);
+
+  // Keyboard navigation for Presentation Mode
+  useEffect(() => {
+    if (!showPresentation) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "ArrowRight" || e.key === "ArrowDown")
+        setPresentationSlide(s => Math.min(s + 1, (presentationData?.slides.length ?? 1) - 1));
+      if (e.key === "ArrowLeft"  || e.key === "ArrowUp")
+        setPresentationSlide(s => Math.max(s - 1, 0));
+      if (e.key === "Escape") setShowPresentation(false);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [showPresentation, presentationData]);
 
   const flushPositions = useCallback(() => {
     const id = savedIdRef.current;
@@ -2218,11 +2371,121 @@ export function RoadmapGenerator() {
     }
   }, [provider, roadmap, handleSearch, handleOpenChat, setNodes, setEdges, saveExpansions, savePositions]);
 
+  const openPresentation = useCallback(async () => {
+    setShowPresentation(true);
+    setPresentationSlide(0);
+    setPresentationError("");
+    const id = savedIdRef.current;
+    if (!id) return;
+    // Use cached data if available
+    if (presentationData) return;
+    // Try cached from server
+    try {
+      const r = await fetch(`${API_BASE}/roadmap/${id}/presentation`);
+      if (r.ok) { const d = await r.json(); if (d.presentation?.slides?.length) { setPresentationData(d.presentation); return; } }
+    } catch { /* ignore */ }
+    // Generate
+    setGeneratingPresentation(true);
+    try {
+      const res = await fetch(`${API_BASE}/roadmap/${id}/presentation`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d?.detail || `HTTP ${res.status}`);
+      setPresentationData(d);
+    } catch (e: unknown) {
+      setPresentationError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setGeneratingPresentation(false);
+    }
+  }, [presentationData, provider]);
+
+  const openTeachingStudio = useCallback(async () => {
+    setShowTeaching(true);
+    setTeachingError("");
+    if (teachingPlan) return; // already loaded
+    const id = savedIdRef.current;
+    if (!id) return;
+    // Try to load cached plan first
+    try {
+      const r = await fetch(`${API_BASE}/roadmap/${id}/teaching-studio`);
+      if (r.ok) { const d = await r.json(); if (d.plan) { setTeachingPlan(d.plan); return; } }
+    } catch { /* ignore */ }
+  }, [teachingPlan]);
+
+  const doGenerateTeaching = async () => {
+    if (!savedIdRef.current) return;
+    setGeneratingTeaching(true);
+    setTeachingError("");
+    setTeachingPlan(null);
+    try {
+      const res = await fetch(`${API_BASE}/roadmap/${savedIdRef.current}/teaching-studio`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, custom_instructions: teachingCustom }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d?.detail || `HTTP ${res.status}`);
+      setTeachingPlan(d);
+      setTeachingTab("didactic_sequence");
+    } catch (e: unknown) {
+      setTeachingError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setGeneratingTeaching(false);
+    }
+  };
+
+  const doEnrichRoadmap = async () => {
+    if (!savedIdRef.current) return;
+    setEnriching(true);
+    setEnrichError("");
+    try {
+      const res = await fetch(`${API_BASE}/roadmap/${savedIdRef.current}/enrich`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d?.detail || `HTTP ${res.status}`);
+      applyRoadmap(d);
+      setEnrichedAt(new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }));
+    } catch (e: unknown) {
+      setEnrichError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setEnriching(false);
+    }
+  };
+
+  const handleExplainNode = useCallback(async (topicId: string, title: string, description: string) => {
+    if (!savedIdRef.current) return;
+    setShowExplain(true);
+    setExplainLoading(true);
+    setExplainData(null);
+    setExplainError("");
+    setExplainTab("beginner");
+    try {
+      const res = await fetch(`${API_BASE}/roadmap/${savedIdRef.current}/explain-node/${topicId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, topic_title: title, topic_description: description }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d?.detail || `HTTP ${res.status}`);
+      setExplainData(d);
+    } catch (e: unknown) {
+      setExplainError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setExplainLoading(false);
+    }
+  }, [provider]);
+
   const applyRoadmap = useCallback((data: RoadmapData & { node_positions?: SavedPositions; expanded_nodes?: { id: string; parent_id: string; title: string; description: string; color: string }[] }) => {
     setRoadmap(data);
     setKbContext(null);
     const positions = data.node_positions ?? {};
-    const { nodes: n, edges: e } = buildLayout(data, handleSearch, positions, () => doReviewRef.current(), handleExpandTopic, handleOpenChat);
+    const { nodes: n, edges: e } = buildLayout(data, handleSearch, positions, () => doReviewRef.current(), handleExpandTopic, handleOpenChat, handleExplainNode);
 
     // Restaura nós expandidos salvos
     expandedRecordsRef.current = {};
@@ -2240,6 +2503,7 @@ export function RoadmapGenerator() {
           onResourceSearch: (r: string) => handleSearch(r),
           onExpand: () => handleExpandTopic(rec.id, rec.title, rec.description, rec.color),
           onChat: () => handleOpenChat(rec.id, rec.title, rec.description),
+          onExplain: () => handleExplainNode(rec.id, rec.title, rec.description),
         },
       });
       expEdges.push({
@@ -2252,7 +2516,7 @@ export function RoadmapGenerator() {
 
     setNodes([...n as Node[], ...expNodes]);
     setEdges([...e as Edge[], ...expEdges]);
-  }, [handleSearch, handleExpandTopic, handleOpenChat, setNodes, setEdges]);
+  }, [handleSearch, handleExpandTopic, handleOpenChat, handleExplainNode, setNodes, setEdges]);
 
   // Auto-save after generation
   const saveRoadmap = useCallback(async (data: RoadmapData) => {
@@ -2300,7 +2564,7 @@ export function RoadmapGenerator() {
   };
 
   // Load saved roadmap
-  const flushProgress = useCallback((id: string, prog: Record<string, boolean>) => {
+  const flushProgress = useCallback((id: string, prog: Record<string, LearningStatus>) => {
     fetch(`${API_BASE}/roadmap/${id}/progress`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -2308,9 +2572,9 @@ export function RoadmapGenerator() {
     }).catch(() => {});
   }, []);
 
-  const handleToggleProgress = useCallback((nodeId: string, checked: boolean) => {
+  const handleToggleProgress = useCallback((nodeId: string, status: LearningStatus) => {
     setProgress(prev => {
-      const next = { ...prev, [nodeId]: checked };
+      const next = { ...prev, [nodeId]: status };
       const id = savedIdRef.current;
       if (id) {
         if (saveProgressTick.current) clearTimeout(saveProgressTick.current);
@@ -2334,7 +2598,9 @@ export function RoadmapGenerator() {
       applyRoadmap(data);
       if (progressRes.ok) {
         const pd = await progressRes.json();
-        setProgress(pd.progress || {});
+        setProgress(Object.fromEntries(
+          Object.entries(pd.progress || {}).map(([k, v]) => [k, normalizeStatus(v)])
+        ));
       }
     } catch {
       setError("Erro ao carregar roadmap.");
@@ -2492,7 +2758,39 @@ export function RoadmapGenerator() {
               >
                 Chat
               </button>
+              <button
+                className="rg2__teaching-btn"
+                type="button"
+                onClick={openTeachingStudio}
+                title="Teaching Studio — gerar plano didático, aula e mentoria"
+              >
+                Teaching Studio
+              </button>
+              <button
+                className="rg2__present-btn"
+                type="button"
+                onClick={openPresentation}
+                title="Presentation Mode — apresentar o roadmap em 5 slides"
+              >
+                ▶ Apresentar
+              </button>
+              <button
+                className="rg2__enrich-btn"
+                type="button"
+                onClick={doEnrichRoadmap}
+                disabled={enriching || !savedIdRef.current}
+                title="Enriquecer tópicos com objetivo SMART, dificuldade e tempo estimado"
+              >
+                {enriching
+                  ? <><span className="rg2__spinner" /> Enriquecendo…</>
+                  : enrichedAt
+                    ? `✦ Enriquecido ${enrichedAt}`
+                    : "✦ Enriquecer"}
+              </button>
             </div>
+            {enrichError && (
+              <div style={{ fontSize: ".75rem", color: "#dc2626", marginTop: ".25rem" }}>{enrichError}</div>
+            )}
           </div>
           {showExpand && (
             <div className="rg2__expand-form">
@@ -2832,6 +3130,292 @@ export function RoadmapGenerator() {
                 )}
               </div>
             </details>
+
+          </div>
+        </div>
+      )}
+
+      {/* ── Presentation Mode Overlay ── */}
+      {showPresentation && (
+        <div className="pres__overlay">
+
+          {/* Close */}
+          <button className="pres__close" type="button" onClick={() => setShowPresentation(false)} title="Fechar (Esc)">✕</button>
+
+          {/* Regenerate */}
+          {presentationData && (
+            <button
+              className="pres__regen"
+              type="button"
+              onClick={() => { setPresentationData(null); openPresentation(); }}
+              title="Regenerar apresentação"
+            >
+              🔄
+            </button>
+          )}
+
+          {/* Loading state */}
+          {generatingPresentation && (
+            <div className="pres__loading">
+              <span className="pres__loading-spinner" />
+              <span>Gerando apresentação…</span>
+            </div>
+          )}
+
+          {presentationError && (
+            <div className="pres__error-msg">{presentationError}</div>
+          )}
+
+          {/* Slide */}
+          {presentationData && !generatingPresentation && (() => {
+            const slides = presentationData.slides;
+            const slide  = slides[presentationSlide];
+            const total  = slides.length;
+            if (!slide) return null;
+
+            const slideThemes = [
+              { accent: "#6366f1", bg: "linear-gradient(135deg,#1e1b4b 0%,#312e81 100%)" },
+              { accent: "#0891b2", bg: "linear-gradient(135deg,#0c1445 0%,#0a3d62 100%)" },
+              { accent: "#059669", bg: "linear-gradient(135deg,#052e16 0%,#064e3b 100%)" },
+              { accent: "#d97706", bg: "linear-gradient(135deg,#1c0a00 0%,#451a03 100%)" },
+              { accent: "#9333ea", bg: "linear-gradient(135deg,#1a0533 0%,#2e1065 100%)" },
+            ];
+            const theme = slideThemes[slide.index % slideThemes.length];
+
+            return (
+              <div className="pres__stage" style={{ background: theme.bg }}>
+
+                {/* Progress bar */}
+                <div className="pres__progress-bar">
+                  <div className="pres__progress-fill" style={{ width: `${((presentationSlide + 1) / total) * 100}%`, background: theme.accent }} />
+                </div>
+
+                {/* Slide number */}
+                <div className="pres__counter" style={{ color: theme.accent }}>
+                  {presentationSlide + 1} / {total}
+                </div>
+
+                {/* Slide content */}
+                <div className="pres__slide">
+                  <div className="pres__slide-inner">
+                    <div className="pres__eyebrow" style={{ color: theme.accent }}>
+                      {["Visão Geral", "A Jornada", "Fundamentos Críticos", "Mergulho Profundo", "Resultados"][slide.index] ?? `Slide ${slide.index + 1}`}
+                    </div>
+                    <h1 className="pres__title">{slide.title}</h1>
+                    {slide.subtitle && <p className="pres__subtitle">{slide.subtitle}</p>}
+                    <p className="pres__content">{slide.content}</p>
+                    {slide.bullets && slide.bullets.length > 0 && (
+                      <ul className="pres__bullets">
+                        {slide.bullets.map((b, i) => (
+                          <li key={i} className="pres__bullet">
+                            <span className="pres__bullet-dot" style={{ background: theme.accent }} />
+                            {b}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {slide.highlight && (
+                      <blockquote className="pres__highlight" style={{ borderColor: theme.accent, color: theme.accent }}>
+                        &ldquo;{slide.highlight}&rdquo;
+                      </blockquote>
+                    )}
+                  </div>
+                </div>
+
+                {/* Navigation arrows */}
+                <button
+                  className="pres__nav pres__nav--prev"
+                  type="button"
+                  onClick={() => setPresentationSlide(s => Math.max(s - 1, 0))}
+                  disabled={presentationSlide === 0}
+                >
+                  ‹
+                </button>
+                <button
+                  className="pres__nav pres__nav--next"
+                  type="button"
+                  onClick={() => setPresentationSlide(s => Math.min(s + 1, total - 1))}
+                  disabled={presentationSlide === total - 1}
+                >
+                  ›
+                </button>
+
+                {/* Dot indicators */}
+                <div className="pres__dots">
+                  {slides.map((_, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      className={`pres__dot${i === presentationSlide ? " pres__dot--active" : ""}`}
+                      style={i === presentationSlide ? { background: theme.accent } : {}}
+                      onClick={() => setPresentationSlide(i)}
+                    />
+                  ))}
+                </div>
+
+              </div>
+            );
+          })()}
+
+        </div>
+      )}
+
+      {/* ── Teaching Studio Modal ── */}
+      {showTeaching && (
+        <div className="tst__overlay" onClick={() => setShowTeaching(false)}>
+          <div className="tst__modal" onClick={(e) => e.stopPropagation()}>
+
+            <div className="tst__header">
+              <span className="tst__title">🎓 Teaching Studio</span>
+              <button className="tst__close" type="button" onClick={() => setShowTeaching(false)}>✕</button>
+            </div>
+
+            {/* Custom instructions */}
+            {!teachingPlan && (
+              <div className="tst__section">
+                <label className="tst__label">Instruções customizadas <span className="tst__optional">(opcional)</span></label>
+                <textarea
+                  className="tst__textarea"
+                  rows={2}
+                  placeholder="Ex: foco em iniciantes, inclua analogias, adapte para mentoria de 1h…"
+                  value={teachingCustom}
+                  onChange={(e) => setTeachingCustom(e.target.value)}
+                />
+              </div>
+            )}
+
+            {/* Generate button */}
+            {!teachingPlan && (
+              <button className="tst__gen-btn" type="button" onClick={doGenerateTeaching} disabled={generatingTeaching}>
+                {generatingTeaching
+                  ? <><span className="rg2__spinner" /> Gerando plano…</>
+                  : "✨ Gerar Plano Didático"}
+              </button>
+            )}
+            {teachingError && <span className="tst__error">{teachingError}</span>}
+
+            {/* Tabs + content */}
+            {teachingPlan && (
+              <>
+                <div className="tst__tabs">
+                  {(["didactic_sequence","lesson_plan","mentorship_script","review_questions"] as const).map((tab) => {
+                    const labels = {
+                      didactic_sequence: "Sequência Didática",
+                      lesson_plan: "Plano de Aula",
+                      mentorship_script: "Script de Mentoria",
+                      review_questions: "Questões de Revisão",
+                    };
+                    return (
+                      <button
+                        key={tab}
+                        type="button"
+                        className={`tst__tab${teachingTab === tab ? " tst__tab--active" : ""}`}
+                        onClick={() => setTeachingTab(tab)}
+                      >
+                        {labels[tab]}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="tst__body">
+                  <pre className="tst__text">{teachingPlan[teachingTab]}</pre>
+                </div>
+                <div className="tst__footer">
+                  <button
+                    type="button"
+                    className="tst__copy-btn"
+                    onClick={() => {
+                      navigator.clipboard.writeText(teachingPlan[teachingTab]);
+                      setTeachingCopied(true);
+                      setTimeout(() => setTeachingCopied(false), 2000);
+                    }}
+                  >
+                    {teachingCopied ? "✓ Copiado!" : "📋 Copiar"}
+                  </button>
+                  <button
+                    type="button"
+                    className="tst__regen-btn"
+                    onClick={() => { setTeachingPlan(null); }}
+                  >
+                    🔄 Regerar
+                  </button>
+                </div>
+              </>
+            )}
+
+          </div>
+        </div>
+      )}
+
+      {/* ── Explain Node Modal ── */}
+      {showExplain && (
+        <div className="exp__overlay" onClick={() => setShowExplain(false)}>
+          <div className="exp__modal" onClick={(e) => e.stopPropagation()}>
+
+            <div className="exp__header">
+              <div className="exp__header-left">
+                <span className="exp__icon">💡</span>
+                <span className="exp__title">{explainData?.topic_title ?? "Explicar tópico"}</span>
+              </div>
+              <button className="exp__close" type="button" onClick={() => setShowExplain(false)}>✕</button>
+            </div>
+
+            {/* Tab bar */}
+            {!explainLoading && explainData && (
+              <div className="exp__tabs">
+                {(["beginner","technical","analogy","real_case","code_example","common_mistakes"] as const).map((tab) => {
+                  const labels = { beginner: "Iniciante", technical: "Técnico", analogy: "Analogia", real_case: "Caso Real", code_example: "Código", common_mistakes: "Erros Comuns" };
+                  return (
+                    <button
+                      key={tab}
+                      type="button"
+                      className={`exp__tab${explainTab === tab ? " exp__tab--active" : ""}`}
+                      onClick={() => setExplainTab(tab)}
+                    >
+                      {labels[tab]}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="exp__body">
+              {explainLoading && (
+                <div className="exp__loading">
+                  <span className="rg2__spinner" style={{ width: 20, height: 20 }} />
+                  <span>Gerando explicação…</span>
+                </div>
+              )}
+              {explainError && <span className="exp__error">{explainError}</span>}
+              {explainData && !explainLoading && (
+                explainTab === "code_example"
+                  ? <pre className="exp__code">{explainData[explainTab]}</pre>
+                  : <p className="exp__text">{explainData[explainTab]}</p>
+              )}
+            </div>
+
+            {explainData && !explainLoading && (
+              <div className="exp__footer">
+                <button
+                  type="button"
+                  className="exp__copy-btn"
+                  onClick={() => {
+                    if (explainData) navigator.clipboard.writeText(explainData[explainTab]);
+                  }}
+                >
+                  📋 Copiar
+                </button>
+                <button
+                  type="button"
+                  className="exp__regen-btn"
+                  onClick={() => {
+                    if (explainData) handleExplainNode(explainData.topic_id, explainData.topic_title, "");
+                  }}
+                >
+                  🔄 Regenerar
+                </button>
+              </div>
+            )}
 
           </div>
         </div>
@@ -4144,11 +4728,17 @@ export function RoadmapGenerator() {
         }
         .cl-panel__progress-label { font-size: .7rem; color: var(--text-secondary); white-space: nowrap; font-weight: 600; }
         .cl-panel__list { flex: 1; overflow-y: auto; padding: .4rem 0; }
+        .cl-panel__legend {
+          display: flex; flex-wrap: wrap; gap: .3rem .6rem;
+          padding: .35rem 1rem; border-bottom: 1px solid var(--border-light);
+          flex-shrink: 0;
+        }
+        .cl-panel__legend-item { font-size: .68rem; font-weight: 600; white-space: nowrap; }
 
         /* checklist items */
         .cl-item {
-          display: flex; align-items: flex-start; gap: 7px;
-          padding: .3rem .75rem; cursor: pointer;
+          display: flex; align-items: center; gap: 7px;
+          padding: .28rem .75rem;
           transition: background .1s; user-select: none;
         }
         .cl-item:hover { background: var(--bg); }
@@ -4159,15 +4749,21 @@ export function RoadmapGenerator() {
         .cl-item--phase:first-child { border-top: none; margin-top: 0; }
         .cl-item--topic  { font-size: .74rem; color: var(--text-secondary); }
         .cl-item--subtopic { font-size: .71rem; color: var(--text-secondary); }
-        .cl-item__cb { flex-shrink: 0; margin-top: 2px; accent-color: #22c55e; cursor: pointer; }
         .cl-item__title { flex: 1; line-height: 1.4; }
         .cl-item__count {
           font-size: .65rem; color: var(--text-tertiary); white-space: nowrap;
           background: var(--border-light); border-radius: 8px; padding: 1px 6px;
         }
-        .cl-item--done .cl-item__title {
-          text-decoration: line-through; color: var(--text-tertiary);
+        .cl-item--done .cl-item__title { text-decoration: line-through; color: var(--text-tertiary); }
+        .cl-item__status-btn {
+          flex-shrink: 0; display: flex; align-items: center; gap: 3px;
+          border: 1px solid; border-radius: 10px;
+          padding: 1px 7px; font-size: .65rem; font-weight: 600;
+          cursor: pointer; white-space: nowrap; transition: opacity 120ms;
+          line-height: 1.6;
         }
+        .cl-item__status-btn:hover { opacity: .78; }
+        .cl-item__status-label { font-size: .62rem; }
 
         /* done node on canvas */
         .rmn--done { background: #f0fdf4 !important; }
@@ -4348,6 +4944,297 @@ export function RoadmapGenerator() {
         }
         .ieee__gen-btn:hover:not(:disabled) { opacity: .88; }
         .ieee__gen-btn:disabled { opacity: .45; cursor: not-allowed; }
+        /* ── Presentation Mode button ── */
+        .rg2__present-btn {
+          padding: .35rem .85rem; border-radius: var(--radius-sm);
+          border: 1px solid #7c3aed; color: #7c3aed;
+          background: transparent; font-size: .8rem; font-weight: 700;
+          cursor: pointer; transition: all 120ms; white-space: nowrap;
+        }
+        .rg2__present-btn:hover { background: #f5f3ff; border-color: #6d28d9; color: #6d28d9; }
+
+        /* ── Presentation Mode Overlay ── */
+        .pres__overlay {
+          position: fixed; inset: 0; z-index: 2000;
+          background: #000;
+          display: flex; align-items: center; justify-content: center;
+        }
+        .pres__close {
+          position: absolute; top: 1.2rem; right: 1.4rem; z-index: 10;
+          border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.08);
+          color: rgba(255,255,255,.7); font-size: 1.1rem; width: 36px; height: 36px;
+          border-radius: 50%; cursor: pointer; transition: all 150ms;
+          display: flex; align-items: center; justify-content: center;
+        }
+        .pres__close:hover { background: rgba(255,255,255,.18); color: #fff; }
+        .pres__regen {
+          position: absolute; top: 1.2rem; right: 4rem; z-index: 10;
+          border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.06);
+          color: rgba(255,255,255,.6); font-size: .9rem; width: 36px; height: 36px;
+          border-radius: 50%; cursor: pointer; transition: all 150ms;
+          display: flex; align-items: center; justify-content: center;
+        }
+        .pres__regen:hover { background: rgba(255,255,255,.15); color: #fff; }
+        .pres__loading {
+          display: flex; flex-direction: column; align-items: center; gap: 1rem;
+          color: rgba(255,255,255,.7); font-size: 1rem;
+        }
+        .pres__loading-spinner {
+          width: 36px; height: 36px; border: 3px solid rgba(255,255,255,.2);
+          border-top-color: #fff; border-radius: 50%; animation: spin .8s linear infinite;
+        }
+        .pres__error-msg {
+          color: #fca5a5; font-size: .9rem; text-align: center; padding: 1rem;
+        }
+        .pres__stage {
+          position: absolute; inset: 0;
+          display: flex; align-items: center; justify-content: center;
+        }
+        .pres__progress-bar {
+          position: absolute; top: 0; left: 0; right: 0; height: 3px;
+          background: rgba(255,255,255,.1);
+        }
+        .pres__progress-fill {
+          height: 100%; border-radius: 0 2px 2px 0;
+          transition: width .4s ease;
+        }
+        .pres__counter {
+          position: absolute; top: 1.2rem; left: 1.4rem;
+          font-size: .75rem; font-weight: 700; letter-spacing: .08em;
+          opacity: .8;
+        }
+        .pres__slide {
+          width: 100%; max-width: 820px; padding: 2rem 3rem;
+          display: flex; align-items: center; justify-content: center;
+        }
+        .pres__slide-inner { width: 100%; }
+        .pres__eyebrow {
+          font-size: .7rem; font-weight: 800; letter-spacing: .15em;
+          text-transform: uppercase; margin-bottom: .75rem; opacity: .9;
+        }
+        .pres__title {
+          font-size: clamp(1.8rem, 4vw, 3rem); font-weight: 900;
+          color: #fff; line-height: 1.15; margin: 0 0 .6rem;
+        }
+        .pres__subtitle {
+          font-size: clamp(.95rem, 1.8vw, 1.2rem); color: rgba(255,255,255,.6);
+          margin: 0 0 1.25rem; font-weight: 400; line-height: 1.5;
+        }
+        .pres__content {
+          font-size: clamp(.85rem, 1.5vw, 1rem); color: rgba(255,255,255,.85);
+          line-height: 1.75; margin: 0 0 1.25rem;
+        }
+        .pres__bullets { list-style: none; padding: 0; margin: 0 0 1.25rem; display: flex; flex-direction: column; gap: .5rem; }
+        .pres__bullet {
+          display: flex; align-items: flex-start; gap: .65rem;
+          font-size: clamp(.82rem, 1.4vw, .96rem); color: rgba(255,255,255,.82); line-height: 1.5;
+        }
+        .pres__bullet-dot {
+          width: 7px; height: 7px; border-radius: 50%;
+          flex-shrink: 0; margin-top: .42em;
+        }
+        .pres__highlight {
+          border-left: 3px solid; padding: .65rem 1rem;
+          margin: 0; font-size: clamp(1rem, 1.8vw, 1.2rem);
+          font-style: italic; font-weight: 600; line-height: 1.5;
+          background: rgba(255,255,255,.05); border-radius: 0 6px 6px 0;
+        }
+        .pres__nav {
+          position: absolute; top: 50%; transform: translateY(-50%);
+          border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.06);
+          color: rgba(255,255,255,.7); font-size: 2.5rem; line-height: 1;
+          width: 52px; height: 52px; border-radius: 50%; cursor: pointer;
+          display: flex; align-items: center; justify-content: center;
+          transition: all 150ms;
+        }
+        .pres__nav:hover:not(:disabled) { background: rgba(255,255,255,.16); color: #fff; }
+        .pres__nav:disabled { opacity: .2; cursor: default; }
+        .pres__nav--prev { left: 1.5rem; }
+        .pres__nav--next { right: 1.5rem; }
+        .pres__dots {
+          position: absolute; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
+          display: flex; gap: .5rem;
+        }
+        .pres__dot {
+          width: 8px; height: 8px; border-radius: 50%;
+          border: none; background: rgba(255,255,255,.25); cursor: pointer;
+          transition: all 200ms; padding: 0;
+        }
+        .pres__dot--active { width: 22px; border-radius: 4px; }
+        .pres__dot:hover:not(.pres__dot--active) { background: rgba(255,255,255,.5); }
+
+        /* ── Teaching Studio button ── */
+        .rg2__teaching-btn {
+          padding: .35rem .85rem; border-radius: var(--radius-sm);
+          border: 1px solid #0891b2; color: #0891b2;
+          background: transparent; font-size: .8rem; font-weight: 600;
+          cursor: pointer; transition: all 120ms; white-space: nowrap;
+        }
+        .rg2__teaching-btn:hover { background: #ecfeff; border-color: #0e7490; color: #0e7490; }
+
+        /* ── Teaching Studio Modal ── */
+        .tst__overlay {
+          position: fixed; inset: 0; background: rgba(0,0,0,.55);
+          display: flex; align-items: center; justify-content: center;
+          z-index: 1100; padding: 1rem;
+        }
+        .tst__modal {
+          background: var(--surface); border: 1px solid var(--border);
+          border-radius: var(--radius-lg); box-shadow: 0 20px 60px rgba(0,0,0,.3);
+          width: 100%; max-width: 660px; max-height: 90vh;
+          display: flex; flex-direction: column; overflow: hidden;
+        }
+        .tst__header {
+          display: flex; align-items: center; justify-content: space-between;
+          padding: .9rem 1.1rem; border-bottom: 1px solid var(--border); flex-shrink: 0;
+        }
+        .tst__title { font-size: 1rem; font-weight: 700; color: var(--text); }
+        .tst__close {
+          border: none; background: transparent; cursor: pointer;
+          font-size: 1rem; color: var(--text-tertiary); padding: 2px 6px;
+          border-radius: 4px; transition: background 100ms;
+        }
+        .tst__close:hover { background: var(--border-light); color: var(--text); }
+        .tst__section { padding: .75rem 1.1rem 0; flex-shrink: 0; display: flex; flex-direction: column; gap: .3rem; }
+        .tst__label { font-size: .78rem; font-weight: 600; color: var(--text-secondary); }
+        .tst__optional { font-weight: 400; color: var(--text-tertiary); }
+        .tst__textarea {
+          border: 1px solid var(--border); border-radius: var(--radius-sm);
+          padding: .5rem .75rem; font-size: .83rem; background: var(--bg);
+          color: var(--text); outline: none; resize: vertical; font-family: inherit;
+          transition: border-color 140ms;
+        }
+        .tst__textarea:focus { border-color: #0891b2; }
+        .tst__gen-btn {
+          margin: .75rem 1.1rem; display: flex; align-items: center; justify-content: center; gap: .4rem;
+          background: #0891b2; color: #fff; border: none;
+          border-radius: var(--radius-md); padding: .6rem 1.2rem;
+          font-size: .88rem; font-weight: 700; cursor: pointer; transition: opacity 120ms;
+        }
+        .tst__gen-btn:hover:not(:disabled) { opacity: .88; }
+        .tst__gen-btn:disabled { opacity: .45; cursor: not-allowed; }
+        .tst__error { font-size: .78rem; color: #dc2626; padding: 0 1.1rem; }
+        .tst__tabs {
+          display: flex; overflow-x: auto; gap: 2px;
+          padding: .5rem .75rem 0; border-bottom: 1px solid var(--border); flex-shrink: 0;
+        }
+        .tst__tab {
+          padding: .35rem .75rem; border-radius: 6px 6px 0 0;
+          border: 1px solid transparent; border-bottom: none;
+          background: transparent; font-size: .78rem; font-weight: 500;
+          color: var(--text-secondary); cursor: pointer; white-space: nowrap; transition: all 120ms;
+        }
+        .tst__tab:hover { color: var(--text); background: var(--bg); }
+        .tst__tab--active {
+          background: var(--surface); border-color: var(--border);
+          color: #0891b2; font-weight: 700; margin-bottom: -1px;
+        }
+        .tst__body { flex: 1; overflow-y: auto; padding: 1rem 1.25rem; }
+        .tst__text {
+          font-size: .85rem; line-height: 1.75; color: var(--text);
+          white-space: pre-wrap; font-family: inherit; margin: 0;
+        }
+        .tst__footer {
+          display: flex; gap: .5rem; padding: .65rem 1.1rem;
+          border-top: 1px solid var(--border); flex-shrink: 0;
+        }
+        .tst__copy-btn, .tst__regen-btn {
+          padding: .35rem .85rem; border-radius: var(--radius-sm);
+          border: 1px solid var(--border); background: var(--bg);
+          font-size: .78rem; font-weight: 600; cursor: pointer;
+          color: var(--text-secondary); transition: all 120ms;
+        }
+        .tst__copy-btn:hover { border-color: #0891b2; color: #0891b2; }
+        .tst__regen-btn:hover { border-color: var(--primary); color: var(--primary); }
+
+        /* ── Explain Node button ── */
+        .rmn__explain-btn {
+          display: flex; align-items: center; gap: 4px;
+          padding: 3px 8px; border-radius: 5px; border: 1px solid;
+          background: transparent; font-size: .72rem; font-weight: 600;
+          cursor: pointer; transition: opacity 120ms; white-space: nowrap;
+        }
+        .rmn__explain-btn:hover { opacity: .72; }
+
+        /* ── Explain Node Modal ── */
+        .exp__overlay {
+          position: fixed; inset: 0; background: rgba(0,0,0,.5);
+          display: flex; align-items: center; justify-content: center;
+          z-index: 1200; padding: 1rem;
+        }
+        .exp__modal {
+          background: var(--surface); border: 1px solid var(--border);
+          border-radius: var(--radius-lg); box-shadow: 0 20px 60px rgba(0,0,0,.3);
+          width: 100%; max-width: 600px; max-height: 88vh;
+          display: flex; flex-direction: column; overflow: hidden;
+        }
+        .exp__header {
+          display: flex; align-items: center; justify-content: space-between;
+          padding: .9rem 1.1rem; border-bottom: 1px solid var(--border);
+          flex-shrink: 0;
+        }
+        .exp__header-left { display: flex; align-items: center; gap: .45rem; }
+        .exp__icon { font-size: 1.1rem; }
+        .exp__title { font-size: .95rem; font-weight: 700; color: var(--text); }
+        .exp__close {
+          border: none; background: transparent; cursor: pointer;
+          font-size: 1rem; color: var(--text-tertiary); padding: 2px 6px;
+          border-radius: 4px; transition: background 100ms;
+        }
+        .exp__close:hover { background: var(--border-light); color: var(--text); }
+        .exp__tabs {
+          display: flex; overflow-x: auto; gap: 2px;
+          padding: .5rem .75rem 0; border-bottom: 1px solid var(--border);
+          flex-shrink: 0;
+        }
+        .exp__tab {
+          padding: .35rem .75rem; border-radius: 6px 6px 0 0;
+          border: 1px solid transparent; border-bottom: none;
+          background: transparent; font-size: .78rem; font-weight: 500;
+          color: var(--text-secondary); cursor: pointer; white-space: nowrap;
+          transition: all 120ms;
+        }
+        .exp__tab:hover { color: var(--text); background: var(--bg); }
+        .exp__tab--active {
+          background: var(--surface); border-color: var(--border);
+          color: var(--primary); font-weight: 700;
+          margin-bottom: -1px;
+        }
+        .exp__body {
+          flex: 1; overflow-y: auto; padding: 1.1rem 1.25rem;
+          min-height: 160px;
+        }
+        .exp__loading {
+          display: flex; align-items: center; gap: .75rem;
+          color: var(--text-secondary); font-size: .85rem; padding: 1rem 0;
+        }
+        .exp__text {
+          font-size: .88rem; line-height: 1.7; color: var(--text);
+          white-space: pre-wrap; margin: 0;
+        }
+        .exp__code {
+          font-size: .82rem; line-height: 1.6;
+          background: #1e1e1e; color: #d4d4d4;
+          border-radius: var(--radius-sm); padding: 1rem;
+          overflow-x: auto; white-space: pre; margin: 0;
+          font-family: "Cascadia Code", "Fira Code", monospace;
+        }
+        .exp__error { font-size: .8rem; color: #dc2626; }
+        .exp__footer {
+          display: flex; gap: .5rem; align-items: center;
+          padding: .65rem 1.1rem; border-top: 1px solid var(--border);
+          flex-shrink: 0;
+        }
+        .exp__copy-btn, .exp__regen-btn {
+          padding: .35rem .85rem; border-radius: var(--radius-sm);
+          border: 1px solid var(--border); background: var(--bg);
+          font-size: .78rem; font-weight: 600; cursor: pointer;
+          color: var(--text-secondary); transition: all 120ms;
+        }
+        .exp__copy-btn:hover, .exp__regen-btn:hover {
+          border-color: var(--primary); color: var(--primary);
+        }
+
         .ieee__lang-row { display: flex; gap: .5rem; }
         .ieee__lang-btn {
           flex: 1; padding: .4rem .6rem; border-radius: var(--radius-sm);
@@ -4361,6 +5248,40 @@ export function RoadmapGenerator() {
           color: #92400e; font-weight: 700;
         }
         .ieee__error { font-size: .78rem; color: #dc2626; }
+
+        /* ── Node Card Enrichment ── */
+        .rmn__enrich-meta {
+          margin: 4px 0 2px; padding: 4px 6px 3px;
+          border-radius: 5px; background: rgba(0,0,0,.04);
+          border: 1px solid rgba(0,0,0,.07);
+        }
+        .rmn__objective {
+          font-size: .68rem; color: #6b7280; line-height: 1.4;
+          margin-bottom: 3px; font-style: italic;
+        }
+        .rmn__enrich-row {
+          display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+        }
+        .rmn__diff-stars {
+          font-size: .72rem; letter-spacing: 1px; color: #f59e0b;
+        }
+        .rmn__time-badge {
+          font-size: .68rem; font-weight: 600;
+          background: #eff6ff; color: #3b82f6;
+          border: 1px solid #bfdbfe; border-radius: 4px;
+          padding: 1px 5px;
+        }
+
+        /* ── Enrich button ── */
+        .rg2__enrich-btn {
+          display: flex; align-items: center; gap: 5px;
+          padding: .35rem .85rem; border-radius: var(--radius-sm);
+          border: 1px solid #a78bfa; background: var(--bg);
+          color: #7c3aed; font-size: .78rem; font-weight: 600;
+          cursor: pointer; transition: all 120ms; white-space: nowrap;
+        }
+        .rg2__enrich-btn:hover { background: #f5f3ff; border-color: #7c3aed; }
+        .rg2__enrich-btn:disabled { opacity: .55; cursor: not-allowed; }
       `}</style>
     </div>
   );

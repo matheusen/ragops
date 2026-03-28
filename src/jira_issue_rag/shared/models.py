@@ -738,6 +738,10 @@ class RoadmapTopicItem(BaseModel):
     description: str
     resources: list[str] = Field(default_factory=list)
     prerequisites: list[str] = Field(default_factory=list)
+    # Enrichment fields (optional — added by POST /roadmap/{id}/enrich)
+    learning_objective: str | None = None
+    difficulty: int | None = None        # 1 (básico) – 5 (especialista)
+    estimated_time: str | None = None    # e.g. "3-5 horas", "1 semana"
 
 
 class RoadmapPhase(BaseModel):

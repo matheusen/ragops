@@ -2914,6 +2914,368 @@ def get_default_provider(settings: Settings = Depends(get_settings)):
     return {"provider": settings.default_provider}
 
 
+# ── Enrich Topics ────────────────────────────────────────────────────────────
+
+@router.post(
+    "/roadmap/{roadmap_id}/enrich",
+    tags=["knowledge"],
+    summary="Enriquece tópicos do roadmap com objetivo, dificuldade e tempo estimado",
+)
+def enrich_roadmap(
+    roadmap_id: str,
+    body: dict,
+    workflow: ValidationWorkflow = Depends(get_workflow),
+):
+    import json as _json
+
+    col = _roadmap_col()
+    doc = col.find_one({"id": roadmap_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Roadmap não encontrado")
+
+    provider   = body.get("provider", "gemini")
+    force      = bool(body.get("force", False))
+    title      = doc.get("title", doc.get("goal", ""))
+    goal       = doc.get("goal", title)
+    phases     = doc.get("phases", [])
+
+    # Collect topics that need enrichment
+    topics_to_enrich = []
+    for p in phases:
+        for t in p.get("topics", []):
+            if force or not t.get("learning_objective"):
+                topics_to_enrich.append({
+                    "id": t["id"],
+                    "title": t.get("title", ""),
+                    "description": t.get("description", "")[:200],
+                })
+
+    if not topics_to_enrich:
+        return _strip_mongo_id(doc)
+
+    # Process in batches of 5 to keep requests small and avoid connection drops
+    BATCH = 5
+    enrichment_map: dict[str, dict] = {}
+
+    for i in range(0, len(topics_to_enrich), BATCH):
+        batch = topics_to_enrich[i : i + BATCH]
+        topics_json = _json.dumps(batch, ensure_ascii=False, indent=2)
+        last_exc = None
+        result = None
+        for attempt in range(3):
+            try:
+                result = workflow.execute_prompt(
+                    PromptExecutionRequest(
+                        prompt_name="enrich_topics",
+                        content=goal,
+                        provider=provider,
+                        title=title,
+                        metadata={"topics_json": topics_json},
+                    )
+                )
+                last_exc = None
+                break
+            except RuntimeError as exc:
+                last_exc = exc
+                import time as _time; _time.sleep(2 ** attempt)
+        if last_exc is not None:
+            raise HTTPException(status_code=502, detail=str(last_exc)) from last_exc
+
+        raw = result.output_text.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        try:
+            parsed = _json.loads(raw)
+            for item in parsed.get("enrichments", []):
+                tid = item.get("id")
+                if tid:
+                    enrichment_map[tid] = item
+        except Exception:
+            continue
+
+    # Write enrichment fields back into phases in MongoDB
+    update_set: dict = {}
+    for pi, p in enumerate(phases):
+        for ti, t in enumerate(p.get("topics", [])):
+            enr = enrichment_map.get(t["id"])
+            if enr:
+                base = f"phases.{pi}.topics.{ti}"
+                update_set[f"{base}.learning_objective"] = enr.get("learning_objective", "")
+                update_set[f"{base}.difficulty"]         = enr.get("difficulty")
+                update_set[f"{base}.estimated_time"]     = enr.get("estimated_time", "")
+
+    if update_set:
+        col.update_one({"id": roadmap_id}, {"$set": update_set})
+
+    updated = col.find_one({"id": roadmap_id})
+    return _strip_mongo_id(updated)
+
+
+# ── Explain Node ─────────────────────────────────────────────────────────────
+
+@router.post(
+    "/roadmap/{roadmap_id}/explain-node/{topic_id}",
+    tags=["knowledge"],
+    summary="Gera explicação multidimensional de um tópico (6 perspectivas)",
+)
+def explain_node(
+    roadmap_id: str,
+    topic_id: str,
+    body: dict,
+    workflow: ValidationWorkflow = Depends(get_workflow),
+):
+    import json as _json
+
+    col = _roadmap_col()
+    doc = col.find_one({"id": roadmap_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Roadmap não encontrado")
+
+    provider = body.get("provider", "gemini")
+
+    # Try to find the topic in the roadmap phases
+    topic_title = (body.get("topic_title") or "").strip()
+    topic_desc  = (body.get("topic_description") or "").strip()
+
+    for phase in doc.get("phases", []):
+        for t in phase.get("topics", []):
+            if t.get("id") == topic_id:
+                topic_title = topic_title or t.get("title", "")
+                topic_desc  = topic_desc  or t.get("description", "")
+                break
+
+    if not topic_title:
+        raise HTTPException(status_code=404, detail="Tópico não encontrado")
+
+    # Return cached explanation if available
+    cached = (doc.get("explanations") or {}).get(topic_id)
+    if cached and not body.get("force_regen"):
+        return cached
+
+    roadmap_goal = doc.get("goal", doc.get("title", ""))
+
+    try:
+        result = workflow.execute_prompt(
+            PromptExecutionRequest(
+                prompt_name="explain_node",
+                content=topic_desc or topic_title,
+                provider=provider,
+                title=topic_title,
+                metadata={"roadmap_goal": roadmap_goal},
+            )
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    # Parse JSON from LLM output
+    raw = result.output_text.strip()
+    # Strip markdown fences if present
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    try:
+        explanation = _json.loads(raw)
+    except Exception:
+        # Fallback: return raw text in beginner field
+        explanation = {"beginner": raw, "technical": "", "analogy": "", "real_case": "", "code_example": "", "common_mistakes": ""}
+
+    payload = {
+        "topic_id": topic_id,
+        "topic_title": topic_title,
+        "provider": result.provider,
+        "model": result.model,
+        **explanation,
+    }
+
+    # Cache in MongoDB
+    col.update_one(
+        {"id": roadmap_id},
+        {"$set": {f"explanations.{topic_id}": payload}},
+    )
+
+    return payload
+
+
+# ── Presentation Mode ────────────────────────────────────────────────────────
+
+@router.get(
+    "/roadmap/{roadmap_id}/presentation",
+    tags=["knowledge"],
+    summary="Retorna apresentação salva do roadmap",
+)
+def get_presentation(roadmap_id: str):
+    col = _roadmap_col()
+    doc = col.find_one({"id": roadmap_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Roadmap não encontrado")
+    return {"presentation": doc.get("presentation")}
+
+
+@router.post(
+    "/roadmap/{roadmap_id}/presentation",
+    tags=["knowledge"],
+    summary="Gera apresentação narrativa de 5 slides do roadmap",
+)
+def generate_presentation(
+    roadmap_id: str,
+    body: dict,
+    workflow: ValidationWorkflow = Depends(get_workflow),
+):
+    import json as _json
+
+    col = _roadmap_col()
+    doc = col.find_one({"id": roadmap_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Roadmap não encontrado")
+
+    provider = body.get("provider", "gemini")
+    title    = doc.get("title", doc.get("goal", ""))
+    goal     = doc.get("goal", title)
+    phases   = doc.get("phases", [])
+
+    phase_lines: list[str] = []
+    for p in phases:
+        topics = "; ".join(t.get("title", "") for t in p.get("topics", []))
+        phase_lines.append(f"Fase: {p.get('title','')} ({p.get('duration','')})\n  Tópicos: {topics}")
+        for t in p.get("topics", []):
+            if t.get("description"):
+                phase_lines.append(f"  - {t['title']}: {t['description'][:180]}")
+    roadmap_summary = "\n".join(phase_lines)
+
+    try:
+        result = workflow.execute_prompt(
+            PromptExecutionRequest(
+                prompt_name="presentation_mode",
+                content=goal,
+                provider=provider,
+                title=title,
+                metadata={"roadmap_summary": roadmap_summary},
+            )
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    raw = result.output_text.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    try:
+        data = _json.loads(raw)
+        slides = data.get("slides", [])
+    except Exception:
+        slides = [{"index": 0, "title": title, "subtitle": "", "content": raw, "bullets": None, "highlight": None}]
+
+    # Ensure exactly 5 slides
+    slides = slides[:5]
+
+    payload = {
+        "roadmap_id": roadmap_id,
+        "roadmap_title": title,
+        "slides": slides,
+        "provider": result.provider,
+        "model": result.model,
+    }
+
+    col.update_one({"id": roadmap_id}, {"$set": {"presentation": payload}})
+
+    return payload
+
+
+# ── Teaching Studio ──────────────────────────────────────────────────────────
+
+@router.get(
+    "/roadmap/{roadmap_id}/teaching-studio",
+    tags=["knowledge"],
+    summary="Retorna plano didático salvo do roadmap",
+)
+def get_teaching_studio(roadmap_id: str):
+    col = _roadmap_col()
+    doc = col.find_one({"id": roadmap_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Roadmap não encontrado")
+    plan = doc.get("teaching_studio")
+    return {"plan": plan}
+
+
+@router.post(
+    "/roadmap/{roadmap_id}/teaching-studio",
+    tags=["knowledge"],
+    summary="Gera plano didático completo com base no roadmap",
+)
+def generate_teaching_studio(
+    roadmap_id: str,
+    body: dict,
+    workflow: ValidationWorkflow = Depends(get_workflow),
+):
+    import json as _json
+
+    col = _roadmap_col()
+    doc = col.find_one({"id": roadmap_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Roadmap não encontrado")
+
+    provider      = body.get("provider", "gemini")
+    custom_prompt = (body.get("custom_instructions") or "").strip()
+
+    title  = doc.get("title", doc.get("goal", ""))
+    goal   = doc.get("goal", title)
+    phases = doc.get("phases", [])
+
+    # Build roadmap summary
+    phase_lines: list[str] = []
+    for p in phases:
+        topics = "; ".join(t.get("title", "") for t in p.get("topics", []))
+        phase_lines.append(f"Fase: {p.get('title','')} ({p.get('duration','')})\n  Tópicos: {topics}")
+        for t in p.get("topics", []):
+            if t.get("description"):
+                phase_lines.append(f"  - {t['title']}: {t['description'][:200]}")
+    roadmap_summary = "\n".join(phase_lines)
+
+    custom_instructions = f"Instruções adicionais: {custom_prompt}" if custom_prompt else ""
+
+    try:
+        result = workflow.execute_prompt(
+            PromptExecutionRequest(
+                prompt_name="teaching_studio",
+                content=goal,
+                provider=provider,
+                title=title,
+                metadata={
+                    "roadmap_summary": roadmap_summary,
+                    "custom_instructions": custom_instructions,
+                },
+            )
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    raw = result.output_text.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    try:
+        plan = _json.loads(raw)
+    except Exception:
+        plan = {"didactic_sequence": raw, "lesson_plan": "", "mentorship_script": "", "review_questions": ""}
+
+    payload = {
+        "roadmap_id": roadmap_id,
+        "roadmap_title": title,
+        "provider": result.provider,
+        "model": result.model,
+        **plan,
+    }
+
+    col.update_one({"id": roadmap_id}, {"$set": {"teaching_studio": payload}})
+
+    return payload
+
+
 # ── IEEE Paper ────────────────────────────────────────────────────────────────
 
 def _build_ieee_pdf(paper_text: str, title: str, authors: str) -> bytes:

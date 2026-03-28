@@ -106,6 +106,11 @@ class GeminiProvider(LLMProvider):
                 f"Gemini timed out after {self.timeout_seconds}s while running model '{self.model_name}'. "
                 "Increase GEMINI_TIMEOUT_SECONDS or use a faster model for large article analyses."
             ) from exc
+        except httpx.RemoteProtocolError as exc:
+            raise RuntimeError(
+                f"Gemini dropped the connection for model '{self.model_name}'. "
+                "The request may be too large or the server is temporarily unavailable."
+            ) from exc
 
         return self._extract_output_text(data)
 
