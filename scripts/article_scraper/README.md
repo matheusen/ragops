@@ -75,6 +75,8 @@ python kafka_consumer.py
 # Modo direto antigo, sem Kafka
 python scraper.py --mode direct
 
+python scraper.py --mode direct --resume
+
 # Query avulsa
 python scraper.py --query "RAG retrieval augmented generation" --sources arxiv semantic_scholar
 
@@ -90,6 +92,7 @@ python scraper.py --list-existing
 # Limite de resultados
 python scraper.py --max 20
 ```
+python rename_by_title.py
 
 ## Estrutura de saída
 

@@ -80,6 +80,108 @@ queries:
     max_results: 100
   - query: "diffusion models generative AI"
     max_results: 100
+  # Software developer in the AI era
+  - query: "software developer skills AI era future"
+    max_results: 100
+  - query: "software engineering competencies artificial intelligence"
+    max_results: 100
+  - query: "developer productivity AI tools GitHub Copilot"
+    max_results: 100
+  - query: "AI pair programming software development workflow"
+    max_results: 100
+  - query: "software engineer role transformation generative AI"
+    max_results: 100
+  - query: "challenges software developers AI automation"
+    max_results: 100
+  - query: "human-AI collaboration software engineering"
+    max_results: 100
+  - query: "LLM-assisted coding developer experience"
+    max_results: 100
+  - query: "future of programming software workforce AI"
+    max_results: 100
+  - query: "upskilling reskilling developers machine learning"
+    max_results: 100
+  - query: "cognitive load developer AI code generation tools"
+    max_results: 100
+  - query: "software quality assurance AI generated code"
+    max_results: 100
+  - query: "technical debt AI code assistance risks"
+    max_results: 100
+  - query: "developer mental models AI tools adoption"
+    max_results: 100
+  - query: "critical thinking problem solving software engineers AI"
+    max_results: 100
+  # AI in financial markets and trading
+  - query: "machine learning stock market prediction"
+    max_results: 100
+  - query: "deep learning algorithmic trading financial markets"
+    max_results: 100
+  - query: "reinforcement learning portfolio optimization"
+    max_results: 100
+  - query: "LLM financial sentiment analysis market prediction"
+    max_results: 100
+  - query: "transformer models stock price forecasting"
+    max_results: 100
+  - query: "high frequency trading machine learning"
+    max_results: 100
+  - query: "natural language processing financial news trading signals"
+    max_results: 100
+  - query: "explainable AI investment decision making"
+    max_results: 100
+  - query: "AI risk management quantitative finance"
+    max_results: 100
+  - query: "graph neural networks financial fraud detection"
+    max_results: 100
+  # AI music generation and guitar transcription
+  - query: "AI music generation deep learning"
+    max_results: 100
+  - query: "automatic music transcription neural network"
+    max_results: 100
+  - query: "guitar tablature generation machine learning"
+    max_results: 100
+  - query: "audio to guitar tab transcription deep learning"
+    max_results: 100
+  - query: "automatic guitar transcription pitch detection"
+    max_results: 100
+  - query: "music source separation guitar audio AI"
+    max_results: 100
+  - query: "symbolic music generation transformer LLM"
+    max_results: 100
+  - query: "polyphonic music transcription convolutional neural network"
+    max_results: 100
+  - query: "onset detection note recognition guitar audio"
+    max_results: 100
+  - query: "music information retrieval chord recognition AI"
+    max_results: 100
+  - query: "audio to MIDI conversion deep learning"
+    max_results: 100
+  - query: "generative AI composition style transfer music"
+    max_results: 100
+  # LLM memory mechanisms
+  - query: "LLM long-term memory persistent agents"
+    max_results: 100
+  - query: "large language model working memory context window"
+    max_results: 100
+  - query: "external memory augmented language models"
+    max_results: 100
+  - query: "retrieval augmented generation long-term memory LLM"
+    max_results: 100
+  - query: "episodic memory neural networks language models"
+    max_results: 100
+  - query: "LLM agent memory planning reasoning"
+    max_results: 100
+  - query: "vector store memory retrieval conversational AI"
+    max_results: 100
+  - query: "continual learning memory replay language models"
+    max_results: 100
+  - query: "in-context learning few-shot long context LLM"
+    max_results: 100
+  - query: "transformer long context attention memory efficient"
+    max_results: 100
+  - query: "cognitive architecture memory LLM autonomous agents"
+    max_results: 100
+  - query: "knowledge base grounding LLM factual memory"
+    max_results: 100
 
 # ── Fontes ───────────────────────────────────────────────
 sources:

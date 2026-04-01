@@ -2609,6 +2609,75 @@ export function RoadmapGenerator() {
 
   const panelOpen = !!kbContext;
 
+  const exportChecklistMd = useCallback(() => {
+    if (!roadmap) return;
+
+    const statusEmoji: Record<LearningStatus, string> = {
+      nao_iniciado: "[ ]",
+      estudando:    "[📖]",
+      praticando:   "[✏️]",
+      dominado:     "[x]",
+      ensinei:      "[🎓]",
+    };
+
+    const expandedRecords = expandedRecordsRef.current;
+
+    // Recursively collect all descendant IDs of a given node
+    const getAllDescendants = (nodeId: string): string[] => {
+      const children = Object.entries(expandedRecords)
+        .filter(([, rec]) => rec.parent_id === nodeId)
+        .map(([id]) => id);
+      return children.flatMap(id => [id, ...getAllDescendants(id)]);
+    };
+
+    const allTopicIds = roadmap.phases.flatMap(ph =>
+      ph.topics.flatMap(t => [t.id, ...getAllDescendants(t.id)])
+    );
+    const doneCount  = allTopicIds.filter(id => isDoneStatus(progress[id] ?? "nao_iniciado")).length;
+    const totalCount = allTopicIds.length;
+    const pct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+
+    const lines: string[] = [];
+    lines.push(`# ${roadmap.title || roadmap.goal}`);
+    lines.push("");
+    lines.push(`> Progresso: ${doneCount}/${totalCount} (${pct}%)`);
+    lines.push("");
+
+    // Recursively render a node's children at the given indent depth
+    const renderChildren = (parentId: string, depth: number) => {
+      const children = Object.entries(expandedRecords)
+        .filter(([, rec]) => rec.parent_id === parentId);
+      for (const [childId, rec] of children) {
+        const childSt = progress[childId] ?? "nao_iniciado";
+        const indent = "  ".repeat(depth);
+        lines.push(`${indent}- ${statusEmoji[childSt]} ${rec.title}`);
+        renderChildren(childId, depth + 1);
+      }
+    };
+
+    for (const phase of roadmap.phases) {
+      lines.push(`## ${phase.title}`);
+      if (phase.duration) lines.push(`_Duração: ${phase.duration}_`);
+      lines.push("");
+
+      for (const topic of phase.topics) {
+        const st = progress[topic.id] ?? "nao_iniciado";
+        lines.push(`- ${statusEmoji[st]} **${topic.title}**`);
+        renderChildren(topic.id, 1);
+      }
+      lines.push("");
+    }
+
+    const md = lines.join("\n");
+    const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
+    a.download = `${(roadmap.title || roadmap.goal).replace(/[^a-z0-9]/gi, "_").toLowerCase()}_checklist.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [roadmap, progress]);
+
   return (
     <div className="rg2">
       {/* ── Config strip ── */}
@@ -2749,6 +2818,15 @@ export function RoadmapGenerator() {
                 title="Ver checklist de progresso"
               >
                 Checklist
+              </button>
+              <button
+                className="rg2__checklist-btn"
+                type="button"
+                onClick={exportChecklistMd}
+                disabled={!roadmap}
+                title="Exportar checklist em formato Markdown (.md)"
+              >
+                ↓ MD
               </button>
               <button
                 className="rg2__chat-btn"

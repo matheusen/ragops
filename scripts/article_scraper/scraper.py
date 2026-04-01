@@ -16,6 +16,7 @@ Uso:
   python scraper.py --query "transformer code generation" --max 40
   python scraper.py --headless false        # ver o browser
   python scraper.py --list-existing
+  python scraper.py --resume               # retoma de onde parou
 """
 
 from __future__ import annotations
@@ -1674,9 +1675,24 @@ def scrape_articles(
         console.print("[red]Nenhuma query configurada.[/]")
         sys.exit(1)
 
+    resume = getattr(args, "resume", False)
+    # --resume implica skip_existing
+    if resume:
+        exec_cfg["skip_existing"] = True
+
     existing_ids = load_existing_ids(metadata_dir, mongo_store) if exec_cfg["skip_existing"] else set()
     if existing_ids:
         console.print(f"[dim]{len(existing_ids)} artigos existentes — serão pulados[/]\n")
+
+    # Checkpoint: rastreia quais (query, fonte) já foram concluídos
+    checkpoint_path = reports_dir / "checkpoint.json"
+    checkpoint: set[str] = set()
+    if resume and checkpoint_path.exists():
+        try:
+            checkpoint = set(json.loads(checkpoint_path.read_text(encoding="utf-8")))
+            console.print(f"[dim]Checkpoint: {len(checkpoint)} query+fonte concluídos — serão pulados[/]\n")
+        except Exception:
+            pass
 
     all_collected: list[dict] = []
     total_new = 0
@@ -1713,6 +1729,11 @@ def scrape_articles(
 
                 fn = SOURCE_FN.get(source_name)
                 if not fn:
+                    continue
+
+                checkpoint_key = f"{q_text}::{source_name}"
+                if checkpoint_key in checkpoint:
+                    console.print(f"  [dim]→ {source_name} (pulado — checkpoint)[/]")
                     continue
 
                 limit = min(q_max, src_cfg.get("max_per_query", q_max))
@@ -1767,6 +1788,17 @@ def scrape_articles(
                                 total_dl += 1
                                 console.print(f"    [green]↓[/] {Path(dest).name}")
 
+                # Salva checkpoint desta combinação query+fonte
+                if resume:
+                    checkpoint.add(checkpoint_key)
+                    try:
+                        checkpoint_path.write_text(
+                            json.dumps(sorted(checkpoint), ensure_ascii=False, indent=2),
+                            encoding="utf-8",
+                        )
+                    except Exception:
+                        pass
+
                 human_delay(exec_cfg["delay_min"], exec_cfg["delay_max"])
 
             progress.advance(task)
@@ -1785,6 +1817,8 @@ def main() -> None:
     parser.add_argument("--headless", default="", help="true/false (override config)")
     parser.add_argument("--no-download", action="store_true")
     parser.add_argument("--list-existing", action="store_true")
+    parser.add_argument("--resume", action="store_true",
+                        help="Retoma de onde parou: pula query+fonte já concluídos (salva checkpoint.json)")
     args = parser.parse_args()
 
     config_path = Path(args.config)
@@ -1795,6 +1829,14 @@ def main() -> None:
         sys.exit(1)
 
     cfg = load_config(str(config_path))
+
+    # Garante que base_dir aponta para ragflow/results/, não para o cwd
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+    output_cfg = cfg.setdefault("output", {})
+    base_dir_raw = output_cfg.get("base_dir", "./results")
+    if not Path(base_dir_raw).is_absolute():
+        output_cfg["base_dir"] = str((PROJECT_ROOT / base_dir_raw).resolve())
+
     base_dir, metadata_dir, downloads_dir, reports_dir, screenshots_dir = setup_dirs(cfg)
     mongo_store = maybe_create_mongo_store(cfg)
 
