@@ -182,6 +182,31 @@ queries:
     max_results: 100
   - query: "knowledge base grounding LLM factual memory"
     max_results: 100
+  # Brain-computer interfaces, biological computing, and neuro-AI
+  - query: "biological computing artificial intelligence"
+    max_results: 100
+  - query: "biocomputing neural systems machine learning"
+    max_results: 100
+  - query: "brain computer interface artificial intelligence"
+    max_results: 100
+  - query: "brain machine interface deep learning"
+    max_results: 100
+  - query: "neuralink brain computer interface"
+    max_results: 100
+  - query: "artificial intelligence in the brain neural engineering"
+    max_results: 100
+  - query: "neural decoding speech motor cortex AI"
+    max_results: 100
+  - query: "intracortical brain computer interface language model"
+    max_results: 100
+  - query: "EEG deep learning brain signals"
+    max_results: 100
+  - query: "neurotechnology artificial intelligence cognition"
+    max_results: 100
+  - query: "neuromorphic computing spiking neural networks"
+    max_results: 100
+  - query: "synthetic biology computation intelligence"
+    max_results: 100
 
 # ── Fontes ───────────────────────────────────────────────
 sources:
