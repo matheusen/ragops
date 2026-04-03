@@ -25,6 +25,8 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
+Se você for usar apenas `python scraper.py --mode direct`, o pacote `kafka-python` não é obrigatório. Ele só é necessário para `--mode producer` ou `python kafka_producer.py`.
+
 ## Configuração
 
 Edite o `config.yaml`:
@@ -93,6 +95,56 @@ python scraper.py --list-existing
 python scraper.py --max 20
 ```
 python rename_by_title.py
+
+## Traduzir PDF para portugues
+
+O utilitario `translate_pdf.py` traduz PDFs de artigos em ingles para portugues preservando o layout o maximo possivel:
+
+- Mantem as paginas originais e as imagens intactas
+- Remove apenas os blocos de texto detectados
+- Reinsere a traducao nas mesmas caixas da pagina
+- Funciona melhor com PDFs digitais, nao com PDF escaneado
+
+Instalacao minima:
+
+```bash
+pip install -r requirements.txt
+```
+
+Melhor qualidade de traducao:
+
+```bash
+# Requer OPENAI_API_KEY no ambiente ou no .env
+python translate_pdf.py --input .\results\downloads\paper.pdf
+```
+
+Escolhendo modelo/provider:
+
+```bash
+python translate_pdf.py --input .\paper.pdf --provider openai --model gpt-4.1-mini
+```
+
+Fallback local com modelo neural Hugging Face:
+
+```bash
+pip install transformers torch sentencepiece
+python translate_pdf.py --input .\paper.pdf --provider nllb
+```
+python translate_pdf.py --input .\Transformers are Graph Neural Networks.pdf --provider nllb
+
+
+
+Saida customizada:
+
+```bash
+python translate_pdf.py --input .\paper.pdf --output .\paper.ptbr.pdf
+```
+
+Observacoes:
+
+- Para manter o texto original por baixo da traducao, use `--keep-original`
+- PDFs escaneados exigem OCR antes; o script atua sobre texto vetorial extraido do PDF
+- A preservacao de layout e alta, mas nao perfeita em blocos muito densos, tabelas complexas ou equacoes
 
 ## Estrutura de saída
 

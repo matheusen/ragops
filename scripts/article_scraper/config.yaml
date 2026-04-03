@@ -207,6 +207,37 @@ queries:
     max_results: 100
   - query: "synthetic biology computation intelligence"
     max_results: 100
+  # AI reasoning and inference
+  - query: "artificial intelligence reasoning"
+    max_results: 100
+  - query: "large language model reasoning"
+    max_results: 100
+  - query: "chain-of-thought reasoning language models"
+    max_results: 100
+  - query: "multi-step reasoning LLM"
+    max_results: 100
+  - query: "logical reasoning neural networks"
+    max_results: 100
+  - query: "commonsense reasoning artificial intelligence"
+    max_results: 100
+  - query: "symbolic reasoning neuro-symbolic AI"
+    max_results: 100
+  - query: "automated reasoning machine learning"
+    max_results: 100
+  - query: "reasoning and planning in large language models"
+    max_results: 100
+  - query: "deliberate reasoning inference time scaling AI"
+    max_results: 100
+  - query: "mathematical reasoning language models"
+    max_results: 100
+  - query: "causal reasoning artificial intelligence"
+    max_results: 100
+  - query: "decision making planning agents artificial intelligence"
+    max_results: 100
+  - query: "self-consistency reasoning LLM"
+    max_results: 100
+  - query: "tool use reasoning autonomous agents"
+    max_results: 100
 
 # ── Fontes ───────────────────────────────────────────────
 sources:

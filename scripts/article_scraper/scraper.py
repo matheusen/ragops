@@ -31,13 +31,12 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Any, Callable
 from urllib.parse import quote_plus, urljoin, urlparse
 
 import requests
 import yaml
 from bs4 import BeautifulSoup
-from kafka import KafkaProducer
 from gridfs import GridFS
 from pymongo import MongoClient
 from rich.console import Console
@@ -55,6 +54,16 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
+
+try:
+    from kafka import KafkaProducer
+except ImportError:
+    KafkaProducer = None  # type: ignore[assignment]
+
+if TYPE_CHECKING:
+    from kafka import KafkaProducer as KafkaProducerType
+else:
+    KafkaProducerType = Any
 
 console = Console()
 
@@ -218,7 +227,10 @@ def safe_text(el) -> str:
 
 
 def soup_of(driver: webdriver.Chrome) -> BeautifulSoup:
-    return BeautifulSoup(driver.page_source, "lxml")
+    try:
+        return BeautifulSoup(driver.page_source, "lxml")
+    except Exception:
+        return BeautifulSoup(driver.page_source, "html.parser")
 
 
 def screenshot_on_error(driver: webdriver.Chrome, name: str, screenshots_dir: Path) -> None:
@@ -1623,7 +1635,14 @@ def maybe_create_mongo_store(cfg: dict) -> MongoArticleStore | None:
         return None
 
 
-def build_kafka_producer(cfg: dict) -> tuple[KafkaProducer, str]:
+def build_kafka_producer(cfg: dict) -> tuple[KafkaProducerType, str]:
+    if KafkaProducer is None:
+        console.print(
+            "[red]Dependência opcional ausente: instale `kafka-python` para usar `--mode producer` "
+            "ou defina `kafka.enabled: false` / use `--mode direct`.[/]"
+        )
+        sys.exit(1)
+
     kafka_cfg = cfg.get("kafka", {})
     bootstrap_servers = kafka_cfg.get("bootstrap_servers") or DEFAULT_KAFKA_BOOTSTRAP
     topic = kafka_cfg.get("topic") or DEFAULT_KAFKA_TOPIC
@@ -1877,7 +1896,7 @@ def main() -> None:
     # Inicia browser (único para toda a sessão)
     console.print("[dim]Iniciando Chrome...[/]")
     driver = build_driver(browser_cfg)
-    producer: KafkaProducer | None = None
+    producer: KafkaProducerType | None = None
     topic = kafka_cfg.get("topic") or DEFAULT_KAFKA_TOPIC
     published = 0
 
