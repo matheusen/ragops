@@ -10,6 +10,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 from jira_issue_rag.core.config import Settings, get_settings
 from jira_issue_rag.services.workflow import ValidationWorkflow
@@ -3622,4 +3623,200 @@ def generate_ieee_paper(
         filename=filename,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+class IEEEDirectRequest(BaseModel):
+    paper_text: str
+    title: str
+    authors: str = "Anonymous"
+
+
+@router.post(
+    "/ieee-paper/from-text",
+    tags=["knowledge"],
+    summary="Gera PDF IEEE a partir de texto composto manualmente",
+)
+def generate_ieee_paper_from_text(body: IEEEDirectRequest):
+    """Recebe paper_text já formatado e devolve o PDF IEEE sem precisar de roadmap ou KB."""
+    try:
+        pdf_bytes = _build_ieee_pdf(body.paper_text, body.title, body.authors)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {exc}") from exc
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+    tmp.write(pdf_bytes)
+    tmp.close()
+
+    safe_title = "".join(c if c.isalnum() or c in "_ -" else "_" for c in body.title)[:60]
+    filename = f"ieee_{safe_title}.pdf"
+
+    return FileResponse(
+        tmp.name,
+        media_type="application/pdf",
+        filename=filename,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ── Article translation ───────────────────────────────────────────────────────
+
+class TranslateTextRequest(BaseModel):
+    text: str
+    provider: str = "deepl"          # "deepl" | "google" | "openai" | "gemini"
+    target_language: str = "PT-BR"   # DeepL / Google lang code
+
+
+def _translate_deepl(text: str, target: str, settings: Settings) -> str:
+    """DeepL REST API — best quality for academic/technical Brazilian Portuguese."""
+    import urllib.request as _urllib_req
+    import urllib.parse as _urllib_parse
+
+    if not settings.deepl_api_key:
+        raise HTTPException(status_code=422, detail="DEEPL_API_KEY não configurada.")
+
+    host = "api-free.deepl.com" if settings.deepl_api_free else "api.deepl.com"
+    url  = f"https://{host}/v2/translate"
+
+    target_map = {"PT-BR": "PT-BR", "pt": "PT-BR", "pt-br": "PT-BR", "EN": "EN-US", "en": "EN-US"}
+    deepl_target = target_map.get(target, target)
+
+    payload = _urllib_parse.urlencode({
+        "auth_key": settings.deepl_api_key,
+        "text": text,
+        "target_lang": deepl_target,
+        "formality": "more",          # formal register — important for academic text
+        "tag_handling": "xml",
+        "ignore_tags": "code,pre",
+    }).encode()
+
+    req = _urllib_req.Request(url, data=payload, method="POST")
+    req.add_header("Content-Type", "application/x-www-form-urlencoded")
+
+    try:
+        with _urllib_req.urlopen(req, timeout=30) as resp:
+            import json as _json
+            data = _json.loads(resp.read())
+            return data["translations"][0]["text"]
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"DeepL error: {exc}") from exc
+
+
+def _translate_google(text: str, target: str, settings: Settings) -> str:
+    """Google Cloud Translation v2 via google-cloud-translate library.
+
+    Auth priority:
+    1. GOOGLE_APPLICATION_CREDENTIALS (service account JSON) — no API key needed.
+    2. GOOGLE_TRANSLATE_API_KEY — direct API key fallback.
+    """
+    try:
+        from google.cloud import translate_v2 as _gc_translate
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="google-cloud-translate não instalado. Execute: pip install google-cloud-translate",
+        ) from exc
+
+    lang_map = {"PT-BR": "pt-BR", "pt": "pt-BR", "pt-br": "pt-BR", "EN": "en", "EN-US": "en"}
+    google_target = lang_map.get(target, target.lower())
+
+    try:
+        if settings.google_translate_api_key:
+            from google.api_core.client_options import ClientOptions
+            client = _gc_translate.Client(
+                client_options=ClientOptions(api_key=settings.google_translate_api_key)
+            )
+        else:
+            # Uses GOOGLE_APPLICATION_CREDENTIALS automatically
+            client = _gc_translate.Client()
+
+        result = client.translate(text, target_language=google_target, format_="text")
+        return result["translatedText"]
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Google Translate error: {exc}") from exc
+
+
+def _translate_libretranslate(text: str, target: str, settings: Settings) -> str:
+    """LibreTranslate local instance — 100% offline, no API key required by default.
+
+    Run locally via Docker:
+      docker run -d -p 5000:5000 libretranslate/libretranslate --load-only en,pt
+    Or set LIBRETRANSLATE_URL in .env to point to your instance.
+    """
+    import json as _json
+    import urllib.request as _urllib_req
+
+    lang_map = {"PT-BR": "pt", "pt": "pt", "pt-br": "pt", "EN": "en", "EN-US": "en"}
+    lt_target = lang_map.get(target, target.lower()[:2])
+    lt_source = "pt" if lt_target == "en" else "en"
+
+    payload = _json.dumps({
+        "q": text,
+        "source": lt_source,
+        "target": lt_target,
+        "format": "text",
+        "api_key": settings.libretranslate_api_key,
+    }).encode()
+
+    url = f"{settings.libretranslate_url.rstrip('/')}/translate"
+    req = _urllib_req.Request(url, data=payload, method="POST")
+    req.add_header("Content-Type", "application/json")
+
+    try:
+        with _urllib_req.urlopen(req, timeout=60) as resp:
+            data = _json.loads(resp.read())
+            return data["translatedText"]
+    except OSError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f"LibreTranslate offline: não foi possível conectar em {settings.libretranslate_url}. "
+                "Suba o serviço com: docker run -d -p 5000:5000 libretranslate/libretranslate --load-only en,pt"
+            ),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"LibreTranslate error: {exc}") from exc
+
+
+def _translate_llm(text: str, target: str, provider: str, workflow: ValidationWorkflow) -> str:
+    """Translate via OpenAI or Gemini calling the provider directly (no prompt file needed)."""
+    lang_name = "Brazilian Portuguese (pt-BR)" if target in ("PT-BR", "pt", "pt-br") else "English"
+
+    system_prompt = (
+        "You are a professional academic translator specializing in computer science and AI research papers. "
+        f"Translate the following IEEE paper section to {lang_name}. "
+        "Preserve all technical terms, citations ([N]), section headings, acronyms, and formatting exactly. "
+        "Output ONLY the translated text — no preamble, no explanation."
+    )
+
+    try:
+        llm_provider = workflow.router._get_provider(provider)
+        return llm_provider.run_prompt(system_prompt=system_prompt, user_prompt=text).strip()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"LLM translation error: {exc}") from exc
+
+
+@router.post(
+    "/translate-text",
+    tags=["knowledge"],
+    summary="Traduz texto de artigo para o idioma alvo (DeepL / Google / OpenAI / Gemini)",
+)
+def translate_article_text(
+    body: TranslateTextRequest,
+    settings: Settings = Depends(get_settings),
+    workflow: ValidationWorkflow = Depends(get_workflow),
+):
+    provider = body.provider.lower()
+
+    if provider == "deepl":
+        translated = _translate_deepl(body.text, body.target_language, settings)
+    elif provider == "google":
+        translated = _translate_google(body.text, body.target_language, settings)
+    elif provider == "libretranslate":
+        translated = _translate_libretranslate(body.text, body.target_language, settings)
+    elif provider in ("openai", "gemini", "ollama"):
+        translated = _translate_llm(body.text, body.target_language, provider, workflow)
+    else:
+        raise HTTPException(status_code=422, detail=f"Provider '{provider}' não suportado para tradução.")
+
+    return {"translated": translated, "provider": provider, "target_language": body.target_language}
 

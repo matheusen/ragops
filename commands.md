@@ -98,3 +98,5 @@ curl.exe -i -sS -X POST "http://localhost:8000/api/v1/validate/upload" `
  python -m uvicorn jira_issue_rag.main:app --reload --host 0.0.0.0 --port 8004
  .\.venv\Scripts\Activate.ps1
 python -m uvicorn jira_issue_rag.main:app --reload --host 0.0.0.0 --port 8004
+
+docker run -d -p 5000:5000 libretranslate/libretranslate --load-only en,pt

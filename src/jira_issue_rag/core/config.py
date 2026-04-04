@@ -140,6 +140,13 @@ class Settings(BaseSettings):
     enable_pdf_image_extraction: bool = Field(default=False, alias="ENABLE_PDF_IMAGE_EXTRACTION")
     enable_image_description: bool = Field(default=False, alias="ENABLE_IMAGE_DESCRIPTION")
 
+    # Translation providers
+    deepl_api_key: str | None = Field(default=None, alias="DEEPL_API_KEY")
+    deepl_api_free: bool = Field(default=True, alias="DEEPL_API_FREE")  # True = api-free.deepl.com, False = api.deepl.com
+    google_translate_api_key: str | None = Field(default=None, alias="GOOGLE_TRANSLATE_API_KEY")
+    libretranslate_url: str = Field(default="http://localhost:5000", alias="LIBRETRANSLATE_URL")
+    libretranslate_api_key: str = Field(default="", alias="LIBRETRANSLATE_API_KEY")
+
     # DSPy optimization lab (item 11)
     dspy_lab_dir: Path = Field(default=PROJECT_ROOT / "data/dspy_lab", alias="DSPY_LAB_DIR")
 
