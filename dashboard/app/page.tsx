@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { AiEvolutionTimeline } from "@/components/ai-evolution-timeline";
 import { DashboardHero } from "@/components/dashboard-hero";
 import { PageHeader } from "@/components/page-header";
 import { SectionCard } from "@/components/section-card";
@@ -19,6 +20,27 @@ export default async function DashboardPage() {
         title="Enterprise control panel"
         description="Navigate between request monitoring, prompt management, runtime configuration and flow design using the sidebar."
       />
+
+      <SectionCard
+        eyeline="Learning Journey"
+        title="From AI to RAG"
+        description="A visual timeline that separates field, learning paradigm, mechanism, architecture, model scale and system orchestration."
+      >
+        <div className="summary-panel">
+          <AiEvolutionTimeline />
+          <div className="button-row journey-button-row">
+            <Link className="button" href="/apresentacao">
+              Open PT presentation
+            </Link>
+            <Link className="button" href="/learning-journey">
+              Open expanded journey
+            </Link>
+            <Link className="button" href="/learning-journey/presentation">
+              Open presentation mode
+            </Link>
+          </div>
+        </div>
+      </SectionCard>
 
       <div className="section-grid section-grid-tight">
         <SectionCard eyeline="Requests" title="Audit traffic" description="Recent issue classifications, provider routing and readiness signals.">

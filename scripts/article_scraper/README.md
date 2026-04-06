@@ -243,6 +243,31 @@ Curadoria dos artigos mais relevantes da pasta `results/downloads/` organizados 
 | **M11 — Como LLM usa o RAG** | RAG and Beyond: A Comprehensive Survey; Collab-RAG |
 | **M12 — Limitações do RAG** | The Good and The Bad: Exploring Privacy Issues in RAG; Mitigating Privacy Issues in RAG; Enhancing Critical Thinking with AI |
 
+### Observacao pedagogica para o artigo
+
+Para o texto ficar claro desde o inicio, a narrativa precisa separar niveis que costumam ser misturados:
+
+- **IA**: campo amplo
+- **machine learning**: subconjunto da IA
+- **deep learning**: subconjunto do machine learning
+- **attention**: mecanismo
+- **Transformer**: arquitetura
+- **LLM**: modelo treinado em larga escala, geralmente sobre Transformer
+- **RAG**: arquitetura de sistema
+- **agentes**: camada de orquestracao
+
+Em outras palavras: attention nao compete com Transformer; attention e uma peca do Transformer. Transformer nao e a mesma coisa que LLM; ele e a arquitetura base mais comum dos LLMs modernos. E RAG nao e uma camada interna do modelo; e uma arquitetura externa que injeta contexto recuperado no prompt.
+
+### Bibliografia canonica minima para M1 a M3
+
+Para deixar a abertura do artigo realmente fechada do ponto de vista conceitual, vale manter esta base minima:
+
+- **M1 — Evolucao ate Transformer e LLM**: Attention Is All You Need; Cognitive Architectures for Language Agents; A Comprehensive Survey of Retrieval-Augmented Generation (RAG): Evolution, Current Landscape and Future Directions
+- **M2 — Tokenizacao e embeddings**: Neural Machine Translation of Rare Words with Subword Units; SentencePiece; Comparative Analysis of Word Embeddings
+- **M3 — Pipeline interno do LLM**: Attention Is All You Need; Self-Attention as Distributional Projection; A Survey on In-context Learning
+
+Observacao pratica: a colecao atual cobre bem RAG, Transformer interpretability e evolucao para agentes, mas ainda nao fecha a parte de tokenizacao com a mesma forca. Se a meta for um artigo mais academico, BPE e SentencePiece deveriam entrar na proxima rodada de coleta.
+
 ### Top 10 — Prioridade Máxima
 
 1. Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks (paper original)

@@ -5244,7 +5244,7 @@ export function RoadmapGenerator() {
           background: var(--surface); border: 1px solid var(--border);
           border-radius: var(--radius-lg); box-shadow: 0 20px 60px rgba(0,0,0,.3);
           width: 100%; max-width: 600px; max-height: 88vh;
-          display: flex; flex-direction: column; overflow: hidden;
+          display: flex; flex-direction: column; overflow: hidden; min-width: 0;
         }
         .exp__header {
           display: flex; align-items: center; justify-content: space-between;
@@ -5280,7 +5280,7 @@ export function RoadmapGenerator() {
         }
         .exp__body {
           flex: 1; overflow-y: auto; padding: 1.1rem 1.25rem;
-          min-height: 160px;
+          min-height: 160px; min-width: 0; overflow-x: hidden;
         }
         .exp__loading {
           display: flex; align-items: center; gap: .75rem;
@@ -5288,7 +5288,7 @@ export function RoadmapGenerator() {
         }
         .exp__text {
           font-size: .88rem; line-height: 1.7; color: var(--text);
-          white-space: pre-wrap; margin: 0;
+          white-space: pre-wrap; margin: 0; overflow-wrap: anywhere;
         }
         .exp__code {
           font-size: .82rem; line-height: 1.6;
@@ -5296,6 +5296,7 @@ export function RoadmapGenerator() {
           border-radius: var(--radius-sm); padding: 1rem;
           overflow-x: auto; white-space: pre; margin: 0;
           font-family: "Cascadia Code", "Fira Code", monospace;
+          max-width: 100%; box-sizing: border-box;
         }
         .exp__error { font-size: .8rem; color: #dc2626; }
         .exp__footer {

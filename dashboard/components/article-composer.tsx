@@ -1882,19 +1882,21 @@ export function ArticleComposer() {
                   if (trimmed.includes("|") && trimmed.split("|").length > 3) {
                     const rows = trimmed.split("\n").filter((r) => r.includes("|"));
                     return (
-                      <table key={i} className="ac-prof__table">
-                        <tbody>
-                          {rows.map((row, ri) => (
-                            <tr key={ri}>
-                              {row.split("|").filter((_, ci) => ci > 0 && ci < row.split("|").length - 1).map((cell, ci) => (
-                                ri === 0
-                                  ? <th key={ci}>{cell.trim()}</th>
-                                  : <td key={ci}>{cell.trim()}</td>
-                              ))}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                      <div key={i} className="ac-prof__table-wrap">
+                        <table className="ac-prof__table">
+                          <tbody>
+                            {rows.map((row, ri) => (
+                              <tr key={ri}>
+                                {row.split("|").filter((_, ci) => ci > 0 && ci < row.split("|").length - 1).map((cell, ci) => (
+                                  ri === 0
+                                    ? <th key={ci}>{cell.trim()}</th>
+                                    : <td key={ci}>{cell.trim()}</td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     );
                   }
                   return <p key={i} className="ac-prof__para">{trimmed}</p>;
@@ -2030,11 +2032,14 @@ export function ArticleComposer() {
         .ac-lang-indicator--pt { background: #f0fdf4; color: #15803d; border-color: #86efac; }
 
         /* Tabs */
-        .ac-tabs { display: flex; border: 1px solid var(--border, #e2e5eb); border-radius: 8px; overflow: hidden; }
+        .ac-tabs {
+          display: flex; border: 1px solid var(--border, #e2e5eb); border-radius: 8px;
+          overflow-x: auto; overflow-y: hidden; max-width: 100%;
+        }
         .ac-tab {
           background: none; border: none; padding: .35rem .75rem; font-size: .78rem;
           font-weight: 600; color: var(--text-secondary, #5f6577); cursor: pointer;
-          transition: background .1s, color .1s;
+          transition: background .1s, color .1s; white-space: nowrap; flex-shrink: 0;
         }
         .ac-tab--active { background: var(--primary, #4f7df3); color: #fff; }
 
@@ -2131,6 +2136,12 @@ export function ArticleComposer() {
           .ac-preview { padding: .75rem; }
           .ac-preview__page { padding: 1.5rem 1rem; }
           .ac-preview__body { column-count: 1; }
+          .ac-prof { flex-direction: column; }
+          .ac-prof__sidebar {
+            width: 100%; height: auto; max-height: 220px; position: static;
+            border-right: none; border-bottom: 1px solid var(--border, #e2e5eb);
+          }
+          .ac-prof__content { max-width: none; padding: 1rem; }
         }
 
         [data-theme="dark"] .ac-section__body { background: #1c2128; color: #e6edf3; }
@@ -2147,7 +2158,7 @@ export function ArticleComposer() {
         .ac-tab--prof { border-left: 1px solid var(--border, #e2e5eb); margin-left: .25rem; }
         .ac-prof {
           display: flex; min-height: calc(100vh - 120px);
-          background: var(--bg, #f0f2f5);
+          background: var(--bg, #f0f2f5); min-width: 0;
         }
         .ac-prof__sidebar {
           width: 240px; flex-shrink: 0;
@@ -2170,17 +2181,20 @@ export function ArticleComposer() {
         .ac-prof__nav-item--active { background: #eff6ff; color: #1d4ed8; font-weight: 700; }
         [data-theme="dark"] .ac-prof__nav-item--active { background: #1e3a5f; color: #93c5fd; }
         .ac-prof__content {
-          flex: 1; padding: 2rem 3rem; max-width: 860px; overflow-y: auto;
+          flex: 1; min-width: 0; width: 100%; max-width: 860px;
+          padding: 2rem 3rem; box-sizing: border-box;
+          overflow-y: auto; overflow-x: hidden;
         }
         .ac-prof__disclaimer {
           background: #fefce8; border: 1px solid #fde68a; border-radius: 8px;
           padding: .55rem 1rem; font-size: .78rem; color: #92400e; margin-bottom: 1.5rem;
         }
-        .ac-prof__doc { display: flex; flex-direction: column; gap: 0; }
+        .ac-prof__doc { display: flex; flex-direction: column; gap: 0; min-width: 0; width: 100%; }
         .ac-prof__doc-title {
           font-size: 1.3rem; font-weight: 800; color: var(--text, #1a1d23);
           margin: 0 0 1.5rem; line-height: 1.3;
           padding-bottom: .6rem; border-bottom: 2px solid var(--border, #e2e5eb);
+          overflow-wrap: anywhere;
         }
         .ac-prof__section-title {
           font-size: .95rem; font-weight: 800; color: #1d4ed8;
@@ -2191,29 +2205,33 @@ export function ArticleComposer() {
         [data-theme="dark"] .ac-prof__section-title { color: #93c5fd; border-color: #3b82f6; }
         .ac-prof__para {
           font-size: .92rem; line-height: 1.8; color: var(--text, #1a1d23);
-          margin: 0 0 .9rem;
+          margin: 0 0 .9rem; overflow-wrap: anywhere;
         }
         .ac-prof__list {
           margin: 0 0 .9rem 0; padding-left: 1.2rem;
           display: flex; flex-direction: column; gap: .3rem;
         }
         .ac-prof__list li {
-          font-size: .9rem; line-height: 1.7; color: var(--text, #1a1d23);
+          font-size: .9rem; line-height: 1.7; color: var(--text, #1a1d23); overflow-wrap: anywhere;
         }
         .ac-prof__code {
           background: #0f172a; color: #e2e8f0;
           border-radius: 8px; padding: 1rem 1.25rem;
           font-family: var(--mono, monospace); font-size: .8rem;
           line-height: 1.7; overflow-x: auto; margin: 0 0 1rem;
-          white-space: pre-wrap; border: 1px solid #1e293b;
+          white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
+          border: 1px solid #1e293b; max-width: 100%; box-sizing: border-box;
+        }
+        .ac-prof__table-wrap {
+          width: 100%; max-width: 100%; overflow-x: auto; margin: 0 0 1rem;
         }
         .ac-prof__table {
-          width: 100%; border-collapse: collapse; margin: 0 0 1rem;
-          font-size: .82rem;
+          width: 100%; min-width: 0; max-width: 100%; border-collapse: collapse; margin: 0;
+          font-size: .82rem; table-layout: fixed;
         }
         .ac-prof__table th, .ac-prof__table td {
           border: 1px solid var(--border, #e2e5eb);
-          padding: .4rem .65rem; text-align: left;
+          padding: .4rem .65rem; text-align: left; overflow-wrap: anywhere; word-break: break-word;
         }
         .ac-prof__table th {
           background: var(--bg, #f0f2f5); font-weight: 700;

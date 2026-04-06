@@ -20,6 +20,32 @@ const navItems = [
     ),
   },
   {
+    href: "/learning-journey",
+    label: "Journey",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 19h16" />
+        <path d="M6 15l4-4 3 3 5-7" />
+        <circle cx="6" cy="15" r="1.5" />
+        <circle cx="10" cy="11" r="1.5" />
+        <circle cx="13" cy="14" r="1.5" />
+        <circle cx="18" cy="7" r="1.5" />
+      </svg>
+    ),
+  },
+  {
+    href: "/apresentacao",
+    label: "Apresentacao",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 5h18v10H3z" />
+        <path d="M8 21h8" />
+        <path d="M12 15v6" />
+        <path d="M7 9h10" />
+      </svg>
+    ),
+  },
+  {
     href: "/requests",
     label: "Requests",
     icon: (
