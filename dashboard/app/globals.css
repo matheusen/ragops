@@ -1502,6 +1502,37 @@ button, input, textarea, select { font: inherit; }
   line-height: 1.7;
 }
 
+.journey-slide__speaker-notes {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 22px;
+  background: rgb(15 23 42 / 0.42);
+  border: 1px solid rgb(255 255 255 / 0.12);
+}
+
+.journey-slide__speaker-notes-title {
+  color: #fff8e6;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.journey-slide__speaker-notes-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-left: 18px;
+  color: rgb(241 245 249 / 0.88);
+}
+
+.journey-slide__speaker-notes-list li {
+  line-height: 1.7;
+}
+
 .journey-slide .button {
   background: rgb(255 255 255 / 0.08);
   border-color: rgb(255 255 255 / 0.16);

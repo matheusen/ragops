@@ -1,0 +1,73 @@
+{
+  "documents": [
+    {
+      "id": "doc_incident",
+      "title": "Issue INC-481 - duplicate charge after retry",
+      "kind": "issue",
+      "text": "Issue INC-481 reports duplicate charges after retry in the checkout flow. The suspected component is payments-api. The impacted service is ledger-sync. The recurring fingerprint is DUPL-443. The incident appears in production after queue replay.",
+      "entities": ["INC-481", "payments-api", "ledger-sync", "DUPL-443", "production"]
+    },
+    {
+      "id": "doc_runbook",
+      "title": "Runbook - duplicate payment mitigation",
+      "kind": "runbook",
+      "text": "When customers report duplicate charges, verify idempotency keys in payments-api and inspect queue-replay-worker logs. Duplicate debits often occur when ledger-sync replays messages without a valid idempotency token.",
+      "entities": ["payments-api", "queue-replay-worker", "ledger-sync", "idempotency-key"]
+    },
+    {
+      "id": "doc_changelog",
+      "title": "Release note - retry policy change",
+      "kind": "changelog",
+      "text": "Release 2026-03-12 changed the retry policy for queue-replay-worker and removed the cache of processed idempotency keys. This increased the chance of duplicate payment events reaching ledger-sync.",
+      "entities": ["queue-replay-worker", "idempotency-key", "ledger-sync", "2026-03-12"]
+    },
+    {
+      "id": "doc_architecture",
+      "title": "Architecture note - checkout payment path",
+      "kind": "architecture",
+      "text": "payments-api publishes payment events to queue-replay-worker. queue-replay-worker forwards events to ledger-sync. ledger-sync writes to billing-ledger. Duplicate writes surface as customer double charge complaints.",
+      "entities": ["payments-api", "queue-replay-worker", "ledger-sync", "billing-ledger"]
+    },
+    {
+      "id": "doc_support",
+      "title": "Support response template for duplicate charge",
+      "kind": "faq",
+      "text": "When support receives a duplicate charge complaint, acknowledge incident INC-481, ask for the order identifier, avoid manual refund until ledger reconciliation completes, and route the ticket to payments-api on-call.",
+      "entities": ["INC-481", "payments-api", "support", "order-id"]
+    },
+    {
+      "id": "doc_unrelated",
+      "title": "Shipping delay incident",
+      "kind": "issue",
+      "text": "Issue SHIP-204 reports delivery delays caused by an inventory sync timeout. The component is shipment-orchestrator and the impacted service is stock-gateway.",
+      "entities": ["SHIP-204", "shipment-orchestrator", "stock-gateway"]
+    }
+  ],
+  "graph_edges": [
+    {"source": "INC-481", "relation": "IN_COMPONENT", "target": "payments-api"},
+    {"source": "INC-481", "relation": "USES_SERVICE", "target": "ledger-sync"},
+    {"source": "INC-481", "relation": "HAS_ERROR", "target": "DUPL-443"},
+    {"source": "payments-api", "relation": "PUBLISHES_TO", "target": "queue-replay-worker"},
+    {"source": "queue-replay-worker", "relation": "FORWARDS_TO", "target": "ledger-sync"},
+    {"source": "ledger-sync", "relation": "WRITES_TO", "target": "billing-ledger"},
+    {"source": "queue-replay-worker", "relation": "REMOVED_CACHE_FOR", "target": "idempotency-key"},
+    {"source": "support", "relation": "ESCALATES_TO", "target": "payments-api"}
+  ],
+  "scenarios": [
+    {
+      "id": "similarity",
+      "query": "Quais incidentes e documentos sao mais parecidos com um problema de cobranca duplicada apos retry?",
+      "goal": "Mostrar que semantic search encontra materiais proximos mesmo sem entidade explicita."
+    },
+    {
+      "id": "chain",
+      "query": "Que cadeia conecta INC-481 ao servico impactado e ao componente suspeito?",
+      "goal": "Mostrar que graph retrieval supera vetor puro quando a pergunta pede relacoes explicitas e multi-hop."
+    },
+    {
+      "id": "support",
+      "query": "Qual resposta devo dar ao time de suporte sobre o problema de cobranca duplicada?",
+      "goal": "Mostrar que retrieval puro devolve materia-prima, enquanto GraphRAG entrega uma resposta operacional grounded."
+    }
+  ]
+}

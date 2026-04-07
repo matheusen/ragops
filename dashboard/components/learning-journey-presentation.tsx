@@ -8,6 +8,7 @@ import { learningJourneyPresentationSlides } from "@/lib/learning-journey";
 export function LearningJourneyPresentation() {
   const [slideIndex, setSlideIndex] = useState(0);
   const [fullscreen, setFullscreen] = useState(false);
+  const [showNotes, setShowNotes] = useState(true);
 
   const slide = learningJourneyPresentationSlides[slideIndex];
 
@@ -36,8 +37,8 @@ export function LearningJourneyPresentation() {
       <aside className="journey-presentation__rail">
         <div className="journey-presentation__rail-head">
           <div className="mini-label">Modo apresentacao</div>
-          <h2>Do token ao RAG</h2>
-          <p>Deck pronto para apresentar ao time com navegacao direta por slide.</p>
+          <h2>RAG Ainda e Necessario?</h2>
+          <p>Deck tecnico com {learningJourneyPresentationSlides.length} slides, ancorado no acervo local e pronto para defesa tecnica com o time.</p>
         </div>
 
         <div className="journey-presentation__list">
@@ -74,6 +75,9 @@ export function LearningJourneyPresentation() {
           </div>
 
           <div className="button-row journey-button-row">
+            <button className="button" type="button" onClick={() => setShowNotes((current) => !current)}>
+              {showNotes ? "Ocultar notas" : "Mostrar notas"}
+            </button>
             <button className="button" type="button" onClick={() => setFullscreen((current) => !current)}>
               {fullscreen ? "Sair da tela cheia" : "Tela cheia"}
             </button>
@@ -99,6 +103,17 @@ export function LearningJourneyPresentation() {
             {slide.highlight ? <div className="journey-slide__highlight">{slide.highlight}</div> : null}
             {slide.note ? <p className="journey-slide__note">{slide.note}</p> : null}
 
+            {showNotes && slide.speakerNotes?.length ? (
+              <section className="journey-slide__speaker-notes">
+                <div className="journey-slide__speaker-notes-title">Notas de apresentacao</div>
+                <ul className="journey-slide__speaker-notes-list">
+                  {slide.speakerNotes.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+
             {slide.links?.length ? (
               <div className="button-row journey-button-row">
                 {slide.links.map((item) => (
@@ -121,7 +136,7 @@ export function LearningJourneyPresentation() {
             ← Anterior
           </button>
 
-          <div className="journey-presentation__hint">Use ← → ou F durante a apresentação.</div>
+          <div className="journey-presentation__hint">Use ← →, F e o painel de notas durante a apresentacao.</div>
 
           <button
             className="journey-presentation__nav"

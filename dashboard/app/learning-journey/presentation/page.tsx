@@ -9,7 +9,7 @@ export default function LearningJourneyPresentationPage() {
       <PageHeader
         eyebrow="Apresentacao"
         title="Modo slides"
-        description="Uma sequencia de slides em portugues para explicar IA, Transformer, LLM, RAG e o novo valor do desenvolvedor em um mercado com mais automacao."
+        description="Um deck tecnico em portugues, baseado no acervo local, para discutir RAG moderno, hybrid retrieval, grafo, avaliacao e grounding em 2026."
       />
 
       <LearningJourneyPresentation />

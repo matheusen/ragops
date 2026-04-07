@@ -128,6 +128,23 @@ const navItems = [
     ),
   },
   {
+    href: "/mindmap/rag-ainda-e-necessario",
+    label: "Mapa RAG",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="2.5" />
+        <circle cx="6" cy="7" r="1.5" />
+        <circle cx="18" cy="7" r="1.5" />
+        <circle cx="6" cy="17" r="1.5" />
+        <circle cx="18" cy="17" r="1.5" />
+        <line x1="8" y1="8" x2="10.5" y2="10.5" />
+        <line x1="16" y1="8" x2="13.5" y2="10.5" />
+        <line x1="8" y1="16" x2="10.5" y2="13.5" />
+        <line x1="16" y1="16" x2="13.5" y2="13.5" />
+      </svg>
+    ),
+  },
+  {
     href: "/mindmap",
     label: "Conhecimento",
     icon: (
@@ -181,8 +198,14 @@ const navItems = [
 ];
 
 function getBreadcrumb(pathname: string) {
-  const item = navItems.find((n) => n.href === pathname || pathname.startsWith(n.href + "/"));
-  return item?.label ?? "Overview";
+  const exact = navItems.find((n) => n.href === pathname);
+  if (exact) return exact.label;
+
+  const nested = navItems
+    .filter((n) => pathname.startsWith(n.href + "/"))
+    .sort((left, right) => right.href.length - left.href.length)[0];
+
+  return nested?.label ?? "Overview";
 }
 
 export function AppShell({ children, initialTheme }: { children: React.ReactNode; initialTheme: "light" | "dark" }) {

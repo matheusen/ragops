@@ -29,12 +29,15 @@ src/jira_issue_rag/services/file_checkpoint.py
 src/jira_issue_rag/services/flow_runner.py
 src/jira_issue_rag/services/jira.py
 src/jira_issue_rag/services/langgraph_workflow.py
+src/jira_issue_rag/services/linkedin_scheduler.py
+src/jira_issue_rag/services/minio_store.py
 src/jira_issue_rag/services/neo4j_store.py
 src/jira_issue_rag/services/normalization.py
 src/jira_issue_rag/services/prompt_catalog.py
 src/jira_issue_rag/services/qdrant_store.py
 src/jira_issue_rag/services/rerank.py
 src/jira_issue_rag/services/retrieval.py
+src/jira_issue_rag/services/roadmap_graph.py
 src/jira_issue_rag/services/rules.py
 src/jira_issue_rag/services/workflow.py
 src/jira_issue_rag/shared/models.py

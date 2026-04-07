@@ -42,9 +42,13 @@ docling>=2.0.0
 openai>=2.0.0
 google-auth>=2.40.0
 google-genai>=1.30.0
+google-cloud-translate>=3.25.0
 
 [rerank]
 sentence-transformers>=3.0.0
 
 [retrieval]
 qdrant-client>=1.15.0
+
+[storage]
+minio>=7.2.0

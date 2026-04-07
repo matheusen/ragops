@@ -38,6 +38,10 @@ queries:
     max_results: 50
 
 # Habilite as fontes
+# Opcional: para fontes com filtro temporal, o scraper usa o ano corrente
+# como ano final por padrao. Defina end_year apenas se quiser congelar a janela.
+# start_year: 2024
+# end_year: 2026
 sources:
   ieee:
     enabled: true
@@ -268,6 +272,18 @@ Para deixar a abertura do artigo realmente fechada do ponto de vista conceitual,
 
 Observacao pratica: a colecao atual cobre bem RAG, Transformer interpretability e evolucao para agentes, mas ainda nao fecha a parte de tokenizacao com a mesma forca. Se a meta for um artigo mais academico, BPE e SentencePiece deveriam entrar na proxima rodada de coleta.
 
+Para a apresentacao e para a pesquisa, vale tratar isso como obrigatorio desde ja: cite **Sennrich et al. (2016)** ao explicar BPE e cite **Kudo & Richardson (2018)** ao explicar SentencePiece, mesmo antes de os PDFs entrarem no acervo local.
+
+### Politica de recencia para LLM, RAG e agentes
+
+Como esses temas mudam muito rapido, a curadoria precisa separar claramente **fundacao historica** de **estado da arte atual**:
+
+- **Papers canonicos antigos** ficam para explicar origem de conceito: Transformer original, BPE, SentencePiece e paper original de RAG.
+- **Papers recentes** devem ser a base da discussao sobre tecnicas atuais, trade-offs, benchmarks, avaliacao, agentic RAG, privacy, vector databases e arquitetura de producao.
+- Para modulos que evoluem rapido, priorize **2024-2026** sempre que houver surveys, revisoes sistematicas, benchmarks ou experience reports confiaveis.
+- Regra pratica: em cada modulo, tente combinar **1 paper fundacional + 1 survey/review recente + 1 paper tecnico de benchmark ou producao**.
+- O scraper usa o **ano corrente como limite superior padrao** em fontes com filtro temporal, para evitar que a busca fique travada artificialmente em 2025.
+
 ### Top 10 — Prioridade Máxima
 
 1. Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks (paper original)
@@ -280,6 +296,14 @@ Observacao pratica: a colecao atual cobre bem RAG, Transformer interpretability 
 8. Survey of vector database management systems (vector stores)
 9. A Systematic Review of Key RAG Systems (taxonomia)
 10. Developing RAG based LLM Systems from PDFs (case prático)
+
+### Prioridade temporal recomendada
+
+Se precisar reduzir a coleta, use esta ordem:
+
+1. Primeiro, surveys e revisoes sistematicas de 2024-2026.
+2. Depois, benchmarks e papers de producao de 2024-2026.
+3. Por fim, papers fundacionais obrigatorios que fecham a origem conceitual do modulo.
 
 ---
 

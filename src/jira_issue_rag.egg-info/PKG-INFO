@@ -21,6 +21,7 @@ Provides-Extra: providers
 Requires-Dist: openai>=2.0.0; extra == "providers"
 Requires-Dist: google-auth>=2.40.0; extra == "providers"
 Requires-Dist: google-genai>=1.30.0; extra == "providers"
+Requires-Dist: google-cloud-translate>=3.25.0; extra == "providers"
 Provides-Extra: retrieval
 Requires-Dist: qdrant-client>=1.15.0; extra == "retrieval"
 Provides-Extra: rerank
@@ -38,6 +39,8 @@ Provides-Extra: optimization
 Requires-Dist: dspy-ai>=2.6.0; extra == "optimization"
 Provides-Extra: graphrag
 Requires-Dist: neo4j>=5.0.0; extra == "graphrag"
+Provides-Extra: storage
+Requires-Dist: minio>=7.2.0; extra == "storage"
 Provides-Extra: ollm
 Requires-Dist: ollm>=1.0.3; extra == "ollm"
 Provides-Extra: dev

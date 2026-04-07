@@ -71,6 +71,7 @@ console = Console()
 DEFAULT_MONGODB_URI = "mongodb://localhost:27017"
 DEFAULT_KAFKA_BOOTSTRAP = ["localhost:9092"]
 DEFAULT_KAFKA_TOPIC = "article-scraper.articles"
+CURRENT_SEARCH_YEAR = datetime.now(timezone.utc).year
 TRUSTED_ARTICLE_HOST_SUFFIXES = (
     "arxiv.org",
     "doi.org",
@@ -103,6 +104,19 @@ TRUSTED_ARTICLE_HOST_SUFFIXES = (
     "cambridge.org",
     "oup.com",
 )
+
+
+def resolve_search_end_year(cfg: dict[str, Any]) -> int:
+    raw_end_year = cfg.get("end_year")
+    if raw_end_year in (None, ""):
+        return CURRENT_SEARCH_YEAR
+
+    try:
+        return int(raw_end_year)
+    except (TypeError, ValueError):
+        return CURRENT_SEARCH_YEAR
+
+
 UNWANTED_ARTICLE_HOSTS = {
     "linkedin.com",
     "www.linkedin.com",
@@ -358,13 +372,14 @@ def scrape_ieee(driver: webdriver.Chrome, query: str, cfg: dict,
                 max_results: int, exec_cfg: dict) -> list[dict]:
     results = []
     start_year = cfg.get("start_year", 0)
+    search_end_year = max(resolve_search_end_year(cfg), start_year or 0)
     content_type = cfg.get("content_type", "")
     extra_delay = cfg.get("extra_delay", 3)
 
     q = quote_plus(query)
     url = f"https://ieeexplore.ieee.org/search/searchresult.jsp?queryText={q}"
     if start_year:
-        url += f"&ranges={start_year}_2025_Year"
+        url += f"&ranges={start_year}_{search_end_year}_Year"
     if content_type:
         url += f"&newsearch=true&contentType={quote_plus(content_type)}"
 
@@ -1160,11 +1175,12 @@ def scrape_sciencedirect(driver: webdriver.Chrome, query: str, cfg: dict,
                          max_results: int, exec_cfg: dict) -> list[dict]:
     results = []
     start_year = cfg.get("start_year", 0)
+    search_end_year = max(resolve_search_end_year(cfg), start_year or 0)
 
     q = quote_plus(query)
     url = f"https://www.sciencedirect.com/search?qs={q}"
     if start_year:
-        url += f"&date={start_year}-2025"
+        url += f"&date={start_year}-{search_end_year}"
 
     console.print(f"    [dim]ScienceDirect: {url[:80]}[/]")
 
